@@ -136,6 +136,7 @@ implementation milestones should focus on:
 
 - [Stage model](docs/design/stage-model.md)
 - [Handoff contract](docs/design/handoff-contract.md)
+- [SGE site configuration](docs/setup/sge-site-config.md)
 
 ## Development
 

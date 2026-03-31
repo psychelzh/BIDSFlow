@@ -34,18 +34,15 @@ def test_plan_stage_submission_renders_qsub_command_and_script() -> None:
     assert plan.qsub_command[:4] == ("qsub", "-terse", "-N", "bidsflow-fmriprep-sub-001")
     assert "-cwd" in plan.qsub_command
     assert "-q" in plan.qsub_command
-    assert "all.q" in plan.qsub_command
-    assert "-P" in plan.qsub_command
-    assert "neuro" in plan.qsub_command
-    assert "-pe" in plan.qsub_command
-    assert "smp" in plan.qsub_command
+    assert "short.q" in plan.qsub_command
+    assert "-P" not in plan.qsub_command
+    assert "-pe" not in plan.qsub_command
     assert "-hold_jid" in plan.qsub_command
     assert "1234" in plan.qsub_command
 
     resources = plan.qsub_command[plan.qsub_command.index("-l") + 1]
-    assert "h_rt=24:00:00" in resources
-    assert "h_vmem=32G" in resources
-    assert "tmp_free=20G" in resources
+    assert "h_rt=00:10:00" in resources
+    assert "mem_free=1G" in resources
 
     assert "set -euo pipefail" in plan.script_text
     assert "bidsflow.cli fmriprep --config" in plan.script_text

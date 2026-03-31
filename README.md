@@ -90,15 +90,28 @@ BIDSFlow/
 │     ├─ __init__.py
 │     ├─ cli.py
 │     ├─ config/
+│     │  ├─ load.py
 │     │  └─ models.py
-│     └─ core/
+│     ├─ core/
 │        └─ stages.py
+│     └─ scheduler/
+│        ├─ __init__.py
+│        ├─ models.py
+│        └─ sge.py
 ├─ docs/
 │  └─ design/
 │     ├─ stage-model.md
 │     └─ handoff-contract.md
 ├─ examples/
 │  └─ project.toml
+├─ tests/
+│  ├─ test_config_load.py
+│  └─ test_scheduler_sge.py
+├─ .codex/
+│  └─ skills/
+│     ├─ project-config-schema/
+│     ├─ bids-app-command-builder/
+│     └─ cluster-runner-sge/
 └─ .github/
    └─ workflows/
       └─ ci.yml
@@ -107,7 +120,9 @@ BIDSFlow/
 ## Current development status
 
 This scaffold establishes the **project boundary**, **stage model**,
-**handoff contract**, and a **minimal CLI skeleton**. The next
+**handoff contract**, and a **minimal CLI skeleton**. The current SGE
+work also includes config loading and a qsub planning preview for stage
+execution units. The next
 implementation milestones should focus on:
 
 1. configuration parsing and normalization
@@ -126,6 +141,7 @@ implementation milestones should focus on:
 
 ```bash
 python -m pip install -e .[dev]
+python --version  # Python 3.11+
 bidsflow --help
 ```
 
@@ -135,5 +151,8 @@ bidsflow --help
 bidsflow init --path .
 bidsflow doctor
 bidsflow validate --config examples/project.toml
+bidsflow scheduler plan-sge fmriprep \
+  --config examples/project.toml \
+  --participant sub-001
 bidsflow curate --config examples/project.toml --participant sub-001
 ```

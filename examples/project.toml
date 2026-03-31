@@ -1,6 +1,6 @@
 [project]
 name = "Example BIDSFlow project"
-root = "."
+root = ".."
 bids_root = "sourcedata/raw"
 derivatives_root = "derivatives"
 

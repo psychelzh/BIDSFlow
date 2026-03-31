@@ -232,3 +232,30 @@ def test_scheduler_status_and_accounting_cli_commands(monkeypatch) -> None:
 
     assert cancel_result.exit_code == 0
     assert "qdel 12345" in cancel_result.stdout
+
+
+def test_scheduler_accounting_cli_handles_missing_qacct(monkeypatch) -> None:
+    runner = CliRunner()
+    repo_root = Path(__file__).resolve().parents[1]
+    config_path = repo_root / "examples" / "project.toml"
+
+    monkeypatch.setattr(
+        "bidsflow.scheduler.sge.SGECliScheduler.accounting",
+        lambda self, job_id: None,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "scheduler",
+            "accounting-sge",
+            "--job-id",
+            "12345",
+            "--config",
+            str(config_path),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "accounting" in result.stdout
+    assert "enabled yet" in result.stdout

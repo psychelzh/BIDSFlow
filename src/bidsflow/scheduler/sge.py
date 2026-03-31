@@ -202,7 +202,14 @@ class SGECliScheduler:
 
     def accounting(self, job_id: str) -> SGEAccounting | None:
         self._require_command("qacct")
-        completed = self._run_command(self.build_qacct_command(job_id))
+        try:
+            completed = self._run_command(self.build_qacct_command(job_id))
+        except subprocess.CalledProcessError as error:
+            stderr = (error.stderr or "").strip().lower()
+            stdout = (error.stdout or "").strip().lower()
+            if "no jobs running since startup" in stdout or "no such file or directory" in stderr:
+                return None
+            raise
         return self.parse_qacct_output(completed.stdout, job_id=job_id)
 
     @staticmethod

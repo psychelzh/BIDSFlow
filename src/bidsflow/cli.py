@@ -249,7 +249,10 @@ def scheduler_accounting_sge(
     _, scheduler = _load_sge_scheduler(config)
     job_accounting = scheduler.accounting(job_id)
     if job_accounting is None:
-        console.print(f"No qacct information found for job {job_id}.")
+        console.print(
+            f"No qacct information found for job {job_id}. "
+            "Your SGE site may not have accounting enabled yet."
+        )
         raise typer.Exit(code=1)
 
     table = Table(title="SGE job accounting")

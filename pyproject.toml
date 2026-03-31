@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bidsflow"
+version = "0.1.0a0"
+description = "A Python CLI orchestrator for BIDS Apps"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "Liang Zhang" }
+]
+dependencies = [
+  "typer>=0.12",
+  "rich>=13.7",
+  "pydantic>=2.7",
+  "pydantic-settings>=2.2",
+  "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.5",
+  "mypy>=1.10",
+]
+bids = [
+  "pybids>=0.18",
+]
+
+[project.scripts]
+bidsflow = "bidsflow.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bidsflow"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+addopts = "-q"

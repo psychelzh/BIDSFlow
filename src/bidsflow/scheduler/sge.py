@@ -113,8 +113,8 @@ class SGECliScheduler:
 
     def render_script(self, launch: LaunchSpec) -> str:
         lines = [
-            "#!/bin/bash",
-            "set -euo pipefail",
+            "#!/bin/sh",
+            "set -eu",
             f"cd {shlex.quote(str(launch.cwd))}",
         ]
         for key, value in sorted(launch.env.items()):

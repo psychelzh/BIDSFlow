@@ -44,7 +44,8 @@ def test_plan_stage_submission_renders_qsub_command_and_script() -> None:
     assert "h_rt=00:10:00" in resources
     assert "mem_free=1G" in resources
 
-    assert "set -euo pipefail" in plan.script_text
+    assert "#!/bin/sh" in plan.script_text
+    assert "set -eu" in plan.script_text
     assert "bidsflow.cli fmriprep --config" in plan.script_text
     assert "--participant sub-001" in plan.script_text
 

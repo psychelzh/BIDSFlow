@@ -15,10 +15,39 @@ class ProjectConfig(BaseModel):
 
 class ExecutionConfig(BaseModel):
     backend: Literal["docker", "apptainer", "native"] = "apptainer"
+    scheduler: Literal["local", "sge"] = "local"
     work_root: Path = Path("work")
     logs_root: Path = Path("logs")
     state_root: Path = Path("state")
     max_jobs: int = Field(default=4, ge=1)
+
+
+class SGEResourceMapConfig(BaseModel):
+    walltime: str = "h_rt"
+    memory: str = "h_vmem"
+
+
+class SGEDefaultResourcesConfig(BaseModel):
+    slots: int = Field(default=8, ge=1)
+    walltime: str = "24:00:00"
+    memory: str = "32G"
+
+
+class SGEConfig(BaseModel):
+    driver: Literal["cli", "drmaa1"] = "cli"
+    queue: str | None = None
+    project: str | None = None
+    parallel_environment: str | None = None
+    inherit_cwd: bool = True
+    export_env: bool = False
+    poll_interval_sec: int = Field(default=15, ge=1)
+    default_resources: SGEDefaultResourcesConfig = SGEDefaultResourcesConfig()
+    resource_map: SGEResourceMapConfig = SGEResourceMapConfig()
+    extra_requests: dict[str, str] = Field(default_factory=dict)
+
+
+class SchedulerConfig(BaseModel):
+    sge: SGEConfig = SGEConfig()
 
 
 class HeudiconvConfig(BaseModel):
@@ -69,6 +98,7 @@ class QSIReconConfig(BaseModel):
 class Config(BaseModel):
     project: ProjectConfig = ProjectConfig()
     execution: ExecutionConfig = ExecutionConfig()
+    scheduler: SchedulerConfig = SchedulerConfig()
     heudiconv: HeudiconvConfig = HeudiconvConfig()
     fmriprep: FMRIPrepConfig = FMRIPrepConfig()
     mriqc: MRIQCConfig = MRIQCConfig()

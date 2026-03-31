@@ -26,6 +26,7 @@ around them:
 - stage-oriented CLI execution
 - configuration management
 - container/backend abstraction
+- cluster scheduler abstraction
 - state tracking and resumability
 - stage-to-stage contract validation
 - path and derivative organization
@@ -72,6 +73,11 @@ bidsflow status
 A future `plan` or `run` command may coordinate a declared sequence of
 stages, but it should remain explicit and inspectable rather than opaque.
 
+Initial cluster support should target SGE-style schedulers, with
+Debian-packaged Son of Grid Engine as the first concrete environment.
+Scheduler selection should remain separate from native, Docker, or
+Apptainer execution backends.
+
 ## Repository layout
 
 ```text
@@ -106,9 +112,10 @@ implementation milestones should focus on:
 
 1. configuration parsing and normalization
 2. stage registry and dependency validation
-3. backend runners (Docker, Apptainer, native)
-4. stage-specific command builders
-5. state tracking and resumability
+3. scheduler runners (SGE first, SLURM later)
+4. backend runners (Docker, Apptainer, native)
+5. stage-specific command builders
+6. state tracking and resumability
 
 ## Design documents
 

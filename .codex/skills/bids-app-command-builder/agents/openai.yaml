@@ -1,0 +1,4 @@
+interface:
+  display_name: "BIDS App Commands"
+  short_description: "Build backend-aware BIDS App commands"
+  default_prompt: "Use $bids-app-command-builder to add or update backend-aware command construction for a BIDS App stage."

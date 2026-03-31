@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project Config Schema"
+  short_description: "Keep project TOML and models aligned"
+  default_prompt: "Use $project-config-schema to update the project config schema and keep TOML, defaults, and Pydantic models aligned."

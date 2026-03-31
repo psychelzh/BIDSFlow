@@ -6,10 +6,33 @@ derivatives_root = "derivatives"
 
 [execution]
 backend = "apptainer"
+scheduler = "sge"
 work_root = "work"
 logs_root = "logs"
 state_root = "state"
 max_jobs = 4
+
+[scheduler.sge]
+# Adjust these values to match your site-specific SoGE setup.
+driver = "cli"
+queue = "all.q"
+project = "neuro"
+parallel_environment = "smp"
+inherit_cwd = true
+export_env = false
+poll_interval_sec = 15
+
+[scheduler.sge.default_resources]
+slots = 8
+walltime = "24:00:00"
+memory = "32G"
+
+[scheduler.sge.resource_map]
+walltime = "h_rt"
+memory = "h_vmem"
+
+[scheduler.sge.extra_requests]
+tmp_free = "20G"
 
 [heudiconv]
 enabled = true

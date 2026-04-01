@@ -15,6 +15,8 @@ Start by reading these files:
 - `src/bidsflow/config/models.py`
 - `examples/project.toml`
 - `README.md`
+- `docs/design/config-strategy.md`
+- `docs/design/cli-conventions.md`
 - `docs/design/stage-model.md`
 - `docs/design/handoff-contract.md`
 
@@ -34,6 +36,10 @@ Keep the schema explicit and typed:
 - prefer `Path`, `Literal`, and bounded numeric fields over free-form strings
 - group settings by concern: project, execution, then per-stage sections
 - keep stage-specific settings inside the matching stage block
+- treat the root TOML as project defaults, not as a mandatory prerequisite
+  for every command
+- prefer references to external tool-native files over embedding complex
+  native content directly in TOML
 - avoid adding loosely typed `dict` escape hatches unless there is no
   stable alternative
 

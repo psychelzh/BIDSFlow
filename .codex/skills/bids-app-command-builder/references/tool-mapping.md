@@ -10,6 +10,7 @@ into runnable commands.
 Keep these concerns separate:
 
 - stage contract and required inputs
+- scope discovery and normalization
 - tool-specific flags
 - backend wrapping
 - scheduler submission
@@ -18,11 +19,14 @@ The command builder should own the middle two layers only.
 
 ## Stage Anchors
 
-- `curate`: HeuDiConv-backed curation into raw BIDS
+- `heudiconv`: HeuDiConv-backed curation into raw BIDS
 - `validate`: validation and preflight logic, not a heavy executor
 - `fmriprep`: preprocessing from raw BIDS to derivatives
 - `xcpd`: downstream derivative processing from compatible fMRIPrep
   outputs
+
+The current scaffold may still expose `curate`, but the intended
+user-facing command name is `heudiconv`.
 
 Future stages should follow the same pattern.
 
@@ -51,5 +55,6 @@ Always preserve:
 - Prefer one participant per heavy app invocation.
 - Treat session and task filters as part of the scope, not ad hoc
   string fragments.
+- Resolve scope units before building argv for the underlying tool.
 - Make output and work directories explicit in the launch spec.
 - Keep command construction deterministic for the same normalized input.

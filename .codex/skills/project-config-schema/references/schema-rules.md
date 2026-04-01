@@ -10,6 +10,8 @@ Current public anchors:
 - `src/bidsflow/config/models.py`
 - `examples/project.toml`
 - `README.md`
+- `docs/design/config-strategy.md`
+- `docs/design/cli-conventions.md`
 - stage and handoff design docs under `docs/design/`
 
 ## Naming Rules
@@ -20,6 +22,8 @@ Current public anchors:
 - Use one name per concept across TOML, Python, and docs.
 - Prefer `*_root` for directory roots and `*_path` for individual files.
 - Prefer positive, concrete names over abstract toggles.
+- Keep project-default config names distinct from invocation-only CLI
+  flags such as scope selectors.
 
 ## Compatibility Rules
 
@@ -30,6 +34,8 @@ Current public anchors:
 - Do not let examples drift from the actual models.
 - Keep future cluster settings under execution or backend-specific
   sections unless a stronger boundary emerges.
+- Do not force new config keys to exist for commands that are intended
+  to remain config-optional.
 
 ## Modeling Rules
 
@@ -37,6 +43,8 @@ Current public anchors:
 - Prefer `Literal` when the value set is intentionally closed.
 - Use `Path` for filesystem paths instead of raw strings.
 - Keep stage-specific models small and focused on the stage contract.
+- Prefer one root project config plus references to external
+  tool-specific artifacts over mirroring an entire upstream CLI.
 - Avoid hidden inference that makes generated commands hard to predict.
 
 ## Change Checklist

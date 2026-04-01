@@ -15,6 +15,8 @@ Start by reading these files:
 - `src/bidsflow/core/stages.py`
 - `src/bidsflow/config/models.py`
 - `src/bidsflow/cli.py`
+- `docs/design/cli-conventions.md`
+- `docs/design/heudiconv-workflow.md`
 - `docs/design/stage-model.md`
 - `docs/design/handoff-contract.md`
 
@@ -26,9 +28,10 @@ construction.
 Keep the launch pipeline separated into layers:
 
 1. normalized project and stage inputs
-2. tool-specific argument construction
-3. backend wrapping for native, Docker, or Apptainer
-4. scheduler submission handled elsewhere
+2. scope discovery and normalization
+3. tool-specific argument construction
+4. backend wrapping for native, Docker, or Apptainer
+5. scheduler submission handled elsewhere
 
 Return structured launch data whenever possible:
 
@@ -42,6 +45,8 @@ Keep the scheduler out of this layer:
 - do not embed `sbatch` logic into BIDS App argument builders
 - do not let SLURM resource keys leak into tool argument mapping
 - let the scheduler consume a launch spec produced here
+- keep user-facing command naming and subcommand semantics outside the
+  tool argv builder
 
 ## Tool-Specific Guidance
 
@@ -50,7 +55,7 @@ tool clearly supports broader batching.
 
 Preserve stage semantics:
 
-- `curate` should map to HeuDiConv-oriented inputs and curation outputs
+- `heudiconv` should map to HeuDiConv-oriented inputs and curation outputs
 - `fmriprep` should consume validated raw BIDS and emit derivative roots
 - `xcpd` should consume derivative outputs and selected downstream scope
 

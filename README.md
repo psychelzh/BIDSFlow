@@ -136,10 +136,18 @@ implementation milestones should focus on:
 5. stage-specific command builders
 6. state tracking and resumability
 
+The CLI and configuration refinements discussed for the next
+implementation round are captured in the design docs linked below. Some
+of those docs are intentionally future-facing and may differ from the
+current scaffolded command names.
+
 ## Design documents
 
 - [Stage model](docs/design/stage-model.md)
 - [Handoff contract](docs/design/handoff-contract.md)
+- [CLI conventions](docs/design/cli-conventions.md)
+- [Configuration strategy](docs/design/config-strategy.md)
+- [HeuDiConv workflow](docs/design/heudiconv-workflow.md)
 - [SGE site configuration](docs/setup/sge-site-config.md)
 
 ## Development

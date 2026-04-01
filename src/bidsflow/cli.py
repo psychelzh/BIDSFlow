@@ -58,7 +58,6 @@ def doctor(
         table.add_row("backend", loaded.execution.backend)
         table.add_row("scheduler", loaded.execution.scheduler)
         if loaded.execution.scheduler == "sge":
-            table.add_row("sge driver", loaded.scheduler.sge.driver)
             table.add_row("sge queue", loaded.scheduler.sge.queue or "-")
             table.add_row("project root", str(loaded.project.root))
 
@@ -77,7 +76,6 @@ def config_validate(config: Path = typer.Option(..., exists=True, help="Path to 
     table.add_row("backend", loaded.execution.backend)
     table.add_row("scheduler", loaded.execution.scheduler)
     if loaded.execution.scheduler == "sge":
-        table.add_row("sge driver", loaded.scheduler.sge.driver)
         table.add_row("sge queue", loaded.scheduler.sge.queue or "-")
         table.add_row("sge parallel env", loaded.scheduler.sge.parallel_environment or "-")
     console.print(table)

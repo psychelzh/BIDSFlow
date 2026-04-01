@@ -38,7 +38,6 @@ Start with a single-slot job and no parallel environment:
 
 ```toml
 [scheduler.sge]
-driver = "cli"
 queue = "short.q"
 inherit_cwd = true
 export_env = false

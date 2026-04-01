@@ -18,7 +18,6 @@ max_jobs = 4
 #   qconf -sql
 #   qconf -spl
 #   qconf -sc
-driver = "cli"
 queue = "short.q"
 inherit_cwd = true
 export_env = false

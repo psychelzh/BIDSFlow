@@ -5,7 +5,7 @@ from enum import Enum
 
 
 class StageId(str, Enum):
-    CURATE = "curate"
+    HEUDICONV = "heudiconv"
     VALIDATE = "validate"
     FMRIPREP = "fmriprep"
     MRIQC = "mriqc"
@@ -20,22 +20,22 @@ class StageSpec:
     label: str
     upstream: tuple[StageId, ...] = ()
     products: tuple[str, ...] = ()
-    scope: str = "participant"
+    scope: str = "subject"
     notes: str = ""
 
 
 STAGES: dict[StageId, StageSpec] = {
-    StageId.CURATE: StageSpec(
-        id=StageId.CURATE,
-        label="HeuDiConv curation",
+    StageId.HEUDICONV: StageSpec(
+        id=StageId.HEUDICONV,
+        label="HeuDiConv",
         products=("raw BIDS dataset",),
-        scope="participant/session",
+        scope="subject/session",
         notes="Transforms sourcedata into a BIDS-aware raw dataset.",
     ),
     StageId.VALIDATE: StageSpec(
         id=StageId.VALIDATE,
         label="Validation",
-        upstream=(StageId.CURATE,),
+        upstream=(StageId.HEUDICONV,),
         products=("validation report",),
         scope="dataset",
         notes="Validates raw or derivative inputs before downstream execution.",

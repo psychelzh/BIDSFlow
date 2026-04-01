@@ -33,9 +33,9 @@ bound to a specific tool.
 
 ### 2.1 Transitional note
 
-The current scaffold still exposes `curate`. The intended CLI direction
-is to rename this surface to `heudiconv` while preserving the idea that
-it belongs to the broader curation stage category.
+The primary user-facing command is `heudiconv`. Earlier design drafts
+used `curate` as a stage-category-oriented name, but the CLI should now
+consistently use the concrete tool name.
 
 ## 3. Capability-oriented subcommands
 

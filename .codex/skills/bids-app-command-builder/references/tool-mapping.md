@@ -25,8 +25,7 @@ The command builder should own the middle two layers only.
 - `xcpd`: downstream derivative processing from compatible fMRIPrep
   outputs
 
-The current scaffold may still expose `curate`, but the intended
-user-facing command name is `heudiconv`.
+The intended user-facing command name is `heudiconv`.
 
 Future stages should follow the same pattern.
 

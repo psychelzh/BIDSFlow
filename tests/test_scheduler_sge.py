@@ -22,7 +22,7 @@ def test_plan_stage_submission_renders_qsub_command_and_script() -> None:
         config_path=config_path,
         config=config,
         stage=StageId.FMRIPREP,
-        participant="sub-001",
+        subject_label="sub-001",
         hold_jid="1234",
     )
 
@@ -47,7 +47,7 @@ def test_plan_stage_submission_renders_qsub_command_and_script() -> None:
     assert "#!/bin/sh" in plan.script_text
     assert "set -eu" in plan.script_text
     assert "bidsflow.cli fmriprep --config" in plan.script_text
-    assert "--participant sub-001" in plan.script_text
+    assert "--subject-label sub-001" in plan.script_text
     assert "--scheduler local" in plan.script_text
 
 
@@ -144,7 +144,7 @@ def test_submit_and_cancel_use_external_commands(monkeypatch, tmp_path: Path) ->
         config_path=config_path,
         config=config,
         stage=StageId.FMRIPREP,
-        participant="sub-001",
+        subject_label="sub-001",
     )
     plan = type(plan)(
         launch=plan.launch,
@@ -217,7 +217,7 @@ def test_stage_dry_run_uses_configured_sge_scheduler() -> None:
             "fmriprep",
             "--config",
             str(config_path),
-            "--participant",
+            "--subject-label",
             "sub-001",
             "--dry-run",
         ],
@@ -249,7 +249,7 @@ def test_stage_run_submits_sge_job_from_config(monkeypatch) -> None:
             "fmriprep",
             "--config",
             str(config_path),
-            "--participant",
+            "--subject-label",
             "sub-001",
         ],
     )
@@ -269,7 +269,7 @@ def test_stage_run_supports_local_scheduler_override() -> None:
             "fmriprep",
             "--config",
             str(config_path),
-            "--participant",
+            "--subject-label",
             "sub-001",
             "--scheduler",
             "local",
@@ -291,10 +291,10 @@ def test_validate_stage_rejects_participant_argument() -> None:
             "validate",
             "--config",
             str(config_path),
-            "--participant",
+            "--subject-label",
             "sub-001",
         ],
     )
 
     assert result.exit_code == 2
-    assert "does not accept --participant" in result.stdout
+    assert "does not accept --subject-label" in result.stdout

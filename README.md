@@ -46,7 +46,7 @@ around them:
 4. **Containers first**
    Docker and Apptainer/Singularity should be first-class backends.
 5. **Subject-level execution and recovery**
-   The natural execution unit is typically `participant × stage`.
+   The natural execution unit is typically `subject × stage`.
 
 ## Non-goals
 
@@ -64,7 +64,9 @@ At the current stage, BIDSFlow is **not** intended to:
 bidsflow init
 bidsflow doctor
 bidsflow config validate
-bidsflow curate
+bidsflow heudiconv bootstrap
+bidsflow heudiconv check
+bidsflow heudiconv run
 bidsflow validate
 bidsflow fmriprep
 bidsflow mriqc
@@ -98,18 +100,25 @@ BIDSFlow/
 │     │  └─ models.py
 │     ├─ core/
 │        └─ stages.py
+│     ├─ stages/
+│     │  ├─ __init__.py
+│     │  └─ heudiconv.py
 │     └─ scheduler/
 │        ├─ __init__.py
 │        ├─ models.py
 │        └─ sge.py
 ├─ docs/
 │  └─ design/
+│     ├─ cli-conventions.md
+│     ├─ config-strategy.md
+│     ├─ heudiconv-workflow.md
 │     ├─ stage-model.md
 │     └─ handoff-contract.md
 ├─ examples/
 │  └─ project.toml
 ├─ tests/
 │  ├─ test_config_load.py
+│  ├─ test_heudiconv.py
 │  └─ test_scheduler_sge.py
 ├─ .codex/
 │  └─ skills/
@@ -124,22 +133,22 @@ BIDSFlow/
 ## Current development status
 
 This scaffold establishes the **project boundary**, **stage model**,
-**handoff contract**, and a **minimal CLI skeleton**. The current SGE
-work also includes config loading plus stage-level `--dry-run` preview
-and submission through the configured scheduler. The next
-implementation milestones should focus on:
+**handoff contract**, a working **HeuDiConv stage**, and a still-evolving
+CLI surface for the remaining stages. The current SGE work also
+includes config loading plus stage-level `--dry-run` preview and
+submission through the configured scheduler. The next implementation
+milestones should focus on:
 
 1. configuration parsing and normalization
 2. stage registry and dependency validation
 3. scheduler runners (SGE first, SLURM later)
 4. backend runners (Docker, Apptainer, native)
-5. stage-specific command builders
+5. stage-specific command builders beyond HeuDiConv
 6. state tracking and resumability
 
-The CLI and configuration refinements discussed for the next
-implementation round are captured in the design docs linked below. Some
-of those docs are intentionally future-facing and may differ from the
-current scaffolded command names.
+The design docs linked below capture both the implemented HeuDiConv
+workflow and the broader conventions intended to guide later stage
+implementation.
 
 ## Design documents
 
@@ -164,9 +173,13 @@ bidsflow --help
 bidsflow init --path .
 bidsflow doctor
 bidsflow config validate --config examples/project.toml
-bidsflow fmriprep \
+bidsflow heudiconv check \
   --config examples/project.toml \
-  --participant sub-001 \
+  --subject-label sub-001 \
+  --session-label ses-01
+bidsflow heudiconv run \
+  --config examples/project.toml \
+  --subject-label sub-001 \
+  --session-label ses-01 \
   --dry-run
-bidsflow curate --config examples/project.toml --participant sub-001
 ```

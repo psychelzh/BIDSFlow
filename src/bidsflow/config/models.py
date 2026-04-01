@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 class ProjectConfig(BaseModel):
     name: str = "BIDSFlow project"
     root: Path = Path(".")
+    sourcedata_root: Path = Path("sourcedata/dicom")
     bids_root: Path = Path("sourcedata/raw")
     derivatives_root: Path = Path("derivatives")
 
@@ -51,9 +52,17 @@ class SchedulerConfig(BaseModel):
 
 class HeudiconvConfig(BaseModel):
     enabled: bool = True
+    executable: str = "heudiconv"
+    docker_image: str | None = None
+    apptainer_image: Path | None = None
+    dicom_dir_template: str | None = None
     heuristic: Path | None = None
     outdir: Path = Path("sourcedata/raw")
     converter: Literal["dcm2niix", "none"] = "dcm2niix"
+    minmeta: bool = False
+    overwrite: bool = False
+    with_prov: bool = False
+    dcmconfig: Path | None = None
 
 
 class FMRIPrepConfig(BaseModel):

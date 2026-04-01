@@ -36,7 +36,7 @@ following minimum fields:
 
 The initial stage inventory is:
 
-1. `curate` — HeuDiConv-backed curation into raw BIDS
+1. `heudiconv` — HeuDiConv-backed curation into raw BIDS
 2. `validate` — dataset or derivative validation
 3. `fmriprep` — functional/anatomical MRI preprocessing
 4. `mriqc` — MRI quality control
@@ -55,7 +55,7 @@ Transforms sourcedata into a BIDS-aware raw dataset.
 
 Representative stage:
 
-- `curate`
+- `heudiconv`
 
 ### 4.2 Validation stage
 
@@ -92,11 +92,11 @@ failure isolation, and rerun behavior.
 Recommended scopes:
 
 - `dataset`: the whole dataset
-- `participant`: one participant at a time
-- `participant/session`: one participant-session unit
+- `subject`: one subject at a time
+- `subject/session`: one subject-session unit
 
 The default operational unit for most heavy stages should be
-`participant` or `participant/session`, because this aligns well with
+`subject` or `subject/session`, because this aligns well with
 containerized neuroimaging workflows and supports partial recovery.
 
 ## 6. State model
@@ -144,7 +144,7 @@ should also verify expected products.
 
 Examples:
 
-- `curate`: raw BIDS root exists and contains required top-level files
+- `heudiconv`: raw BIDS root exists and contains required top-level files
 - `fmriprep`: derivative dataset exists with valid `dataset_description.json`
 - `xcpd`: derivative outputs exist for requested participants and
   requested mode
@@ -166,7 +166,7 @@ Determinants may include:
 
 The initial dependency graph should be simple and explicit:
 
-- `curate -> validate`
+- `heudiconv -> validate`
 - `validate -> fmriprep`
 - `validate -> mriqc`
 - `validate -> qsiprep`
@@ -182,7 +182,7 @@ The CLI should center on stage commands rather than a hidden master
 pipeline. This implies:
 
 - one command per stage
-- explicit participant/session selection
+- explicit subject/session selection
 - explicit config input
 - explicit status inspection
 - future support for planned multi-stage execution that still surfaces

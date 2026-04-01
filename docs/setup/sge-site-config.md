@@ -94,7 +94,7 @@ bidsflow config validate --config examples/project.toml
 ```bash
 bidsflow fmriprep \
   --config examples/project.toml \
-  --participant sub-001 \
+  --subject-label sub-001 \
   --dry-run
 ```
 
@@ -103,7 +103,7 @@ bidsflow fmriprep \
 ```bash
 bidsflow fmriprep \
   --config examples/project.toml \
-  --participant sub-001
+  --subject-label sub-001
 ```
 
 At the current development stage, this submits a lightweight BIDSFlow

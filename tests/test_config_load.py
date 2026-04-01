@@ -11,6 +11,7 @@ def test_load_config_resolves_paths_relative_to_project_root() -> None:
 
     assert config.execution.scheduler == "sge"
     assert config.project.root == repo_root
+    assert config.project.sourcedata_root == repo_root / "sourcedata" / "dicom"
     assert config.execution.logs_root == repo_root / "logs"
     assert config.execution.state_root == repo_root / "state"
     assert config.heudiconv.heuristic == repo_root / "code" / "heuristics" / "heuristic.py"

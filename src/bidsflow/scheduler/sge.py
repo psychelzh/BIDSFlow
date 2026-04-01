@@ -17,6 +17,7 @@ from bidsflow.scheduler.models import (
     SGERequestedResources,
     SubmittedJob,
 )
+from bidsflow.stages.heudiconv import build_run_command, format_session_label, format_subject_label
 
 
 def _slugify(value: str) -> str:
@@ -25,37 +26,65 @@ def _slugify(value: str) -> str:
     return normalized or "job"
 
 
-def build_stage_launch_spec(config_path: Path, config: Config, stage: StageId, participant: str | None) -> LaunchSpec:
+def build_stage_launch_spec(
+    config_path: Path,
+    config: Config,
+    stage: StageId,
+    subject_label: str | None,
+    session_label: str | None = None,
+) -> LaunchSpec:
     log_dir = config.execution.logs_root / "sge" / stage.value
     job_name_parts = ["bidsflow", stage.value]
-    if participant:
-        job_name_parts.append(participant)
+    if subject_label:
+        job_name_parts.append(format_subject_label(subject_label))
+    if session_label:
+        job_name_parts.append(format_session_label(session_label))
     job_name = _slugify("-".join(job_name_parts))
 
     stdout_path = log_dir / f"{job_name}.out"
     stderr_path = log_dir / f"{job_name}.err"
 
-    command = [
-        sys.executable,
-        "-m",
-        "bidsflow.cli",
-        stage.value,
-        "--config",
-        str(config_path.resolve()),
-        "--scheduler",
-        "local",
-    ]
-    if participant:
-        command.extend(["--participant", participant])
+    prepare_paths: tuple[Path, ...] = ()
+    env: dict[str, str] = {}
+    cwd = config.project.root
+
+    if stage == StageId.HEUDICONV:
+        if subject_label is None:
+            raise ValueError("heudiconv launch specs require a subject label.")
+        command_spec = build_run_command(
+            config,
+            subject_label=subject_label,
+            session_label=session_label,
+        )
+        command = list(command_spec.command)
+        cwd = command_spec.cwd
+        env = command_spec.env
+        prepare_paths = (config.heudiconv.outdir.parent,)
+    else:
+        command = [
+            sys.executable,
+            "-m",
+            "bidsflow.cli",
+            stage.value,
+            "--config",
+            str(config_path.resolve()),
+            "--scheduler",
+            "local",
+        ]
+        if subject_label:
+            command.extend(["--subject-label", subject_label])
 
     return LaunchSpec(
         stage=stage,
-        participant=participant,
+        subject_label=subject_label,
+        session_label=session_label,
         job_name=job_name,
-        cwd=config.project.root,
+        cwd=cwd,
         command=tuple(command),
         stdout_path=stdout_path,
         stderr_path=stderr_path,
+        prepare_paths=prepare_paths,
+        env=env,
     )
 
 
@@ -92,10 +121,17 @@ class SGECliScheduler:
         config_path: Path,
         config: Config,
         stage: StageId,
-        participant: str | None,
+        subject_label: str | None,
+        session_label: str | None = None,
         hold_jid: str | None = None,
     ) -> SGEPlannedSubmission:
-        launch = build_stage_launch_spec(config_path=config_path, config=config, stage=stage, participant=participant)
+        launch = build_stage_launch_spec(
+            config_path=config_path,
+            config=config,
+            stage=stage,
+            subject_label=subject_label,
+            session_label=session_label,
+        )
         resources = self.requested_resources()
         script_path = config.execution.state_root / "sge" / f"{launch.job_name}.sh"
         script_text = self.render_script(launch)
@@ -119,6 +155,8 @@ class SGECliScheduler:
             "set -eu",
             f"cd {shlex.quote(str(launch.cwd))}",
         ]
+        for path in launch.prepare_paths:
+            lines.append(f"mkdir -p {shlex.quote(str(path))}")
         for key, value in sorted(launch.env.items()):
             lines.append(f"export {key}={shlex.quote(value)}")
         lines.append(f"exec {shlex.join(launch.command)}")

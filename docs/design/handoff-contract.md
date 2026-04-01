@@ -77,13 +77,13 @@ Examples:
 
 ## 4. Handoff classes in the initial BIDSFlow scope
 
-### 4.1 `curate -> validate`
+### 4.1 `heudiconv -> validate`
 
-The curation stage should hand off:
+The HeuDiConv stage should hand off:
 
 - a raw BIDS root
 - top-level BIDS metadata
-- participant/session coverage summary
+- subject/session coverage summary
 - any known curation warnings
 
 ### 4.2 `validate -> fmriprep`
@@ -91,14 +91,14 @@ The curation stage should hand off:
 Validation should hand off confirmation that:
 
 - the raw dataset is structurally readable
-- necessary functional/anatomical modalities exist for the selected participant(s)
+- necessary functional/anatomical modalities exist for the selected subject(s)
 - no blocking dataset-level errors remain
 
 ### 4.3 `validate -> mriqc`
 
 Validation should hand off confirmation that:
 
-- the selected participant(s) exist in raw BIDS
+- the selected subject(s) exist in raw BIDS
 - raw image files needed for MRIQC are available
 - the intended scope selection is coherent
 
@@ -108,7 +108,7 @@ This is a critical derivative handoff. The contract should verify at least:
 
 - fMRIPrep derivative root exists
 - derivative `dataset_description.json` exists
-- participant coverage matches the intended scope
+- subject coverage matches the intended scope
 - required spaces or file formats for the requested XCP-D mode are available
 - provenance records identify the upstream fMRIPrep run
 
@@ -116,7 +116,7 @@ This is a critical derivative handoff. The contract should verify at least:
 
 Validation should hand off confirmation that:
 
-- diffusion data are present for selected participants
+- diffusion data are present for selected subjects
 - accompanying structural inputs exist if required by the chosen configuration
 - no blocking raw-data structure issues remain
 
@@ -135,7 +135,7 @@ Passing only a directory path is inadequate because downstream stages
 need more than location. They need assurances about:
 
 - semantic compatibility
-- participant/session coverage
+- subject/session coverage
 - modality completeness
 - provenance lineage
 - configuration compatibility

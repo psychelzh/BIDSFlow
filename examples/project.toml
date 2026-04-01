@@ -1,6 +1,7 @@
 [project]
 name = "Example BIDSFlow project"
 root = ".."
+sourcedata_root = "sourcedata/dicom"
 bids_root = "sourcedata/raw"
 derivatives_root = "derivatives"
 
@@ -34,9 +35,14 @@ memory = "mem_free"
 
 [heudiconv]
 enabled = true
+executable = "heudiconv"
+dicom_dir_template = "{bids_subject}/{bids_session}/*/*.dcm"
 heuristic = "code/heuristics/heuristic.py"
 outdir = "sourcedata/raw"
 converter = "dcm2niix"
+minmeta = false
+overwrite = false
+with_prov = false
 
 [fmriprep]
 enabled = true

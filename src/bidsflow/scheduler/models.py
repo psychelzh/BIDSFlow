@@ -9,12 +9,14 @@ from bidsflow.core.stages import StageId
 @dataclass(frozen=True)
 class LaunchSpec:
     stage: StageId
-    participant: str | None
+    subject_label: str | None
+    session_label: str | None
     job_name: str
     cwd: Path
     command: tuple[str, ...]
     stdout_path: Path
     stderr_path: Path
+    prepare_paths: tuple[Path, ...] = ()
     env: dict[str, str] = field(default_factory=dict)
 
 

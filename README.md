@@ -1,5 +1,8 @@
 # BIDSFlow
 
+[![CI](https://github.com/psychelzh/BIDSFlow/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/psychelzh/BIDSFlow/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/github/psychelzh/BIDSFlow/graph/badge.svg?branch=main)](https://app.codecov.io/github/psychelzh/BIDSFlow)
+
 ## A Python CLI Orchestrator for BIDS Apps
 
 BIDSFlow is an extensible Python CLI toolkit for orchestrating staged

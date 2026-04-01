@@ -1,5 +1,8 @@
 # BIDSFlow
 
+[![CI](https://github.com/psychelzh/BIDSFlow/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/psychelzh/BIDSFlow/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/github/psychelzh/BIDSFlow/graph/badge.svg?branch=main)](https://app.codecov.io/github/psychelzh/BIDSFlow)
+
 ## A Python CLI Orchestrator for BIDS Apps
 
 BIDSFlow is an extensible Python CLI toolkit for orchestrating staged
@@ -60,8 +63,9 @@ At the current stage, BIDSFlow is **not** intended to:
 ```bash
 bidsflow init
 bidsflow doctor
-bidsflow validate
+bidsflow config validate
 bidsflow curate
+bidsflow validate
 bidsflow fmriprep
 bidsflow mriqc
 bidsflow xcpd
@@ -90,15 +94,28 @@ BIDSFlow/
 │     ├─ __init__.py
 │     ├─ cli.py
 │     ├─ config/
+│     │  ├─ load.py
 │     │  └─ models.py
-│     └─ core/
+│     ├─ core/
 │        └─ stages.py
+│     └─ scheduler/
+│        ├─ __init__.py
+│        ├─ models.py
+│        └─ sge.py
 ├─ docs/
 │  └─ design/
 │     ├─ stage-model.md
 │     └─ handoff-contract.md
 ├─ examples/
 │  └─ project.toml
+├─ tests/
+│  ├─ test_config_load.py
+│  └─ test_scheduler_sge.py
+├─ .codex/
+│  └─ skills/
+│     ├─ project-config-schema/
+│     ├─ bids-app-command-builder/
+│     └─ cluster-runner-sge/
 └─ .github/
    └─ workflows/
       └─ ci.yml
@@ -107,7 +124,9 @@ BIDSFlow/
 ## Current development status
 
 This scaffold establishes the **project boundary**, **stage model**,
-**handoff contract**, and a **minimal CLI skeleton**. The next
+**handoff contract**, and a **minimal CLI skeleton**. The current SGE
+work also includes config loading plus stage-level `--dry-run` preview
+and submission through the configured scheduler. The next
 implementation milestones should focus on:
 
 1. configuration parsing and normalization
@@ -121,11 +140,13 @@ implementation milestones should focus on:
 
 - [Stage model](docs/design/stage-model.md)
 - [Handoff contract](docs/design/handoff-contract.md)
+- [SGE site configuration](docs/setup/sge-site-config.md)
 
 ## Development
 
 ```bash
 python -m pip install -e .[dev]
+python --version  # Python 3.11+
 bidsflow --help
 ```
 
@@ -134,6 +155,10 @@ bidsflow --help
 ```bash
 bidsflow init --path .
 bidsflow doctor
-bidsflow validate --config examples/project.toml
+bidsflow config validate --config examples/project.toml
+bidsflow fmriprep \
+  --config examples/project.toml \
+  --participant sub-001 \
+  --dry-run
 bidsflow curate --config examples/project.toml --participant sub-001
 ```

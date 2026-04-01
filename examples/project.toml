@@ -1,6 +1,6 @@
 [project]
 name = "Example BIDSFlow project"
-root = "."
+root = ".."
 bids_root = "sourcedata/raw"
 derivatives_root = "derivatives"
 
@@ -13,26 +13,24 @@ state_root = "state"
 max_jobs = 4
 
 [scheduler.sge]
-# Adjust these values to match your site-specific SoGE setup.
-driver = "cli"
-queue = "all.q"
-project = "neuro"
-parallel_environment = "smp"
+# Start from the most conservative settings and confirm site-specific
+# values with:
+#   qconf -sql
+#   qconf -spl
+#   qconf -sc
+queue = "short.q"
 inherit_cwd = true
 export_env = false
 poll_interval_sec = 15
 
 [scheduler.sge.default_resources]
-slots = 8
-walltime = "24:00:00"
-memory = "32G"
+slots = 1
+walltime = "00:10:00"
+memory = "1G"
 
 [scheduler.sge.resource_map]
 walltime = "h_rt"
-memory = "h_vmem"
-
-[scheduler.sge.extra_requests]
-tmp_free = "20G"
+memory = "mem_free"
 
 [heudiconv]
 enabled = true

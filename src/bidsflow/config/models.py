@@ -34,7 +34,6 @@ class SGEDefaultResourcesConfig(BaseModel):
 
 
 class SGEConfig(BaseModel):
-    driver: Literal["cli", "drmaa1"] = "cli"
     queue: str | None = None
     project: str | None = None
     parallel_environment: str | None = None

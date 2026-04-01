@@ -65,7 +65,14 @@ def doctor(
 
 
 @config_app.command("validate")
-def config_validate(config: Path = typer.Option(..., exists=True, help="Path to TOML config.")) -> None:
+def config_validate(
+    config: Path = typer.Option(
+        ...,
+        exists=True,
+        dir_okay=False,
+        help="Path to TOML config.",
+    ),
+) -> None:
     """Validate project configuration and execution settings."""
     loaded = load_config(config)
     table = Table(title="Validated BIDSFlow config")

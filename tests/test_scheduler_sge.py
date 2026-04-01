@@ -196,6 +196,16 @@ def test_config_validate_command_uses_new_namespace() -> None:
     assert "scheduler" in result.stdout
 
 
+def test_config_validate_rejects_directories() -> None:
+    runner = CliRunner()
+    repo_root = Path(__file__).resolve().parents[1]
+
+    result = runner.invoke(app, ["config", "validate", "--config", str(repo_root)])
+
+    assert result.exit_code == 2
+    assert isinstance(result.exception, SystemExit)
+
+
 def test_stage_dry_run_uses_configured_sge_scheduler() -> None:
     runner = CliRunner()
     repo_root = Path(__file__).resolve().parents[1]

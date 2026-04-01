@@ -60,8 +60,9 @@ At the current stage, BIDSFlow is **not** intended to:
 ```bash
 bidsflow init
 bidsflow doctor
-bidsflow validate
+bidsflow config validate
 bidsflow curate
+bidsflow validate
 bidsflow fmriprep
 bidsflow mriqc
 bidsflow xcpd
@@ -121,8 +122,8 @@ BIDSFlow/
 
 This scaffold establishes the **project boundary**, **stage model**,
 **handoff contract**, and a **minimal CLI skeleton**. The current SGE
-work also includes config loading and a qsub planning preview for stage
-execution units. The next
+work also includes config loading plus stage-level `--dry-run` preview
+and submission through the configured scheduler. The next
 implementation milestones should focus on:
 
 1. configuration parsing and normalization
@@ -151,9 +152,10 @@ bidsflow --help
 ```bash
 bidsflow init --path .
 bidsflow doctor
-bidsflow validate --config examples/project.toml
-bidsflow scheduler plan-sge fmriprep \
+bidsflow config validate --config examples/project.toml
+bidsflow fmriprep \
   --config examples/project.toml \
-  --participant sub-001
+  --participant sub-001 \
+  --dry-run
 bidsflow curate --config examples/project.toml --participant sub-001
 ```

@@ -8,7 +8,7 @@ from typer.testing import CliRunner
 from bidsflow.cli import app
 from bidsflow.config.load import load_config
 from bidsflow.core.stages import StageId
-from bidsflow.scheduler.models import SGEAccounting, SGEJobStatus
+from bidsflow.scheduler.models import SubmittedJob
 from bidsflow.scheduler.sge import SGECliScheduler
 
 
@@ -48,6 +48,7 @@ def test_plan_stage_submission_renders_qsub_command_and_script() -> None:
     assert "set -eu" in plan.script_text
     assert "bidsflow.cli fmriprep --config" in plan.script_text
     assert "--participant sub-001" in plan.script_text
+    assert "--scheduler local" in plan.script_text
 
 
 def test_parse_job_id_uses_first_token() -> None:
@@ -107,6 +108,33 @@ def test_parse_qacct_output_extracts_accounting() -> None:
     assert accounting.maxvmem == "31.500G"
 
 
+def test_accounting_returns_none_when_site_accounting_is_unavailable(monkeypatch) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    config_path = repo_root / "examples" / "project.toml"
+    config = load_config(config_path)
+    scheduler = SGECliScheduler(config.scheduler.sge)
+
+    monkeypatch.setattr("bidsflow.scheduler.sge.shutil.which", lambda _: "/usr/bin/mock")
+
+    def fake_run(
+        command: tuple[str, ...],
+        *,
+        check: bool,
+        capture_output: bool,
+        text: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        raise subprocess.CalledProcessError(
+            1,
+            command,
+            output="no jobs running since startup\n",
+            stderr="/var/lib/gridengine/common/accounting: No such file or directory\n",
+        )
+
+    monkeypatch.setattr("bidsflow.scheduler.sge.subprocess.run", fake_run)
+
+    assert scheduler.accounting("12345") is None
+
+
 def test_submit_and_cancel_use_external_commands(monkeypatch, tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     config_path = repo_root / "examples" / "project.toml"
@@ -156,106 +184,107 @@ def test_submit_and_cancel_use_external_commands(monkeypatch, tmp_path: Path) ->
     assert commands[1] == cancel_command
 
 
-def test_scheduler_status_and_accounting_cli_commands(monkeypatch) -> None:
+def test_config_validate_command_uses_new_namespace() -> None:
+    runner = CliRunner()
+    repo_root = Path(__file__).resolve().parents[1]
+    config_path = repo_root / "examples" / "project.toml"
+
+    result = runner.invoke(app, ["config", "validate", "--config", str(config_path)])
+
+    assert result.exit_code == 0
+    assert "Validated BIDSFlow config" in result.stdout
+    assert "scheduler" in result.stdout
+
+
+def test_stage_dry_run_uses_configured_sge_scheduler() -> None:
+    runner = CliRunner()
+    repo_root = Path(__file__).resolve().parents[1]
+    config_path = repo_root / "examples" / "project.toml"
+
+    result = runner.invoke(
+        app,
+        [
+            "fmriprep",
+            "--config",
+            str(config_path),
+            "--participant",
+            "sub-001",
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "SGE stage run preview" in result.stdout
+    assert "qsub" in result.stdout
+    assert "--scheduler local" in result.stdout
+
+
+def test_stage_run_submits_sge_job_from_config(monkeypatch) -> None:
     runner = CliRunner()
     repo_root = Path(__file__).resolve().parents[1]
     config_path = repo_root / "examples" / "project.toml"
 
     monkeypatch.setattr(
-        "bidsflow.scheduler.sge.SGECliScheduler.status",
-        lambda self, job_id: SGEJobStatus(
-            job_id=job_id,
-            name="bidsflow-fmriprep-sub-001",
-            state="r",
-            owner="liang",
-            queue_name="all.q@node01",
-            slots=8,
+        "bidsflow.scheduler.sge.SGECliScheduler.submit",
+        lambda self, plan: SubmittedJob(
+            job_id="12345.cluster.example",
+            script_path=plan.script_path,
+            qsub_command=plan.qsub_command,
         ),
-    )
-    monkeypatch.setattr(
-        "bidsflow.scheduler.sge.SGECliScheduler.accounting",
-        lambda self, job_id: SGEAccounting(
-            job_id=job_id,
-            exit_status="0",
-            failed="0",
-            wallclock="3600",
-            cpu="120.500",
-            maxvmem="31.500G",
-        ),
-    )
-    monkeypatch.setattr(
-        "bidsflow.scheduler.sge.SGECliScheduler.cancel",
-        lambda self, job_id: ("qdel", job_id),
-    )
-
-    status_result = runner.invoke(
-        app,
-        [
-            "scheduler",
-            "status-sge",
-            "--job-id",
-            "12345",
-            "--config",
-            str(config_path),
-        ],
-    )
-    accounting_result = runner.invoke(
-        app,
-        [
-            "scheduler",
-            "accounting-sge",
-            "--job-id",
-            "12345",
-            "--config",
-            str(config_path),
-        ],
-    )
-    cancel_result = runner.invoke(
-        app,
-        [
-            "scheduler",
-            "cancel-sge",
-            "--job-id",
-            "12345",
-            "--config",
-            str(config_path),
-        ],
-    )
-
-    assert status_result.exit_code == 0
-    assert "SGE job status" in status_result.stdout
-    assert "bidsflow-fmriprep-sub-001" in status_result.stdout
-
-    assert accounting_result.exit_code == 0
-    assert "SGE job accounting" in accounting_result.stdout
-    assert "31.500G" in accounting_result.stdout
-
-    assert cancel_result.exit_code == 0
-    assert "qdel 12345" in cancel_result.stdout
-
-
-def test_scheduler_accounting_cli_handles_missing_qacct(monkeypatch) -> None:
-    runner = CliRunner()
-    repo_root = Path(__file__).resolve().parents[1]
-    config_path = repo_root / "examples" / "project.toml"
-
-    monkeypatch.setattr(
-        "bidsflow.scheduler.sge.SGECliScheduler.accounting",
-        lambda self, job_id: None,
     )
 
     result = runner.invoke(
         app,
         [
-            "scheduler",
-            "accounting-sge",
-            "--job-id",
-            "12345",
+            "fmriprep",
             "--config",
             str(config_path),
+            "--participant",
+            "sub-001",
         ],
     )
 
-    assert result.exit_code == 1
-    assert "accounting" in result.stdout
-    assert "enabled yet" in result.stdout
+    assert result.exit_code == 0
+    assert "Submitted SGE job 12345.cluster.example" in result.stdout
+
+
+def test_stage_run_supports_local_scheduler_override() -> None:
+    runner = CliRunner()
+    repo_root = Path(__file__).resolve().parents[1]
+    config_path = repo_root / "examples" / "project.toml"
+
+    result = runner.invoke(
+        app,
+        [
+            "fmriprep",
+            "--config",
+            str(config_path),
+            "--participant",
+            "sub-001",
+            "--scheduler",
+            "local",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "fMRIPrep stage requested" in result.stdout
+
+
+def test_validate_stage_rejects_participant_argument() -> None:
+    runner = CliRunner()
+    repo_root = Path(__file__).resolve().parents[1]
+    config_path = repo_root / "examples" / "project.toml"
+
+    result = runner.invoke(
+        app,
+        [
+            "validate",
+            "--config",
+            str(config_path),
+            "--participant",
+            "sub-001",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "does not accept --participant" in result.stdout

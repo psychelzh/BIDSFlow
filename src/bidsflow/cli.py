@@ -3,6 +3,7 @@ from __future__ import annotations
 import shlex
 import shutil
 from pathlib import Path
+from typing import Literal
 
 import typer
 from rich.console import Console
@@ -12,14 +13,17 @@ from rich.table import Table
 from bidsflow.config.load import load_config
 from bidsflow.config.models import Config
 from bidsflow.core.stages import STAGES, StageId
+from bidsflow.scheduler.models import SubmittedJob
 from bidsflow.scheduler.sge import SGECliScheduler
+
+SchedulerChoice = Literal["local", "sge"]
 
 app = typer.Typer(
     help="BIDSFlow: a staged Python CLI orchestrator for BIDS Apps.",
     no_args_is_help=True,
 )
-scheduler_app = typer.Typer(help="Scheduler planning and submission helpers.")
-app.add_typer(scheduler_app, name="scheduler")
+config_app = typer.Typer(help="Configuration helpers.")
+app.add_typer(config_app, name="config")
 console = Console()
 
 
@@ -61,9 +65,9 @@ def doctor(
     console.print(table)
 
 
-@app.command()
-def validate(config: Path = typer.Option(..., exists=True, help="Path to TOML config.")) -> None:
-    """Validate project configuration and stage inputs."""
+@config_app.command("validate")
+def config_validate(config: Path = typer.Option(..., exists=True, help="Path to TOML config.")) -> None:
+    """Validate project configuration and execution settings."""
     loaded = load_config(config)
     table = Table(title="Validated BIDSFlow config")
     table.add_column("Field")
@@ -80,60 +84,6 @@ def validate(config: Path = typer.Option(..., exists=True, help="Path to TOML co
 
 
 @app.command()
-def curate(
-    config: Path = typer.Option(..., exists=True, help="Path to TOML config."),
-    participant: str | None = typer.Option(None, help="Participant label, e.g. sub-001."),
-) -> None:
-    """Run HeuDiConv-backed curation."""
-    console.print(f"Curate stage requested with config={config} participant={participant}")
-
-
-@app.command()
-def fmriprep(
-    config: Path = typer.Option(..., exists=True, help="Path to TOML config."),
-    participant: str | None = typer.Option(None, help="Participant label, e.g. sub-001."),
-) -> None:
-    """Run fMRIPrep stage."""
-    console.print(f"fMRIPrep stage requested with config={config} participant={participant}")
-
-
-@app.command()
-def mriqc(
-    config: Path = typer.Option(..., exists=True, help="Path to TOML config."),
-    participant: str | None = typer.Option(None, help="Participant label, e.g. sub-001."),
-) -> None:
-    """Run MRIQC stage."""
-    console.print(f"MRIQC stage requested with config={config} participant={participant}")
-
-
-@app.command(name="xcpd")
-def xcpd_cmd(
-    config: Path = typer.Option(..., exists=True, help="Path to TOML config."),
-    participant: str | None = typer.Option(None, help="Participant label, e.g. sub-001."),
-) -> None:
-    """Run XCP-D stage."""
-    console.print(f"XCP-D stage requested with config={config} participant={participant}")
-
-
-@app.command()
-def qsiprep(
-    config: Path = typer.Option(..., exists=True, help="Path to TOML config."),
-    participant: str | None = typer.Option(None, help="Participant label, e.g. sub-001."),
-) -> None:
-    """Run QSIPrep stage."""
-    console.print(f"QSIPrep stage requested with config={config} participant={participant}")
-
-
-@app.command()
-def qsirecon(
-    config: Path = typer.Option(..., exists=True, help="Path to TOML config."),
-    participant: str | None = typer.Option(None, help="Participant label, e.g. sub-001."),
-) -> None:
-    """Run QSIRecon stage."""
-    console.print(f"QSIRecon stage requested with config={config} participant={participant}")
-
-
-@app.command()
 def status() -> None:
     """Display the current stage registry."""
     table = Table(title="BIDSFlow stages")
@@ -147,135 +97,323 @@ def status() -> None:
     console.print(table)
 
 
-def _load_sge_scheduler(config: Path) -> tuple[Config, SGECliScheduler]:
-    loaded = load_config(config)
-    if loaded.execution.scheduler != "sge":
-        raise typer.BadParameter(
-            f"Config scheduler is '{loaded.execution.scheduler}', expected 'sge' for this command."
-        )
-    return loaded, SGECliScheduler(loaded.scheduler.sge)
+def _resolve_scheduler(config: Config, scheduler: SchedulerChoice | None) -> SchedulerChoice:
+    return config.execution.scheduler if scheduler is None else scheduler
 
 
-@scheduler_app.command("plan-sge")
-def scheduler_plan_sge(
-    stage: StageId = typer.Argument(..., help="Stage id to schedule."),
-    config: Path = typer.Option(..., exists=True, dir_okay=False, help="Path to TOML config."),
-    participant: str | None = typer.Option(None, help="Participant label, e.g. sub-001."),
-    hold_jid: str | None = typer.Option(None, help="Optional upstream SGE job id dependency."),
-    submit: bool = typer.Option(
-        False,
-        help="Submit with qsub after rendering the plan instead of only printing it.",
-    ),
+def _ensure_stage_scope(stage: StageId, participant: str | None) -> None:
+    stage_spec = STAGES[stage]
+    if stage_spec.scope == "dataset" and participant is not None:
+        console.print(f"Stage '{stage.value}' has dataset scope and does not accept --participant.")
+        raise typer.Exit(code=2)
+
+
+def _build_local_stage_command(
+    *,
+    stage: StageId,
+    config_path: Path,
+    participant: str | None,
+) -> tuple[str, ...]:
+    command = (
+        "bidsflow",
+        stage.value,
+        "--config",
+        str(config_path.resolve()),
+        "--scheduler",
+        "local",
+    )
+    if participant is None:
+        return command
+    return (*command, "--participant", participant)
+
+
+def _print_local_stage_preview(
+    *,
+    stage: StageId,
+    config_path: Path,
+    participant: str | None,
+    loaded: Config,
 ) -> None:
-    """Preview or submit an SGE qsub plan for a stage execution unit."""
-    loaded, scheduler = _load_sge_scheduler(config)
-    plan = scheduler.plan_stage_submission(
+    command = _build_local_stage_command(
+        stage=stage,
+        config_path=config_path,
+        participant=participant,
+    )
+    table = Table(title="Local stage run preview")
+    table.add_column("Field")
+    table.add_column("Value")
+    table.add_row("stage", stage.value)
+    table.add_row("participant", participant or "-")
+    table.add_row("scheduler", "local")
+    table.add_row("cwd", str(loaded.project.root))
+    table.add_row("command", shlex.join(command))
+    console.print(table)
+
+
+def _run_local_stage(stage: StageId, config_path: Path, participant: str | None) -> None:
+    stage_spec = STAGES[stage]
+    console.print(
+        f"{stage_spec.label} stage requested with config={config_path.resolve()} "
+        f"participant={participant or '-'}"
+    )
+
+
+def _load_sge_scheduler(config: Config) -> SGECliScheduler:
+    return SGECliScheduler(config.scheduler.sge)
+
+
+def _print_sge_stage_preview(
+    *,
+    stage: StageId,
+    participant: str | None,
+    plan_script: str,
+    plan_command: tuple[str, ...],
+    launch_command: tuple[str, ...],
+    script_path: Path,
+    stdout_path: Path,
+    stderr_path: Path,
+) -> None:
+    table = Table(title="SGE stage run preview")
+    table.add_column("Field")
+    table.add_column("Value")
+    table.add_row("stage", stage.value)
+    table.add_row("participant", participant or "-")
+    table.add_row("scheduler", "sge")
+    table.add_row("script path", str(script_path))
+    table.add_row("stdout", str(stdout_path))
+    table.add_row("stderr", str(stderr_path))
+    table.add_row("command", shlex.join(launch_command))
+    table.add_row("qsub", shlex.join(plan_command))
+    console.print(table)
+    console.print(Syntax(plan_script, "sh", theme="ansi_dark", line_numbers=True))
+
+
+def _run_stage(
+    *,
+    stage: StageId,
+    config: Path,
+    participant: str | None,
+    scheduler: SchedulerChoice | None,
+    dry_run: bool,
+    hold_jid: str | None,
+) -> None:
+    loaded = load_config(config)
+    _ensure_stage_scope(stage, participant)
+    effective_scheduler = _resolve_scheduler(loaded, scheduler)
+
+    if effective_scheduler == "local":
+        if hold_jid is not None:
+            console.print("--hold-jid is only supported when --scheduler sge is active.")
+            raise typer.Exit(code=2)
+        if dry_run:
+            _print_local_stage_preview(
+                stage=stage,
+                config_path=config,
+                participant=participant,
+                loaded=loaded,
+            )
+            return
+        _run_local_stage(stage=stage, config_path=config, participant=participant)
+        return
+
+    scheduler_runner = _load_sge_scheduler(loaded)
+    plan = scheduler_runner.plan_stage_submission(
         config_path=config,
         config=loaded,
         stage=stage,
         participant=participant,
         hold_jid=hold_jid,
     )
-
-    table = Table(title="SGE submission plan")
-    table.add_column("Field")
-    table.add_column("Value")
-    table.add_row("stage", stage.value)
-    table.add_row("participant", participant or "-")
-    table.add_row("job name", plan.launch.job_name)
-    table.add_row("script path", str(plan.script_path))
-    table.add_row("stdout", str(plan.launch.stdout_path))
-    table.add_row("stderr", str(plan.launch.stderr_path))
-    table.add_row("qsub", shlex.join(plan.qsub_command))
-    console.print(table)
-    console.print(Syntax(plan.script_text, "bash", theme="ansi_dark", line_numbers=True))
-
-    if submit:
-        submitted = scheduler.submit(plan)
-        console.print(f"Submitted SGE job {submitted.job_id}")
-
-
-@scheduler_app.command("status-sge")
-def scheduler_status_sge(
-    job_id: str = typer.Option(..., help="SGE job id to inspect."),
-    config: Path = typer.Option(..., exists=True, dir_okay=False, help="Path to TOML config."),
-    accounting: bool = typer.Option(
-        False,
-        help="Fall back to qacct if the job is no longer present in qstat.",
-    ),
-) -> None:
-    """Inspect the live or completed status of an SGE job."""
-    _, scheduler = _load_sge_scheduler(config)
-    job_status = scheduler.status(job_id)
-
-    if job_status is not None:
-        table = Table(title="SGE job status")
-        table.add_column("Field")
-        table.add_column("Value")
-        table.add_row("job id", job_status.job_id)
-        table.add_row("name", job_status.name)
-        table.add_row("state", job_status.state)
-        table.add_row("owner", job_status.owner or "-")
-        table.add_row("queue", job_status.queue_name or "-")
-        table.add_row("slots", str(job_status.slots) if job_status.slots is not None else "-")
-        console.print(table)
+    _print_sge_stage_preview(
+        stage=stage,
+        participant=participant,
+        plan_script=plan.script_text,
+        plan_command=plan.qsub_command,
+        launch_command=plan.launch.command,
+        script_path=plan.script_path,
+        stdout_path=plan.launch.stdout_path,
+        stderr_path=plan.launch.stderr_path,
+    )
+    if dry_run:
         return
 
-    if accounting:
-        job_accounting = scheduler.accounting(job_id)
-        if job_accounting is not None:
-            table = Table(title="SGE job accounting")
-            table.add_column("Field")
-            table.add_column("Value")
-            table.add_row("job id", job_accounting.job_id)
-            table.add_row("exit status", job_accounting.exit_status or "-")
-            table.add_row("failed", job_accounting.failed or "-")
-            table.add_row("wallclock", job_accounting.wallclock or "-")
-            table.add_row("cpu", job_accounting.cpu or "-")
-            table.add_row("maxvmem", job_accounting.maxvmem or "-")
-            console.print(table)
-            return
-
-    console.print(f"No SGE status information found for job {job_id}.")
-    raise typer.Exit(code=1)
+    submitted: SubmittedJob = scheduler_runner.submit(plan)
+    console.print(f"Submitted SGE job {submitted.job_id}")
 
 
-@scheduler_app.command("accounting-sge")
-def scheduler_accounting_sge(
-    job_id: str = typer.Option(..., help="SGE job id to inspect via qacct."),
+@app.command()
+def curate(
     config: Path = typer.Option(..., exists=True, dir_okay=False, help="Path to TOML config."),
+    participant: str | None = typer.Option(None, help="Participant label, e.g. sub-001."),
+    scheduler: SchedulerChoice | None = typer.Option(
+        None,
+        help="Override the scheduler declared in the config for this invocation.",
+    ),
+    dry_run: bool = typer.Option(False, help="Preview the stage execution without running it."),
+    hold_jid: str | None = typer.Option(
+        None,
+        help="Optional upstream SGE job id dependency when using --scheduler sge.",
+    ),
 ) -> None:
-    """Inspect qacct information for a completed SGE job."""
-    _, scheduler = _load_sge_scheduler(config)
-    job_accounting = scheduler.accounting(job_id)
-    if job_accounting is None:
-        console.print(
-            f"No qacct information found for job {job_id}. "
-            "Your SGE site may not have accounting enabled yet."
-        )
-        raise typer.Exit(code=1)
-
-    table = Table(title="SGE job accounting")
-    table.add_column("Field")
-    table.add_column("Value")
-    table.add_row("job id", job_accounting.job_id)
-    table.add_row("exit status", job_accounting.exit_status or "-")
-    table.add_row("failed", job_accounting.failed or "-")
-    table.add_row("wallclock", job_accounting.wallclock or "-")
-    table.add_row("cpu", job_accounting.cpu or "-")
-    table.add_row("maxvmem", job_accounting.maxvmem or "-")
-    console.print(table)
+    """Run or preview the HeuDiConv-backed curation stage."""
+    _run_stage(
+        stage=StageId.CURATE,
+        config=config,
+        participant=participant,
+        scheduler=scheduler,
+        dry_run=dry_run,
+        hold_jid=hold_jid,
+    )
 
 
-@scheduler_app.command("cancel-sge")
-def scheduler_cancel_sge(
-    job_id: str = typer.Option(..., help="SGE job id to cancel."),
+@app.command(name="validate")
+def validate_stage(
     config: Path = typer.Option(..., exists=True, dir_okay=False, help="Path to TOML config."),
+    participant: str | None = typer.Option(None, help="Participant label, e.g. sub-001."),
+    scheduler: SchedulerChoice | None = typer.Option(
+        None,
+        help="Override the scheduler declared in the config for this invocation.",
+    ),
+    dry_run: bool = typer.Option(False, help="Preview the stage execution without running it."),
+    hold_jid: str | None = typer.Option(
+        None,
+        help="Optional upstream SGE job id dependency when using --scheduler sge.",
+    ),
 ) -> None:
-    """Cancel an SGE job with qdel."""
-    _, scheduler = _load_sge_scheduler(config)
-    command = scheduler.cancel(job_id)
-    console.print(f"Ran {shlex.join(command)}")
+    """Run or preview the validation stage."""
+    _run_stage(
+        stage=StageId.VALIDATE,
+        config=config,
+        participant=participant,
+        scheduler=scheduler,
+        dry_run=dry_run,
+        hold_jid=hold_jid,
+    )
+
+
+@app.command()
+def fmriprep(
+    config: Path = typer.Option(..., exists=True, dir_okay=False, help="Path to TOML config."),
+    participant: str | None = typer.Option(None, help="Participant label, e.g. sub-001."),
+    scheduler: SchedulerChoice | None = typer.Option(
+        None,
+        help="Override the scheduler declared in the config for this invocation.",
+    ),
+    dry_run: bool = typer.Option(False, help="Preview the stage execution without running it."),
+    hold_jid: str | None = typer.Option(
+        None,
+        help="Optional upstream SGE job id dependency when using --scheduler sge.",
+    ),
+) -> None:
+    """Run or preview the fMRIPrep stage."""
+    _run_stage(
+        stage=StageId.FMRIPREP,
+        config=config,
+        participant=participant,
+        scheduler=scheduler,
+        dry_run=dry_run,
+        hold_jid=hold_jid,
+    )
+
+
+@app.command()
+def mriqc(
+    config: Path = typer.Option(..., exists=True, dir_okay=False, help="Path to TOML config."),
+    participant: str | None = typer.Option(None, help="Participant label, e.g. sub-001."),
+    scheduler: SchedulerChoice | None = typer.Option(
+        None,
+        help="Override the scheduler declared in the config for this invocation.",
+    ),
+    dry_run: bool = typer.Option(False, help="Preview the stage execution without running it."),
+    hold_jid: str | None = typer.Option(
+        None,
+        help="Optional upstream SGE job id dependency when using --scheduler sge.",
+    ),
+) -> None:
+    """Run or preview the MRIQC stage."""
+    _run_stage(
+        stage=StageId.MRIQC,
+        config=config,
+        participant=participant,
+        scheduler=scheduler,
+        dry_run=dry_run,
+        hold_jid=hold_jid,
+    )
+
+
+@app.command(name="xcpd")
+def xcpd_cmd(
+    config: Path = typer.Option(..., exists=True, dir_okay=False, help="Path to TOML config."),
+    participant: str | None = typer.Option(None, help="Participant label, e.g. sub-001."),
+    scheduler: SchedulerChoice | None = typer.Option(
+        None,
+        help="Override the scheduler declared in the config for this invocation.",
+    ),
+    dry_run: bool = typer.Option(False, help="Preview the stage execution without running it."),
+    hold_jid: str | None = typer.Option(
+        None,
+        help="Optional upstream SGE job id dependency when using --scheduler sge.",
+    ),
+) -> None:
+    """Run or preview the XCP-D stage."""
+    _run_stage(
+        stage=StageId.XCPD,
+        config=config,
+        participant=participant,
+        scheduler=scheduler,
+        dry_run=dry_run,
+        hold_jid=hold_jid,
+    )
+
+
+@app.command()
+def qsiprep(
+    config: Path = typer.Option(..., exists=True, dir_okay=False, help="Path to TOML config."),
+    participant: str | None = typer.Option(None, help="Participant label, e.g. sub-001."),
+    scheduler: SchedulerChoice | None = typer.Option(
+        None,
+        help="Override the scheduler declared in the config for this invocation.",
+    ),
+    dry_run: bool = typer.Option(False, help="Preview the stage execution without running it."),
+    hold_jid: str | None = typer.Option(
+        None,
+        help="Optional upstream SGE job id dependency when using --scheduler sge.",
+    ),
+) -> None:
+    """Run or preview the QSIPrep stage."""
+    _run_stage(
+        stage=StageId.QSIPREP,
+        config=config,
+        participant=participant,
+        scheduler=scheduler,
+        dry_run=dry_run,
+        hold_jid=hold_jid,
+    )
+
+
+@app.command()
+def qsirecon(
+    config: Path = typer.Option(..., exists=True, dir_okay=False, help="Path to TOML config."),
+    participant: str | None = typer.Option(None, help="Participant label, e.g. sub-001."),
+    scheduler: SchedulerChoice | None = typer.Option(
+        None,
+        help="Override the scheduler declared in the config for this invocation.",
+    ),
+    dry_run: bool = typer.Option(False, help="Preview the stage execution without running it."),
+    hold_jid: str | None = typer.Option(
+        None,
+        help="Optional upstream SGE job id dependency when using --scheduler sge.",
+    ),
+) -> None:
+    """Run or preview the QSIRecon stage."""
+    _run_stage(
+        stage=StageId.QSIRECON,
+        config=config,
+        participant=participant,
+        scheduler=scheduler,
+        dry_run=dry_run,
+        hold_jid=hold_jid,
+    )
 
 
 if __name__ == "__main__":

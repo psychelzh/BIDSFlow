@@ -42,6 +42,8 @@ def build_stage_launch_spec(config_path: Path, config: Config, stage: StageId, p
         stage.value,
         "--config",
         str(config_path.resolve()),
+        "--scheduler",
+        "local",
     ]
     if participant:
         command.extend(["--participant", participant])

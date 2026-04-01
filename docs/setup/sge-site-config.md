@@ -6,8 +6,9 @@ Use this guide to adapt BIDSFlow's SGE settings to a specific cluster
 site, especially for Debian-packaged Son of Grid Engine deployments.
 
 The example config in `examples/project.toml` is intentionally
-conservative. It is meant to help you submit a lightweight smoke-test
-job first, then layer on site-specific queue, PE, and resource settings.
+conservative. It is meant to help you preview and submit a lightweight
+placeholder stage first, then layer on site-specific queue, PE, and
+resource settings.
 
 ## Inspect The Site
 
@@ -86,24 +87,24 @@ For a conservative first pass, prefer `mem_free` over `h_vmem`.
 1. Validate the config:
 
 ```bash
-bidsflow validate --config examples/project.toml
+bidsflow config validate --config examples/project.toml
 ```
 
-1. Preview the SGE submission plan:
+1. Preview the stage invocation:
 
 ```bash
-bidsflow scheduler plan-sge fmriprep \
+bidsflow fmriprep \
   --config examples/project.toml \
-  --participant sub-001
+  --participant sub-001 \
+  --dry-run
 ```
 
 1. Submit the lightweight placeholder job:
 
 ```bash
-bidsflow scheduler plan-sge fmriprep \
+bidsflow fmriprep \
   --config examples/project.toml \
-  --participant sub-001 \
-  --submit
+  --participant sub-001
 ```
 
 At the current development stage, this submits a lightweight BIDSFlow

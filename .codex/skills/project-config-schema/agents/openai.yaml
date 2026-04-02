@@ -1,4 +1,4 @@
 interface:
-  display_name: "Project Config Schema"
-  short_description: "Keep project TOML and models aligned"
-  default_prompt: "Use $project-config-schema to update the project config schema and keep TOML, defaults, and Pydantic models aligned."
+  display_name: "Project Config Shape"
+  short_description: "Keep scaffold and config terminology aligned"
+  default_prompt: "Use $project-config-schema to update the BIDSFlow config shape and keep scaffold expectations, terminology, and future schema design aligned."

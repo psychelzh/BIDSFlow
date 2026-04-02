@@ -2,210 +2,125 @@
 
 ## 1. Purpose
 
-BIDSFlow should present itself as a **workflow logistics tool**, not as
-a branded launcher for individual BIDS Apps.
+BIDSFlow should present a CLI that is organized around **tasks** rather
+than around a grab bag of app names.
 
-The CLI should therefore describe:
+The public question should be:
 
-- what logistics task the user wants to perform
-- what dataset scope the task applies to
-- what internal stage or workflow contract is affected
+- what do you want to do
+- and, if needed, which target do you want to do it to
 
-It should not require the user to think in terms of native tool names
-unless that tool identity is scientifically meaningful.
+## 2. Command Grammar
 
-## 2. Problem with tool-first commands
+The intended public grammar is:
 
-A tool-first surface such as:
-
-- `bidsflow heudiconv`
-- `bidsflow fmriprep`
-- `bidsflow qsiprep`
-
-creates several problems:
-
-1. It makes BIDSFlow appear to be a thin wrapper around external CLIs.
-2. It mixes BIDSFlow logistics semantics with native tool semantics.
-3. It encourages direct exposure of tool-specific flags.
-4. It weakens the package's own identity and long-term API stability.
-5. It makes command growth follow vendor tools rather than workflow
-   responsibilities.
-
-For BIDSFlow, these are the wrong incentives.
-
-## 3. Principle
-
-Top-level commands should describe **BIDSFlow-owned logistics tasks**.
+```text
+bidsflow <task> [target] [options]
+```
 
 Examples:
 
-- initialize a project
-- inspect execution prerequisites
-- bootstrap source interpretation
-- discover source units
-- create normalized links
-- check readiness for a stage
-- run a stage
-- inspect status
+```bash
+bidsflow init .
+bidsflow check curate
+bidsflow run fmriprep
+bidsflow status xcpd
+```
 
-In this model:
-
-- stages remain important internally
-- tools remain important internally
-- neither needs to define the top-level public CLI
-
-## 4. Recommended command surface
-
-Recommended near-term command structure:
+The main exception is `source`, which remains a task namespace with its
+own subcommands:
 
 ```bash
-bidsflow init
-bidsflow doctor
-bidsflow config validate
-
 bidsflow source bootstrap
 bidsflow source scan
 bidsflow source link
-
-bidsflow check --stage curate
-bidsflow run --stage curate
-bidsflow status --stage curate
 ```
 
-Possible later additions:
+## 3. Top-level Commands
 
-- `bidsflow report`
-- `bidsflow watch`
-- `bidsflow cancel`
+The initial top-level command set should stay small:
 
-## 5. Meaning of each command family
+- `init`
+- `doctor`
+- `config`
+- `source`
+- `check`
+- `run`
+- `status`
 
-### 5.1 `source`
+This is enough to express project setup, source logistics, readiness
+checks, execution, and state inspection.
 
-`source` owns source-data logistics before a formal stage run.
+## 4. Why Targets Should Not Be Top-level Commands
 
-Suggested responsibilities:
+A CLI such as:
 
-- `bootstrap`
-  Generate starter interpretation materials from a representative input
-  sample.
-- `scan`
-  Discover raw source units and emit a manifest-like inventory.
-- `link`
-  Create normalized project-facing source views such as symlink trees.
+- `bidsflow fmriprep`
+- `bidsflow mriqc`
+- `bidsflow qsiprep`
 
-This is a better public surface for HeuDiConv-backed source work than
-publishing `heudiconv` directly as a top-level command.
+pushes the product back toward tool-first branding.
 
-### 5.2 `check`
+That is the wrong center of gravity for BIDSFlow because:
 
-`check` answers whether a stage is ready to run.
+1. it makes the package look like a wrapper bundle
+2. it weakens BIDSFlow's own public language
+3. it encourages exposure of tool-native flags
+4. it makes non-app targets such as `curate` feel second-class
 
-Suggested dimensions:
+Targets should be visible, but they should sit under tasks such as
+`check`, `run`, and `status`.
 
-- structural readiness
-- semantic readiness
-- backend readiness
-- upstream handoff readiness
+## 5. How BIDS Apps Stay Visible
 
-### 5.3 `run`
+App-backed targets do not need to disappear.
 
-`run` starts a stage execution using the configured backend and
-scheduler.
+They can appear directly as target names:
 
-It does not promise local execution specifically.
+- `bidsflow run fmriprep`
+- `bidsflow run mriqc`
+- `bidsflow run xcpd`
 
-### 5.4 `status`
+This is enough to keep the intended app explicit without letting app
+names define the entire CLI tree.
 
-`status` reports state for a stage, scope unit, or workflow artifact.
+An `app` namespace can still exist later for inspection or metadata,
+but it is not needed for the main execution path.
 
-## 6. Public parameters should remain logistics-oriented
+## 6. Parameter Style
 
-The public CLI should expose BIDSFlow semantics, not native BIDS App
-flags.
+Public parameters should remain logistics-oriented.
 
-Good public parameter categories:
+Good public parameters:
 
-- scope selection
-  - `--subject-label`
-  - `--session-label`
-  - `--all`
-- source logistics
-  - sample path
-  - source template
-  - manifest path
-  - links root
-- execution logistics
-  - `--config`
-  - `--backend`
-  - `--scheduler`
-  - `--dry-run`
-- project artifacts
-  - heuristic path
-  - output roots
-  - logs or state roots
+- `--config`
+- `--subject-label`
+- `--session-label`
+- `--all`
+- `--dry-run`
+- source paths, manifest paths, and output roots
 
-Bad public parameter categories:
+Avoid exposing raw native tool flags directly in the public surface.
 
-- native HeuDiConv flags such as `-d`, `-s`, `-ss`, `-f`
-- native fMRIPrep or XCP-D flags
-- direct mirrors of tool-specific converter options
+Tool-specific details belong in adapters and configuration, not in the
+top-level BIDSFlow CLI.
 
-If BIDSFlow only provides logistics, then the public CLI should only
-describe logistics.
-
-## 7. Internal layering
-
-The task-first CLI does not remove stages or adapters. It clarifies
-their roles.
-
-Recommended internal layering:
-
-1. CLI task commands
-2. task request objects
-3. stage workflow services
-4. tool adapters
-5. backend wrappers
-6. scheduler submission
-
-Important boundary:
-
-- CLI talks in BIDSFlow semantics
-- adapters talk in tool semantics
-
-## 8. Example workflow
-
-An intended source-to-curation flow might look like:
+## 7. Example Flow
 
 ```bash
+bidsflow init .
 bidsflow source bootstrap --sample-path /data/source/sub041_session1
 bidsflow source scan --source-template "/data/source/TJNU_WQ_CAMP_SUB{subject}_*_{session}"
 bidsflow source link --manifest code/source-manifest.tsv
-bidsflow check --stage curate --subject-label 041 --session-label 01
-bidsflow run --stage curate --subject-label 041 --session-label 01
+bidsflow check curate --subject-label 041 --session-label 01
+bidsflow run curate --subject-label 041 --session-label 01
+bidsflow run fmriprep --subject-label 041
+bidsflow status fmriprep
 ```
 
-The underlying adapter may use HeuDiConv, but the user is interacting
-with BIDSFlow's workflow concepts rather than with HeuDiConv's native
-CLI.
+## 8. Summary
 
-## 9. Consequences for future implementation
+BIDSFlow should own the verbs.
 
-This direction implies:
-
-1. The current stage-named public CLI should be treated as transitional.
-2. HeuDiConv should move behind `source` tasks and internal curation
-   adapters.
-3. Future stages should be selected through task semantics such as
-   `check` and `run`, not by promoting every external tool to a top-level
-   command.
-4. Configuration should prefer BIDSFlow concepts over copied native tool
-   flags.
-
-## 10. Summary
-
-BIDSFlow should own the user-facing workflow language.
-
-Top-level commands should describe logistics tasks, while stage and tool
-details remain explicit but internal. This keeps the package simpler,
-more stable, and more obviously distinct from the tools it orchestrates.
+Targets, including BIDS Apps, should remain explicit as nouns under
+those verbs.

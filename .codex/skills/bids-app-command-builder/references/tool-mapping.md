@@ -2,29 +2,32 @@
 
 ## Scope
 
-Use this reference when turning BIDSFlow configuration and stage intent
+Use this reference when turning BIDSFlow configuration and target intent
 into runnable commands.
 
 ## Layer Boundaries
 
 Keep these concerns separate:
 
-- stage contract and required inputs
+- target contract and required inputs
 - tool-specific flags
 - backend wrapping
 - scheduler submission
 
 The command builder should own the middle two layers only.
 
-## Stage Anchors
+## Target Anchors
 
 - `curate`: HeuDiConv-backed curation into raw BIDS
 - `validate`: validation and preflight logic, not a heavy executor
 - `fmriprep`: preprocessing from raw BIDS to derivatives
+- `mriqc`: raw-data quality evaluation target
 - `xcpd`: downstream derivative processing from compatible fMRIPrep
   outputs
+- `qsiprep`: diffusion preprocessing into derivative outputs
+- `qsirecon`: reconstruction from compatible QSIPrep outputs
 
-Future stages should follow the same pattern.
+Future targets should follow the same pattern.
 
 ## Backend Rules
 

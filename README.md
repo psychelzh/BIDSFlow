@@ -1,167 +1,91 @@
 # BIDSFlow
 
-[![CI](https://github.com/psychelzh/BIDSFlow/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/psychelzh/BIDSFlow/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/github/psychelzh/BIDSFlow/graph/badge.svg?branch=main)](https://app.codecov.io/github/psychelzh/BIDSFlow)
+## Design Reset
 
-## A Python CLI Orchestrator for BIDS Apps
+BIDSFlow is being reset around a **task-first, target-oriented** command
+line model for BIDS workflow logistics.
 
-BIDSFlow is an extensible Python CLI toolkit for orchestrating staged
-neuroimaging workflows across BIDS Apps. It is designed to support
-**stepwise execution**, **execution logistics**, and **reliable handoffs**
-between workflow stages, rather than hiding everything behind a single
-black-box command.
+The historical implementation and stage-first design notes were removed
+on purpose from this branch because they encoded the wrong abstraction
+boundary. The repository currently serves as a design workspace for the
+next implementation pass.
 
-The initial focus is on the following tools:
+## Core Direction
 
-- HeuDiConv
-- fMRIPrep
-- MRIQC
-- XCP-D
-- QSIPrep
-- QSIRecon
+- Users should express **what task** they want to perform first.
+- Tasks should operate on **targets** such as `curate`, `validate`,
+  `fmriprep`, or `xcpd`.
+- Some targets are backed by BIDS Apps, while others are BIDSFlow-owned
+  workflow targets.
+- Adapters, backends, and schedulers should stay behind the public CLI
+  surface.
 
-## Positioning
-
-BIDSFlow is **not** intended to reimplement the scientific logic of
-existing BIDS Apps. Instead, it is intended to provide the infrastructure
-around them:
-
-- task-oriented CLI execution
-- configuration management
-- container/backend abstraction
-- cluster scheduler abstraction
-- state tracking and resumability
-- stage-to-stage contract validation
-- path and derivative organization
-- provenance capture and auditability
-
-## Design principles
-
-1. **Staged orchestration, not one-shot automation**
-   Users should run and inspect each stage explicitly.
-2. **BIDS as the primary data contract**
-   Raw and derivative datasets must remain BIDS-aware.
-3. **Reliable handoffs between stages**
-   Downstream stages should receive validated inputs and explicit metadata.
-4. **Containers first**
-   Docker and Apptainer/Singularity should be first-class backends.
-5. **Subject-level execution and recovery**
-   The natural execution unit is typically `participant × stage`.
-
-## Non-goals
-
-At the current stage, BIDSFlow is **not** intended to:
-
-- provide a single default command that silently runs the whole pipeline
-  end-to-end
-- replace the native CLIs of HeuDiConv, fMRIPrep, MRIQC, XCP-D, QSIPrep,
-  or QSIRecon
-- conceal intermediate outputs, logs, or failure states
-
-## Planned command structure
+## Proposed CLI Surface
 
 ```bash
-bidsflow init
+bidsflow init [DIRECTORY]
 bidsflow doctor
-bidsflow config validate
+bidsflow config validate --config project.toml
 
 bidsflow source bootstrap
 bidsflow source scan
 bidsflow source link
 
-bidsflow check --stage curate
-bidsflow run --stage curate
-bidsflow status --stage curate
+bidsflow check <target>
+bidsflow run <target>
+bidsflow status [<target>]
 ```
 
-The underlying stages remain explicit and important, but they need not
-define the top-level command names.
+Representative targets:
 
-Initial cluster support should target SGE-style schedulers, with
-Debian-packaged Son of Grid Engine as the first concrete environment.
-Scheduler selection should remain separate from native, Docker, or
-Apptainer execution backends.
+- `curate`
+- `validate`
+- `fmriprep`
+- `mriqc`
+- `xcpd`
+- `qsiprep`
+- `qsirecon`
 
-## Repository layout
+This keeps BIDSFlow's public language centered on workflow logistics,
+while still allowing app-backed targets to be explicit and visible.
 
-```text
-BIDSFlow/
-├─ README.md
-├─ pyproject.toml
-├─ .gitignore
-├─ src/
-│  └─ bidsflow/
-│     ├─ __init__.py
-│     ├─ cli.py
-│     ├─ config/
-│     │  ├─ load.py
-│     │  └─ models.py
-│     ├─ core/
-│        └─ stages.py
-│     └─ scheduler/
-│        ├─ __init__.py
-│        ├─ models.py
-│        └─ sge.py
-├─ docs/
-│  └─ design/
-│     ├─ stage-model.md
-│     └─ handoff-contract.md
-├─ examples/
-│  └─ project.toml
-├─ tests/
-│  ├─ test_config_load.py
-│  └─ test_scheduler_sge.py
-├─ .codex/
-│  └─ skills/
-│     ├─ project-config-schema/
-│     ├─ bids-app-command-builder/
-│     └─ cluster-runner-sge/
-└─ .github/
-   └─ workflows/
-      └─ ci.yml
-```
+## `init` Direction
 
-## Current development status
+`bidsflow init` is intended to stay small.
 
-This scaffold establishes the **project boundary**, **stage model**,
-**handoff contract**, and a **minimal CLI skeleton**. The next
-implementation milestones should focus on:
+It should:
 
-1. configuration parsing and normalization
-2. stage registry and dependency validation
-3. scheduler runners (SGE first, SLURM later)
-4. backend runners (Docker, Apptainer, native)
-5. task-first CLI restructuring
-6. state tracking and resumability
+- accept a positional target directory with `.` as the default
+- create a minimal project scaffold
+- write a minimal editable config file
 
-## Design documents
+It should not:
 
-- [Stage model](docs/design/stage-model.md)
-- [Handoff contract](docs/design/handoff-contract.md)
+- choose backend defaults
+- choose scheduler defaults
+- generate tool-specific configuration
+- perform source scanning or execution
+
+The initial option set should stay narrow: `--name`, `--config-name`,
+and `--force` are enough for the first pass.
+
+## Repository State
+
+- `docs/` contains the active design.
+- The previous implementation under `src/` and `tests/` has been
+  intentionally removed.
+
+## Active Design Docs
+
+- [Target model](docs/design/target-model.md)
 - [Task-first CLI](docs/design/task-first-cli.md)
-- [SGE site configuration](docs/setup/sge-site-config.md)
+- [Project initialization](docs/design/project-init.md)
+- [Handoff contract](docs/design/handoff-contract.md)
 
-## Development
+## Next Implementation Milestones
 
-```bash
-python -m pip install -e .[dev]
-python --version  # Python 3.11+
-bidsflow --help
-```
-
-## Example
-
-```bash
-bidsflow init --path .
-bidsflow doctor
-bidsflow config validate --config examples/project.toml
-bidsflow check \
-  --stage curate \
-  --config examples/project.toml \
-  --subject-label sub-001
-bidsflow run \
-  --stage curate \
-  --config examples/project.toml \
-  --subject-label sub-001 \
-  --dry-run
-```
+1. Implement `init` as a minimal scaffold command.
+2. Define a target registry and request model.
+3. Rebuild `check`, `run`, and `status` around targets.
+4. Add adapters, backends, and schedulers only after the public model
+   stabilizes.

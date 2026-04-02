@@ -1,21 +1,21 @@
 ---
 name: project-config-schema
-description: Maintain the BIDSFlow project configuration schema across `src/bidsflow/config/models.py`, `examples/project.toml`, CLI-facing defaults, and related docs. Use when adding, renaming, deprecating, or validating config keys; introducing backend or stage settings; normalizing defaults; or keeping config examples aligned with code.
+description: Maintain the BIDSFlow project configuration shape across design docs, scaffold expectations, and future implementation. Use when defining or renaming config concepts for `bidsflow init`, target-aware execution requests, path naming, or future schema fields, and when keeping config terminology aligned with the task-first CLI.
 ---
 
 # Project Config Schema
 
-Keep the user-facing TOML shape, the internal Pydantic models, and the
+Keep the user-facing TOML shape, future implementation hooks, and
 documented semantics aligned.
 
 ## Quick Start
 
 Start by reading these files:
 
-- `src/bidsflow/config/models.py`
-- `examples/project.toml`
 - `README.md`
-- `docs/design/stage-model.md`
+- `docs/design/project-init.md`
+- `docs/design/task-first-cli.md`
+- `docs/design/target-model.md`
 - `docs/design/handoff-contract.md`
 
 Read `references/schema-rules.md` before making non-trivial schema changes.
@@ -24,16 +24,18 @@ Read `references/schema-rules.md` before making non-trivial schema changes.
 
 Apply schema changes across every affected surface in the same change:
 
-- Pydantic model fields and defaults
-- example configuration files
-- code that consumes the settings
+- design docs that define the public shape
+- scaffold examples embedded in docs
+- future model fields and defaults
+- future code that consumes the settings
 - docs that define the meaning of the setting
 
 Keep the schema explicit and typed:
 
-- prefer `Path`, `Literal`, and bounded numeric fields over free-form strings
-- group settings by concern: project, execution, then per-stage sections
-- keep stage-specific settings inside the matching stage block
+- prefer explicit filesystem and scope names over vague toggles
+- keep `init` output minimal in the first implementation
+- group future settings by stable workflow concern instead of leaking tool internals
+- prefer target-aware terminology over stage-first terminology
 - avoid adding loosely typed `dict` escape hatches unless there is no
   stable alternative
 
@@ -52,32 +54,29 @@ Classify the change before editing:
 - additive key
 - rename or deprecation
 - default change
-- backend-specific addition
-- stage-specific addition
+- init scaffold change
+- target-specific addition
 
 Then make the change in this order:
 
-1. Update the root and nested Pydantic models.
-2. Update example TOML files to show the intended public shape.
-3. Update consuming code if any defaults or names changed.
-4. Update docs if the meaning, workflow, or stage contract changed.
-5. Run the validation commands listed below.
+1. Update the design docs that define the public shape.
+2. Update any scaffold snippets or examples in the docs.
+3. Update implementation only if that implementation exists.
+4. Check that the naming still matches task and target terminology.
+5. Run the validation checks listed below when applicable.
 
 ## Validation
 
-Run the narrowest checks that cover the change:
+During the current docs-first phase, validate terminology and public
+shape consistency across:
 
-```bash
-python -m mypy src
-python -m ruff check .
-```
+- `README.md`
+- `docs/design/project-init.md`
+- `docs/design/task-first-cli.md`
+- `docs/design/target-model.md`
 
-If the change affects CLI behavior or default rendering, also run:
-
-```bash
-bidsflow --help
-bidsflow status
-```
+When implementation returns, run the narrowest code and CLI checks that
+cover the affected schema surface.
 
 ## References
 

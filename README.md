@@ -26,7 +26,7 @@ BIDSFlow is **not** intended to reimplement the scientific logic of
 existing BIDS Apps. Instead, it is intended to provide the infrastructure
 around them:
 
-- stage-oriented CLI execution
+- task-oriented CLI execution
 - configuration management
 - container/backend abstraction
 - cluster scheduler abstraction
@@ -64,18 +64,18 @@ At the current stage, BIDSFlow is **not** intended to:
 bidsflow init
 bidsflow doctor
 bidsflow config validate
-bidsflow curate
-bidsflow validate
-bidsflow fmriprep
-bidsflow mriqc
-bidsflow xcpd
-bidsflow qsiprep
-bidsflow qsirecon
-bidsflow status
+
+bidsflow source bootstrap
+bidsflow source scan
+bidsflow source link
+
+bidsflow check --stage curate
+bidsflow run --stage curate
+bidsflow status --stage curate
 ```
 
-A future `plan` or `run` command may coordinate a declared sequence of
-stages, but it should remain explicit and inspectable rather than opaque.
+The underlying stages remain explicit and important, but they need not
+define the top-level command names.
 
 Initial cluster support should target SGE-style schedulers, with
 Debian-packaged Son of Grid Engine as the first concrete environment.
@@ -124,22 +124,21 @@ BIDSFlow/
 ## Current development status
 
 This scaffold establishes the **project boundary**, **stage model**,
-**handoff contract**, and a **minimal CLI skeleton**. The current SGE
-work also includes config loading plus stage-level `--dry-run` preview
-and submission through the configured scheduler. The next
+**handoff contract**, and a **minimal CLI skeleton**. The next
 implementation milestones should focus on:
 
 1. configuration parsing and normalization
 2. stage registry and dependency validation
 3. scheduler runners (SGE first, SLURM later)
 4. backend runners (Docker, Apptainer, native)
-5. stage-specific command builders
+5. task-first CLI restructuring
 6. state tracking and resumability
 
 ## Design documents
 
 - [Stage model](docs/design/stage-model.md)
 - [Handoff contract](docs/design/handoff-contract.md)
+- [Task-first CLI](docs/design/task-first-cli.md)
 - [SGE site configuration](docs/setup/sge-site-config.md)
 
 ## Development
@@ -156,9 +155,13 @@ bidsflow --help
 bidsflow init --path .
 bidsflow doctor
 bidsflow config validate --config examples/project.toml
-bidsflow fmriprep \
+bidsflow check \
+  --stage curate \
   --config examples/project.toml \
-  --participant sub-001 \
+  --subject-label sub-001
+bidsflow run \
+  --stage curate \
+  --config examples/project.toml \
+  --subject-label sub-001 \
   --dry-run
-bidsflow curate --config examples/project.toml --participant sub-001
 ```

@@ -178,13 +178,17 @@ derivative datasets, depending on context.
 
 ## 11. Consequences for CLI design
 
-The CLI should center on stage commands rather than a hidden master
-pipeline. This implies:
+The stage model should remain central internally, but the public CLI
+does not need to expose one top-level command per stage.
 
-- one command per stage
-- explicit participant/session selection
+Instead, BIDSFlow should prefer task-first commands that operate on
+stages as explicit targets. This implies:
+
+- top-level commands for logistics tasks such as `source`, `check`,
+  `run`, and `status`
+- explicit subject/session selection where relevant
 - explicit config input
-- explicit status inspection
+- explicit stage targeting when a task acts on a specific stage
 - future support for planned multi-stage execution that still surfaces
   intermediate boundaries
 

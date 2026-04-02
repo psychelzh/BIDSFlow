@@ -25,7 +25,7 @@ next implementation pass.
 ```bash
 bidsflow init [DIRECTORY]
 bidsflow doctor
-bidsflow config validate --config project.toml
+bidsflow config validate --config bidsflow.toml
 
 bidsflow source bootstrap
 bidsflow source scan
@@ -57,7 +57,7 @@ It should:
 
 - accept a positional target directory with `.` as the default
 - create a minimal project scaffold
-- write a minimal editable config file
+- write a minimal editable config file with short review comments
 
 It should not:
 
@@ -72,20 +72,22 @@ and `--force` are enough for the first pass.
 ## Repository State
 
 - `docs/` contains the active design.
-- The previous implementation under `src/` and `tests/` has been
-  intentionally removed.
+- `src/` and `tests/` now contain only the first rebuilt command:
+  `bidsflow init`.
+- The rest of the historical implementation remains intentionally
+  removed until the target model is rebuilt cleanly.
 
 ## Active Design Docs
 
 - [Target model](docs/design/target-model.md)
 - [Task-first CLI](docs/design/task-first-cli.md)
 - [Project initialization](docs/design/project-init.md)
+- [Config reference](docs/design/config.md)
 - [Handoff contract](docs/design/handoff-contract.md)
 
 ## Next Implementation Milestones
 
-1. Implement `init` as a minimal scaffold command.
-2. Define a target registry and request model.
-3. Rebuild `check`, `run`, and `status` around targets.
-4. Add adapters, backends, and schedulers only after the public model
+1. Define a target registry and request model.
+2. Rebuild `check`, `run`, and `status` around targets.
+3. Add adapters, backends, and schedulers only after the public model
    stabilizes.

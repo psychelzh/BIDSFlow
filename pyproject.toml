@@ -5,9 +5,26 @@ build-backend = "hatchling.build"
 [project]
 name = "bidsflow"
 version = "0.1.0a0"
-description = "Design documents for a task-first, target-oriented BIDS workflow CLI"
+description = "A task-first, target-oriented CLI for BIDS workflow logistics"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
   { name = "Liang Zhang" }
 ]
+dependencies = [
+  "typer>=0.12",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+]
+
+[project.scripts]
+bidsflow = "bidsflow.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bidsflow"]
+
+[tool.pytest.ini_options]
+addopts = "-q"

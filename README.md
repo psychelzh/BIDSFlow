@@ -32,7 +32,7 @@ bidsflow status [<target>]
 
 Representative managed work:
 
-- HeuDiConv bootstrap and convert steps
+- HeuDiConv skeleton and convert steps
 - validation and app-backed runs that consume recorded artifacts
 - template-backed jobs such as `fmriprep`, `mriqc`, and `xcpd`
 
@@ -48,20 +48,20 @@ deferred from the first rebuilt CLI.
 
 ```bash
 bidsflow init [DIRECTORY]
-bidsflow heudiconv bootstrap <sample-path>... [--config bidsflow.toml] [--reset] [--dry-run]
+bidsflow heudiconv skeleton <sample-path>... [--config bidsflow.toml] [--reset] [--dry-run]
 ```
 
 The managed `heudiconv convert` step is stubbed in the CLI but not yet
 implemented.
 
-Current bootstrap behavior:
+Current skeleton behavior:
 
-- a single sample directory is bootstrapped with one temporary subject
-  label
+- a single sample directory is processed as one skeleton unit with one
+  temporary subject label
 - multiple sample directories are split into separate single-directory
-  bootstrap units and treated as temporary sessions of one placeholder
+  skeleton units and treated as temporary sessions of one placeholder
   subject
-- bootstrap uses an isolated work root under `state/heudiconv/` instead
+- skeleton uses an isolated work root under `state/heudiconv/` instead
   of writing into the real raw BIDS output directory
 
 ## `init` Direction
@@ -89,7 +89,7 @@ The initial option set should stay narrow: `--name`, `--config-name`,
 
 - `docs/` contains the active design.
 - `src/` and `tests/` now contain `bidsflow init` and the first managed
-  `bidsflow heudiconv bootstrap` slice.
+  `bidsflow heudiconv skeleton` slice.
 - The rest of the historical implementation remains intentionally
   removed until the execution model is rebuilt cleanly.
 
@@ -105,8 +105,9 @@ The initial option set should stay narrow: `--name`, `--config-name`,
 ## Next Implementation Milestones
 
 1. Define artifact records, run records, and managed workflow state.
-2. Rebuild HeuDiConv around explicit bootstrap and convert steps.
+2. Rebuild HeuDiConv around explicit skeleton and convert steps.
 3. Rebuild `check`, `run`, and `status` around the execution model.
 4. Add template-backed app runs after the core runtime stabilizes.
 5. Add adapters, backends, and schedulers only after the public model
    stabilizes.
+

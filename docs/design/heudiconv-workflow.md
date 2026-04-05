@@ -10,30 +10,31 @@ multi-stage lifecycle that benefits from orchestration.
 
 ## 1.1 Current implementation status
 
-The current codebase implements only the first bootstrap slice:
+The current codebase implements only the first skeleton slice:
 
 ```bash
-bidsflow heudiconv bootstrap <sample-path>... [--config bidsflow.toml] [--reset] [--dry-run]
+bidsflow heudiconv skeleton <sample-path>... [--config bidsflow.toml] [--reset] [--dry-run]
 ```
 
 Current supported behavior:
 
 - default launcher is `["heudiconv"]`
 - projects may override that with `[heudiconv].launcher`
-- bootstrap accepts one or more representative sample paths
-- a single sample path is bootstrapped with one temporary subject label
+- skeleton accepts one or more representative sample paths
+- a single sample path is processed as one skeleton unit with one
+  temporary subject label
 - multiple sample paths are split into separate single-directory
-  bootstrap units
+  skeleton units
 - those multi-path units are treated as temporary sessions of one
   placeholder subject, and the generated session mapping is recorded in
-  bootstrap state
-- bootstrap writes its HeuDiConv working output into an isolated
-  bootstrap work root under `state/heudiconv/` instead of the real raw
+  skeleton state
+- skeleton writes its HeuDiConv working output into an isolated
+  skeleton work root under `state/heudiconv/` instead of the real raw
   BIDS output directory
-- bootstrap copies the generated heuristic into `code/heudiconv/`
-- bootstrap copies every generated `dicominfo*.tsv` into
+- skeleton copies the generated heuristic into `code/heudiconv/`
+- skeleton copies every generated `dicominfo*.tsv` into
   `code/heudiconv/dicominfo/`
-- bootstrap records run metadata in `state/heudiconv/bootstrap.json`
+- skeleton records run metadata in `state/heudiconv/skeleton.json`
 
 Current limit:
 
@@ -67,7 +68,7 @@ Source notes:
   [https://heudiconv.readthedocs.io/en/latest/commandline.html](https://heudiconv.readthedocs.io/en/latest/commandline.html)
 
 For prospective ReproIn-style data, the official docs show a more direct
-path that can skip bootstrap and go straight to conversion with the
+path that can skip skeleton and go straight to conversion with the
 `reproin` heuristic.
 
 Source notes:
@@ -82,8 +83,8 @@ contracts rather than as one opaque command.
 
 The main managed concerns are:
 
-- preserving the bootstrap outputs that the user must inspect
-- providing a clean human-edit step between bootstrap and conversion
+- preserving the skeleton outputs that the user must inspect
+- providing a clean human-edit step between skeleton and conversion
 - recording `.heudiconv` provenance and rerun behavior
 - recording the exact launcher and resulting HeuDiConv provenance used
   for the run
@@ -117,7 +118,7 @@ It also avoids introducing a large backend abstraction too early.
 
 ## 4. Proposed managed steps
 
-### 4.1 `bootstrap`
+### 4.1 `skeleton`
 
 Goal:
 
@@ -139,9 +140,9 @@ heudiconv --files <dicom-files> -o <output-dir> -f convertall -c none
 
 Design choice for the first BIDSFlow version:
 
-- bootstrap should use `--files`-style input selection first
-- bootstrap should not require final `subject` or `session` labels
-- bootstrap should treat multiple input directories as multiple
+- skeleton should use `--files`-style input selection first
+- skeleton should not require final `subject` or `session` labels
+- skeleton should treat multiple input directories as multiple
   single-directory units, not as one implicit HeuDiConv multi-directory
   grouping
 - template-style dataset expansion with `--dicom_dir_template` can wait
@@ -155,7 +156,7 @@ Why this matters:
   different sessions may expose different sequence sets
 - users may still need to decide how source identifiers map onto BIDS
   identifiers
-- HeuDiConv can require a subject id even during bootstrap, so BIDSFlow
+- HeuDiConv can require a subject id even during skeleton, so BIDSFlow
   should provide a temporary subject without pretending it is the final
   BIDS identity
 - multiple input directories are often "same subject, different
@@ -167,11 +168,11 @@ Why this matters:
 What BIDSFlow should record:
 
 - the input selection method
-- the sample paths used for bootstrap
-- whether bootstrap ran as a single-directory attempt or as a
+- the sample paths used for skeleton
+- whether skeleton ran as a single-directory attempt or as a
   multi-session split
 - the configured launcher
-- bootstrap work directory
+- skeleton work directory
 - HeuDiConv version
 - the generated `.heudiconv` state path
 - the generated heuristic skeleton path
@@ -184,43 +185,43 @@ What BIDSFlow should expose as artifacts:
 - `dicom_inventory_dir`
 - `dicom_inventories`
 - `heudiconv_state`
-- `bootstrap_report`
+- `skeleton_report`
 
 Suggested first public shape:
 
 ```bash
-bidsflow heudiconv bootstrap <sample-path>... [--reset] [--dry-run]
+bidsflow heudiconv skeleton <sample-path>... [--reset] [--dry-run]
 ```
 
 Suggested first API behavior:
 
 - `<sample-path>...` identifies one or more representative DICOM samples
-- when one sample path is provided, BIDSFlow runs one bootstrap unit
+- when one sample path is provided, BIDSFlow runs one skeleton unit
   with a generated temporary subject label
 - when multiple sample paths are provided, BIDSFlow treats them as
-  separate single-directory bootstrap units and assigns temporary
-  session labels such as `bootstrap-ses01`
-- `--reset` is required before regenerating bootstrap outputs for the
-  same project bootstrap state
+  separate single-directory skeleton units and assigns temporary
+  session labels such as `skeleton-ses01`
+- `--reset` is required before regenerating skeleton outputs for the
+  same project skeleton state
 - `--dry-run` shows the planned command, output files, and state paths
 
 Suggested generated files:
 
 - `code/heudiconv/heuristic.py`
 - `code/heudiconv/dicominfo/`
-- `state/heudiconv/bootstrap-work/`
-- `state/heudiconv/bootstrap.json`
+- `state/heudiconv/skeleton-work/`
+- `state/heudiconv/skeleton.json`
 
 Important rerun rule:
 
-- the official tutorial says bootstrap should normally be done once per
+- the official tutorial says skeleton should normally be done once per
   project and repeated only after removing `.heudiconv`
 
 Design implication:
 
-- BIDSFlow should never silently reuse a stale bootstrap run when the
+- BIDSFlow should never silently reuse a stale skeleton run when the
   user is asking to regenerate the starter material
-- a repeated bootstrap should either require an explicit reset or write
+- a repeated skeleton should either require an explicit reset or write
   to a new state location
 
 Source notes:
@@ -288,7 +289,7 @@ Suggested anonymization support:
 
 - BIDSFlow should allow a project-owned `anon-cmd` helper for output ID
   rewriting when the project needs that behavior
-- this is distinct from bootstrap because it belongs to the actual
+- this is distinct from skeleton because it belongs to the actual
   conversion contract, not to starter-material generation
 
 Suggested first public shape:
@@ -300,7 +301,7 @@ bidsflow heudiconv convert [--dry-run]
 Suggested first API behavior:
 
 - `convert` should use the project-owned heuristic generated or chosen
-  after bootstrap
+  after skeleton
 - `convert` should use the configured launcher to invoke HeuDiConv
 - identity mapping and anonymization behavior should initially come from
   the heuristic or project config rather than from many public flags
@@ -398,7 +399,7 @@ The first rebuilt HeuDiConv integration should stay small.
 
 It should include:
 
-- a bootstrap run model
+- a skeleton run model
 - explicit heuristic-edit handoff metadata
 - a convert run model
 - launcher support for local or wrapped HeuDiConv execution
@@ -408,9 +409,9 @@ It should include:
 
 Implemented now:
 
-- bootstrap planning and execution
+- skeleton planning and execution
 - optional `[heudiconv].launcher` support
-- bootstrap artifact copying and run-record writing
+- skeleton artifact copying and run-record writing
 
 Not implemented yet:
 
@@ -430,7 +431,7 @@ It should defer:
 ## 6. Recommended implementation order
 
 1. Define the HeuDiConv run record and artifact shapes.
-2. Implement `bootstrap` planning and execution.
+2. Implement `skeleton` planning and execution.
 3. Implement the explicit handoff into human heuristic editing.
 4. Define launcher, identity-mapping, and anonymization configuration
    for `convert`.
@@ -439,3 +440,4 @@ It should defer:
 
 This keeps the first slice aligned with the official workflow rather
 than with an overgeneralized app abstraction.
+

@@ -319,7 +319,7 @@ Candidate follow-up topics:
 
 The following concepts belong to the first managed HeuDiConv workflow.
 
-Some are already supported by the current bootstrap implementation, even
+Some are already supported by the current skeleton implementation, even
 though `bidsflow init` does not scaffold them yet. Others remain planned
 design concepts.
 
@@ -350,7 +350,7 @@ Design note:
 
 Current status:
 
-- supported now by `bidsflow heudiconv bootstrap`
+- supported now by `bidsflow heudiconv skeleton`
 - shown as a commented example in the scaffold produced by `bidsflow init`
 
 ### 6.2 Identity resolver
@@ -371,7 +371,7 @@ Why this may belong in config:
 
 - the mapping rule is usually a stable project convention
 - keeping it in config makes conversion runs auditable and reusable
-- this avoids forcing bootstrap to invent fake subject or session values
+- this avoids forcing skeleton to invent fake subject or session values
 
 Current status:
 
@@ -462,3 +462,4 @@ Source notes:
   [https://heudiconv.readthedocs.io/en/latest/commandline.html](https://heudiconv.readthedocs.io/en/latest/commandline.html)
 - PyBIDS `BIDSLayout`:
   [https://bids-standard.github.io/pybids/generated/bids.layout.BIDSLayout.html](https://bids-standard.github.io/pybids/generated/bids.layout.BIDSLayout.html)
+

@@ -5,10 +5,10 @@ from pathlib import Path
 import typer
 
 from .heudiconv import (
-    HeudiconvBootstrapError,
+    HeudiconvSkeletonError,
     format_command,
-    plan_bootstrap,
-    run_bootstrap,
+    plan_skeleton,
+    run_skeleton,
 )
 from .project import find_project_config, load_project_context
 
@@ -138,8 +138,8 @@ def init(
     typer.echo(f"Config: {config_path}")
 
 
-@heudiconv_app.command("bootstrap")
-def heudiconv_bootstrap(
+@heudiconv_app.command("skeleton")
+def heudiconv_skeleton(
     sample_paths: list[Path] = typer.Argument(
         ...,
         exists=False,
@@ -153,7 +153,7 @@ def heudiconv_bootstrap(
     reset: bool = typer.Option(
         False,
         "--reset",
-        help="Regenerate bootstrap outputs after clearing prior HeuDiConv state.",
+        help="Regenerate skeleton outputs after clearing prior HeuDiConv state.",
     ),
     dry_run: bool = typer.Option(
         False,
@@ -161,26 +161,26 @@ def heudiconv_bootstrap(
         help="Show the managed command and planned output locations without running it.",
     ),
 ) -> None:
-    """Generate starter heuristic files for a managed HeuDiConv workflow."""
+    """Generate a HeuDiConv skeleton from representative sample paths."""
     try:
         config_path = find_project_config(config, Path.cwd())
         context = load_project_context(config_path)
-        plan = plan_bootstrap(context, sample_paths)
-    except (HeudiconvBootstrapError, ValueError) as exc:
+        plan = plan_skeleton(context, sample_paths)
+    except (HeudiconvSkeletonError, ValueError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
 
     if dry_run:
         if len(plan.units) == 1 and plan.units[0].session_label is None:
             unit = plan.units[0]
-            typer.echo("Planned HeuDiConv bootstrap strategy: single-directory bootstrap")
+            typer.echo("Planned HeuDiConv skeleton strategy: single-directory skeleton")
             typer.echo(
-                f"Temporary subject for bootstrap: {unit.subject_label}"
+                f"Temporary subject for skeleton: {unit.subject_label}"
             )
             typer.echo(format_command(unit.initial_command))
         else:
             typer.echo(
-                f"Planned HeuDiConv bootstrap strategy: split {len(plan.units)} directories into "
+                f"Planned HeuDiConv skeleton strategy: split {len(plan.units)} directories into "
                 "single-directory session units"
             )
             for unit in plan.units:
@@ -191,25 +191,25 @@ def heudiconv_bootstrap(
                 typer.echo(format_command(unit.initial_command))
         typer.echo(f"Config: {config_path}")
         typer.echo(f"Sample paths: {len(plan.sample_paths)}")
-        typer.echo(f"Bootstrap work root: {plan.bootstrap_work_root}")
+        typer.echo(f"Skeleton work root: {plan.skeleton_work_root}")
         typer.echo(f"Heuristic: {plan.heuristic_path}")
         typer.echo(f"DICOM inventories: {plan.dicominfo_root}")
-        typer.echo(f"State: {plan.bootstrap_state_path}")
+        typer.echo(f"State: {plan.skeleton_state_path}")
         typer.echo(f"Log: {plan.log_path}")
         return
 
     try:
-        result = run_bootstrap(context, plan, reset=reset)
-    except HeudiconvBootstrapError as exc:
+        result = run_skeleton(context, plan, reset=reset)
+    except HeudiconvSkeletonError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
 
-    typer.echo("Prepared HeuDiConv bootstrap outputs.")
-    typer.echo(f"Bootstrap units: {len(result.unit_results)}")
-    typer.echo(f"Bootstrap work root: {plan.bootstrap_work_root}")
+    typer.echo("Prepared HeuDiConv skeleton outputs.")
+    typer.echo(f"Skeleton units: {len(result.unit_results)}")
+    typer.echo(f"Skeleton work root: {plan.skeleton_work_root}")
     typer.echo(f"Heuristic: {result.heuristic_path}")
     typer.echo(f"DICOM inventories: {result.dicominfo_root} ({len(result.dicominfo_paths)} files)")
-    typer.echo(f"State: {result.bootstrap_state_path}")
+    typer.echo(f"State: {result.skeleton_state_path}")
     typer.echo(f"Log: {result.log_path}")
     typer.echo("Next: edit the heuristic, then run `bidsflow heudiconv convert`.")
 
@@ -234,3 +234,4 @@ def heudiconv_convert(
 
 if __name__ == "__main__":
     app()
+

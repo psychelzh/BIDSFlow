@@ -11,7 +11,7 @@ from bidsflow.cli import app
 runner = CliRunner()
 
 
-def test_heudiconv_bootstrap_dry_run_single_path_uses_generated_subject(tmp_path: Path) -> None:
+def test_heudiconv_skeleton_dry_run_single_path_uses_generated_subject(tmp_path: Path) -> None:
     project_dir = tmp_path / "demo-project"
 
     init_result = runner.invoke(app, ["init", str(project_dir)])
@@ -24,7 +24,7 @@ def test_heudiconv_bootstrap_dry_run_single_path_uses_generated_subject(tmp_path
         app,
         [
             "heudiconv",
-            "bootstrap",
+            "skeleton",
             str(sample_dir),
             "--config",
             str(project_dir / "bidsflow.toml"),
@@ -33,15 +33,15 @@ def test_heudiconv_bootstrap_dry_run_single_path_uses_generated_subject(tmp_path
     )
 
     assert result.exit_code == 0, result.output
-    assert "single-directory bootstrap" in result.output
-    assert "Temporary subject for bootstrap: bootstrap01" in result.output
+    assert "single-directory skeleton" in result.output
+    assert "Temporary subject for skeleton: skeleton01" in result.output
     assert "heudiconv --files" in result.output
     assert str(sample_dir) in result.output
-    assert "-s bootstrap01" in result.output
-    assert str(project_dir / "state" / "heudiconv" / "bootstrap-work") in result.output
+    assert "-s skeleton01" in result.output
+    assert str(project_dir / "state" / "heudiconv" / "skeleton-work") in result.output
 
 
-def test_heudiconv_bootstrap_dry_run_multiple_paths_shows_session_split(tmp_path: Path) -> None:
+def test_heudiconv_skeleton_dry_run_multiple_paths_shows_session_split(tmp_path: Path) -> None:
     project_dir = tmp_path / "demo-project"
 
     init_result = runner.invoke(app, ["init", str(project_dir)])
@@ -56,7 +56,7 @@ def test_heudiconv_bootstrap_dry_run_multiple_paths_shows_session_split(tmp_path
         app,
         [
             "heudiconv",
-            "bootstrap",
+            "skeleton",
             str(sample_dir_one),
             str(sample_dir_two),
             "--config",
@@ -67,14 +67,14 @@ def test_heudiconv_bootstrap_dry_run_multiple_paths_shows_session_split(tmp_path
 
     assert result.exit_code == 0, result.output
     assert "split 2 directories into single-directory session units" in result.output
-    assert "bootstrap-ses01" in result.output
-    assert "bootstrap-ses02" in result.output
-    assert "-s bootstrap01 -ss bootstrap-ses01" in result.output
-    assert "-s bootstrap01 -ss bootstrap-ses02" in result.output
-    assert str(project_dir / "state" / "heudiconv" / "bootstrap-work") in result.output
+    assert "skeleton-ses01" in result.output
+    assert "skeleton-ses02" in result.output
+    assert "-s skeleton01 -ss skeleton-ses01" in result.output
+    assert "-s skeleton01 -ss skeleton-ses02" in result.output
+    assert str(project_dir / "state" / "heudiconv" / "skeleton-work") in result.output
 
 
-def test_heudiconv_bootstrap_single_path_uses_generated_subject(tmp_path: Path) -> None:
+def test_heudiconv_skeleton_single_path_uses_generated_subject(tmp_path: Path) -> None:
     project_dir = tmp_path / "demo-project"
 
     init_result = runner.invoke(app, ["init", str(project_dir)])
@@ -92,14 +92,14 @@ def test_heudiconv_bootstrap_single_path_uses_generated_subject(tmp_path: Path) 
                 "sample_path = argv[argv.index('--files') + 1]",
                 "subject = argv[argv.index('-s') + 1]",
                 "session = argv[argv.index('-ss') + 1] if '-ss' in argv else 'single'",
-                "info_dir = out_dir / '.heudiconv' / 'bootstrap' / session",
+                "info_dir = out_dir / '.heudiconv' / 'skeleton' / session",
                 "info_dir.mkdir(parents=True, exist_ok=True)",
                 "(info_dir / 'heuristic.py').write_text('def infotodict(seqinfo):\\n    return {}\\n', encoding='utf-8')",
                 "(info_dir / 'dicominfo.tsv').write_text(",
                 "    f'series_id\\tprotocol_name\\tsample_path\\tsubject\\n1\\tT1w\\t{sample_path}\\t{subject}\\n',",
                 "    encoding='utf-8',",
                 ")",
-                "print('bootstrap ok')",
+                "print('skeleton ok')",
             )
         )
         + "\n",
@@ -121,27 +121,27 @@ def test_heudiconv_bootstrap_single_path_uses_generated_subject(tmp_path: Path) 
 
     result = runner.invoke(
         app,
-        ["heudiconv", "bootstrap", str(sample_dir), "--config", str(config_path)],
+        ["heudiconv", "skeleton", str(sample_dir), "--config", str(config_path)],
     )
 
     assert result.exit_code == 0, result.output
-    assert "Bootstrap units: 1" in result.output
+    assert "Skeleton units: 1" in result.output
 
     heuristic_path = project_dir / "code" / "heudiconv" / "heuristic.py"
     dicominfo_path = project_dir / "code" / "heudiconv" / "dicominfo" / "sample-01" / "dicominfo.tsv"
-    state_path = project_dir / "state" / "heudiconv" / "bootstrap.json"
-    log_path = project_dir / "logs" / "heudiconv" / "bootstrap.log"
-    bootstrap_work_root = project_dir / "state" / "heudiconv" / "bootstrap-work"
+    state_path = project_dir / "state" / "heudiconv" / "skeleton.json"
+    log_path = project_dir / "logs" / "heudiconv" / "skeleton.log"
+    skeleton_work_root = project_dir / "state" / "heudiconv" / "skeleton-work"
 
     assert heuristic_path.is_file()
     assert dicominfo_path.is_file()
     assert state_path.is_file()
     assert log_path.is_file()
-    assert bootstrap_work_root.is_dir()
+    assert skeleton_work_root.is_dir()
     assert not (project_dir / "sourcedata" / "raw").exists()
     log_text = log_path.read_text(encoding="utf-8")
-    assert "-s bootstrap01" in log_text
-    assert str(bootstrap_work_root) in log_text
+    assert "-s skeleton01" in log_text
+    assert str(skeleton_work_root) in log_text
 
     state = json.loads(state_path.read_text(encoding="utf-8"))
     assert state["status"] == "succeeded"
@@ -149,16 +149,16 @@ def test_heudiconv_bootstrap_single_path_uses_generated_subject(tmp_path: Path) 
     assert state["artifacts"]["heuristic_template"] == str(heuristic_path)
     assert state["artifacts"]["dicom_inventory_dir"] == str(project_dir / "code" / "heudiconv" / "dicominfo")
     assert state["artifacts"]["dicom_inventories"] == [str(dicominfo_path)]
-    assert state["artifacts"]["bootstrap_work_root"] == str(bootstrap_work_root)
-    assert state["artifacts"]["heudiconv_state"] == str(bootstrap_work_root / ".heudiconv")
+    assert state["artifacts"]["skeleton_work_root"] == str(skeleton_work_root)
+    assert state["artifacts"]["heudiconv_state"] == str(skeleton_work_root / ".heudiconv")
     assert len(state["units"]) == 1
     assert state["units"][0]["strategy"] == "generated_subject"
-    assert state["units"][0]["subject_label"] == "bootstrap01"
+    assert state["units"][0]["subject_label"] == "skeleton01"
     assert state["units"][0]["session_label"] is None
     assert len(state["units"][0]["attempted_commands"]) == 1
 
 
-def test_heudiconv_bootstrap_multiple_paths_split_into_session_units(tmp_path: Path) -> None:
+def test_heudiconv_skeleton_multiple_paths_split_into_session_units(tmp_path: Path) -> None:
     project_dir = tmp_path / "demo-project"
 
     init_result = runner.invoke(app, ["init", str(project_dir)])
@@ -176,14 +176,14 @@ def test_heudiconv_bootstrap_multiple_paths_split_into_session_units(tmp_path: P
                 "sample_path = argv[argv.index('--files') + 1]",
                 "subject = argv[argv.index('-s') + 1] if '-s' in argv else None",
                 "session = argv[argv.index('-ss') + 1] if '-ss' in argv else 'single'",
-                "info_dir = out_dir / '.heudiconv' / 'bootstrap' / session",
+                "info_dir = out_dir / '.heudiconv' / 'skeleton' / session",
                 "info_dir.mkdir(parents=True, exist_ok=True)",
                 "(info_dir / 'heuristic.py').write_text('def infotodict(seqinfo):\\n    return {}\\n', encoding='utf-8')",
                 "(info_dir / 'dicominfo.tsv').write_text(",
                 "    f'series_id\\tprotocol_name\\tsample_path\\tsubject\\tsession\\n1\\tT1w\\t{sample_path}\\t{subject}\\t{session}\\n',",
                 "    encoding='utf-8',",
                 ")",
-                "print('bootstrap ok')",
+                "print('skeleton ok')",
             )
         )
         + "\n",
@@ -209,7 +209,7 @@ def test_heudiconv_bootstrap_multiple_paths_split_into_session_units(tmp_path: P
         app,
         [
             "heudiconv",
-            "bootstrap",
+            "skeleton",
             str(sample_dir_one),
             str(sample_dir_two),
             "--config",
@@ -218,22 +218,22 @@ def test_heudiconv_bootstrap_multiple_paths_split_into_session_units(tmp_path: P
     )
 
     assert result.exit_code == 0, result.output
-    assert "Bootstrap units: 2" in result.output
+    assert "Skeleton units: 2" in result.output
 
     heuristic_path = project_dir / "code" / "heudiconv" / "heuristic.py"
     dicominfo_root = project_dir / "code" / "heudiconv" / "dicominfo"
-    dicominfo_path_one = dicominfo_root / "bootstrap-ses01" / "dicominfo.tsv"
-    dicominfo_path_two = dicominfo_root / "bootstrap-ses02" / "dicominfo.tsv"
-    state_path = project_dir / "state" / "heudiconv" / "bootstrap.json"
-    log_path = project_dir / "logs" / "heudiconv" / "bootstrap.log"
-    bootstrap_work_root = project_dir / "state" / "heudiconv" / "bootstrap-work"
+    dicominfo_path_one = dicominfo_root / "skeleton-ses01" / "dicominfo.tsv"
+    dicominfo_path_two = dicominfo_root / "skeleton-ses02" / "dicominfo.tsv"
+    state_path = project_dir / "state" / "heudiconv" / "skeleton.json"
+    log_path = project_dir / "logs" / "heudiconv" / "skeleton.log"
+    skeleton_work_root = project_dir / "state" / "heudiconv" / "skeleton-work"
 
     assert heuristic_path.is_file()
     assert dicominfo_path_one.is_file()
     assert dicominfo_path_two.is_file()
     assert state_path.is_file()
     assert log_path.is_file()
-    assert bootstrap_work_root.is_dir()
+    assert skeleton_work_root.is_dir()
     assert not (project_dir / "sourcedata" / "raw").exists()
 
     state = json.loads(state_path.read_text(encoding="utf-8"))
@@ -245,18 +245,18 @@ def test_heudiconv_bootstrap_multiple_paths_split_into_session_units(tmp_path: P
         str(dicominfo_path_one),
         str(dicominfo_path_two),
     ]
-    assert state["artifacts"]["bootstrap_work_root"] == str(bootstrap_work_root)
-    assert state["artifacts"]["heudiconv_state"] == str(bootstrap_work_root / ".heudiconv")
+    assert state["artifacts"]["skeleton_work_root"] == str(skeleton_work_root)
+    assert state["artifacts"]["heudiconv_state"] == str(skeleton_work_root / ".heudiconv")
     assert len(state["units"]) == 2
-    assert state["units"][0]["subject_label"] == "bootstrap01"
-    assert state["units"][0]["session_label"] == "bootstrap-ses01"
+    assert state["units"][0]["subject_label"] == "skeleton01"
+    assert state["units"][0]["session_label"] == "skeleton-ses01"
     assert state["units"][0]["strategy"] == "generated_multi_session"
-    assert state["units"][1]["subject_label"] == "bootstrap01"
-    assert state["units"][1]["session_label"] == "bootstrap-ses02"
+    assert state["units"][1]["subject_label"] == "skeleton01"
+    assert state["units"][1]["session_label"] == "skeleton-ses02"
     assert state["units"][1]["strategy"] == "generated_multi_session"
 
 
-def test_heudiconv_bootstrap_requires_reset_before_regenerating(tmp_path: Path) -> None:
+def test_heudiconv_skeleton_requires_reset_before_regenerating(tmp_path: Path) -> None:
     project_dir = tmp_path / "demo-project"
 
     init_result = runner.invoke(app, ["init", str(project_dir)])
@@ -273,7 +273,7 @@ def test_heudiconv_bootstrap_requires_reset_before_regenerating(tmp_path: Path) 
                 "out_dir = Path(argv[argv.index('-o') + 1])",
                 "subject = argv[argv.index('-s') + 1]",
                 "session = argv[argv.index('-ss') + 1] if '-ss' in argv else 'single'",
-                "info_dir = out_dir / '.heudiconv' / 'bootstrap' / session",
+                "info_dir = out_dir / '.heudiconv' / 'skeleton' / session",
                 "info_dir.mkdir(parents=True, exist_ok=True)",
                 "(info_dir / 'heuristic.py').write_text('def infotodict(seqinfo):\\n    return {}\\n', encoding='utf-8')",
                 "(info_dir / 'dicominfo.tsv').write_text('series_id\\tprotocol_name\\n1\\tT1w\\n', encoding='utf-8')",
@@ -296,15 +296,16 @@ def test_heudiconv_bootstrap_requires_reset_before_regenerating(tmp_path: Path) 
     sample_dir = project_dir / "incoming" / "sample-ses-01"
     sample_dir.mkdir(parents=True)
 
-    first = runner.invoke(app, ["heudiconv", "bootstrap", str(sample_dir), "--config", str(config_path)])
+    first = runner.invoke(app, ["heudiconv", "skeleton", str(sample_dir), "--config", str(config_path)])
     assert first.exit_code == 0, first.output
 
-    blocked = runner.invoke(app, ["heudiconv", "bootstrap", str(sample_dir), "--config", str(config_path)])
+    blocked = runner.invoke(app, ["heudiconv", "skeleton", str(sample_dir), "--config", str(config_path)])
     assert blocked.exit_code == 2
-    assert "Existing HeuDiConv bootstrap state was found" in blocked.output
+    assert "Existing HeuDiConv skeleton state was found" in blocked.output
 
     allowed = runner.invoke(
         app,
-        ["heudiconv", "bootstrap", str(sample_dir), "--config", str(config_path), "--reset"],
+        ["heudiconv", "skeleton", str(sample_dir), "--config", str(config_path), "--reset"],
     )
     assert allowed.exit_code == 0, allowed.output
+

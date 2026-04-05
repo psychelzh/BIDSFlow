@@ -123,7 +123,7 @@ BIDSFlow knows the step sequence and the step-specific artifacts.
 
 This is appropriate for HeuDiConv, where BIDSFlow can help with:
 
-- bootstrap generation
+- skeleton generation
 - heuristic editing handoff
 - conversion runs
 - finalization steps
@@ -194,3 +194,4 @@ artifacts, not as opaque path passing between abstract stages.
 The next implementation should treat BIDSFlow as a logistics system with
 managed workflows, command templates, artifact records, and run records
 at its core.
+

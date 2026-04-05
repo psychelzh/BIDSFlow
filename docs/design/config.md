@@ -29,6 +29,10 @@ rather than split into disconnected notes.
 As of April 2, 2026, the scaffold produced by `bidsflow init` supports
 the following parameters.
 
+By default, `bidsflow init` writes this config without creating the
+directories named in `[paths]`. Those directories are only materialized
+when `bidsflow init --make-dirs` is used.
+
 When `--name` is omitted, the generated `name` defaults to the target
 directory name. In the example below, `<target-directory-name>` stands
 for that value.

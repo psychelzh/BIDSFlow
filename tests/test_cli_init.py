@@ -9,19 +9,19 @@ from bidsflow.cli import app
 runner = CliRunner()
 
 
-def test_init_creates_scaffold_in_target_directory(tmp_path: Path) -> None:
+def test_init_writes_config_without_materializing_layout_by_default(tmp_path: Path) -> None:
     project_dir = tmp_path / "demo-project"
 
     result = runner.invoke(app, ["init", str(project_dir)])
 
     assert result.exit_code == 0, result.output
     assert (project_dir / "bidsflow.toml").is_file()
-    assert (project_dir / "sourcedata").is_dir()
-    assert (project_dir / "sourcedata" / "raw").is_dir()
-    assert (project_dir / "derivatives").is_dir()
-    assert (project_dir / "work").is_dir()
-    assert (project_dir / "logs").is_dir()
-    assert (project_dir / "state").is_dir()
+    assert not (project_dir / "sourcedata").exists()
+    assert not (project_dir / "sourcedata" / "raw").exists()
+    assert not (project_dir / "derivatives").exists()
+    assert not (project_dir / "work").exists()
+    assert not (project_dir / "logs").exists()
+    assert not (project_dir / "state").exists()
 
     config_text = (project_dir / "bidsflow.toml").read_text(encoding="utf-8")
     assert "# Review before first use:" in config_text
@@ -31,6 +31,21 @@ def test_init_creates_scaffold_in_target_directory(tmp_path: Path) -> None:
     assert 'name = "demo-project"' in config_text
     assert 'root = "."' in config_text
     assert 'raw_bids_root = "sourcedata/raw"' in config_text
+
+
+def test_init_make_dirs_materializes_default_layout(tmp_path: Path) -> None:
+    project_dir = tmp_path / "demo-project"
+
+    result = runner.invoke(app, ["init", str(project_dir), "--make-dirs"])
+
+    assert result.exit_code == 0, result.output
+    assert (project_dir / "bidsflow.toml").is_file()
+    assert (project_dir / "sourcedata").is_dir()
+    assert (project_dir / "sourcedata" / "raw").is_dir()
+    assert (project_dir / "derivatives").is_dir()
+    assert (project_dir / "work").is_dir()
+    assert (project_dir / "logs").is_dir()
+    assert (project_dir / "state").is_dir()
 
 
 def test_init_defaults_to_current_directory(tmp_path: Path, monkeypatch) -> None:

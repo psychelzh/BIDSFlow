@@ -61,8 +61,9 @@ implemented.
 It should:
 
 - accept a positional target directory with `.` as the default
-- create a minimal project scaffold
 - write a minimal editable config file with short review comments
+- optionally materialize the default layout directories when
+  `--make-dirs` is requested
 
 It should not:
 
@@ -72,7 +73,7 @@ It should not:
 - perform source scanning or execution
 
 The initial option set should stay narrow: `--name`, `--config-name`,
-and `--force` are enough for the first pass.
+`--force`, and `--make-dirs` are enough for the first pass.
 
 ## Repository State
 

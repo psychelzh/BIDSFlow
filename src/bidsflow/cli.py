@@ -19,7 +19,7 @@ app = typer.Typer(
 heudiconv_app = typer.Typer(help="Managed HeuDiConv workflow commands.")
 app.add_typer(heudiconv_app, name="heudiconv")
 
-SCAFFOLD_DIRECTORIES = (
+DEFAULT_LAYOUT_DIRECTORIES = (
     Path("sourcedata"),
     Path("sourcedata") / "raw",
     Path("derivatives"),
@@ -103,6 +103,11 @@ def init(
         "--force",
         help="Overwrite the generated config if it already exists.",
     ),
+    make_dirs: bool = typer.Option(
+        False,
+        "--make-dirs",
+        help="Create the default project directories described by the generated config.",
+    ),
 ) -> None:
     """Initialize a minimal BIDSFlow project scaffold."""
     config_name = _validate_config_name(config_name)
@@ -121,11 +126,13 @@ def init(
         raise typer.Exit(code=2)
 
     target_directory.mkdir(parents=True, exist_ok=True)
-    for relative_path in SCAFFOLD_DIRECTORIES:
-        (target_directory / relative_path).mkdir(parents=True, exist_ok=True)
 
     project_name = name or _default_project_name(target_directory)
     config_path.write_text(_render_project_config(project_name), encoding="utf-8", newline="\n")
+
+    if make_dirs:
+        for relative_path in DEFAULT_LAYOUT_DIRECTORIES:
+            (target_directory / relative_path).mkdir(parents=True, exist_ok=True)
 
     typer.echo(f"Initialized BIDSFlow project at {target_directory}")
     typer.echo(f"Config: {config_path}")

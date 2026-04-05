@@ -23,11 +23,16 @@ The directory argument should be positional and default to `.`.
 The first implementation of `init` should:
 
 - create the target directory if needed
-- create a minimal project directory layout
 - write a minimal editable config file with short review comments that
   point the user to the most likely fields to adjust
+- optionally materialize the default directory layout when the user
+  explicitly requests it
 
 Suggested scaffold contents:
+
+- `bidsflow.toml`
+
+Suggested optional layout created by `--make-dirs`:
 
 - `sourcedata/`
 - `sourcedata/raw/`
@@ -35,7 +40,6 @@ Suggested scaffold contents:
 - `work/`
 - `logs/`
 - `state/`
-- `bidsflow.toml`
 
 ## 4. Initial Options
 
@@ -44,6 +48,7 @@ The first option set should stay small:
 - `--name`
 - `--config-name`
 - `--force`
+- `--make-dirs`
 
 These cover the main scaffold customizations without forcing early
 decisions about execution internals.
@@ -56,6 +61,7 @@ decisions about execution internals.
 - choose scheduler defaults
 - generate tool-specific configuration
 - generate heuristic code
+- eagerly materialize layout directories unless the user asked for it
 - inspect source directories
 - submit or preview execution
 
@@ -106,6 +112,7 @@ future default changes remain auditable.
 ```bash
 bidsflow init .
 bidsflow init /data/project --name "TJNU camp project"
+bidsflow init /data/project --make-dirs
 bidsflow init /data/project --config-name bidsflow.toml --force
 ```
 
@@ -114,4 +121,4 @@ bidsflow init /data/project --config-name bidsflow.toml --force
 The main job of `init` is to give the user a clean place to begin.
 
 It should be opinionated about scaffold shape, but conservative about
-workflow semantics.
+filesystem side effects and workflow semantics.

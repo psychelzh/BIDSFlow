@@ -71,6 +71,7 @@ The initial generated config should stay minimal:
 # Review before first use:
 # - adjust [project].name if you want a clearer project label
 # - adjust [paths] if your project layout differs from this scaffold
+# - uncomment [heudiconv] if you need a wrapper or Singularity launcher
 
 [project]
 name = "Example BIDSFlow project"
@@ -83,6 +84,12 @@ derivatives_root = "derivatives"
 work_root = "work"
 logs_root = "logs"
 state_root = "state"
+
+# Optional HeuDiConv launcher override.
+# Uncomment and edit this block if HeuDiConv is launched through a wrapper or container.
+# [heudiconv]
+# launcher = ["heudiconv"]
+# launcher = ["singularity", "run", "/containers/heudiconv.sif"]
 ```
 
 This is enough to anchor project layout without prematurely encoding

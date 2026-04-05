@@ -38,6 +38,7 @@ for that value.
 # Review before first use:
 # - adjust [project].name if you want a clearer project label
 # - adjust [paths] if your project layout differs from this scaffold
+# - uncomment [heudiconv] if you need a wrapper or Singularity launcher
 
 [project]
 name = "<target-directory-name>"
@@ -50,6 +51,12 @@ derivatives_root = "derivatives"
 work_root = "work"
 logs_root = "logs"
 state_root = "state"
+
+# Optional HeuDiConv launcher override.
+# Uncomment and edit this block if HeuDiConv is launched through a wrapper or container.
+# [heudiconv]
+# launcher = ["heudiconv"]
+# launcher = ["singularity", "run", "/containers/heudiconv.sif"]
 ```
 
 ## 3. Section-by-section reference
@@ -304,14 +311,13 @@ Candidate follow-up topics:
 - whether future config sections should distinguish raw BIDS inputs from
   multiple derivative inputs more explicitly
 
-## 6. Planned HeuDiConv-related config concepts
+## 6. Current and planned HeuDiConv-related config concepts
 
-The following concepts are part of the current design direction for the
-first managed HeuDiConv workflow, but they are **not** part of the
-current supported scaffold yet.
+The following concepts belong to the first managed HeuDiConv workflow.
 
-They belong here because they are expected to become project-level
-defaults rather than one-off command line flags.
+Some are already supported by the current bootstrap implementation, even
+though `bidsflow init` does not scaffold them yet. Others remain planned
+design concepts.
 
 ### 6.1 HeuDiConv launcher
 
@@ -323,7 +329,7 @@ Likely config shape:
 
 - an argv-style list such as `["heudiconv"]`
 - or a wrapper/container prefix such as
-  `["singularity", "exec", "--cleanenv", "/containers/heudiconv.sif", "heudiconv"]`
+  `["singularity", "run", "/containers/heudiconv.sif"]`
 
 Why this may belong in config:
 
@@ -337,6 +343,11 @@ Design note:
 - BIDSFlow should append managed HeuDiConv arguments after the launcher
 - users should not need to maintain the complete HeuDiConv command as a
   shell string
+
+Current status:
+
+- supported now by `bidsflow heudiconv bootstrap`
+- shown as a commented example in the scaffold produced by `bidsflow init`
 
 ### 6.2 Identity resolver
 
@@ -357,6 +368,10 @@ Why this may belong in config:
 - the mapping rule is usually a stable project convention
 - keeping it in config makes conversion runs auditable and reusable
 - this avoids forcing bootstrap to invent fake subject or session values
+
+Current status:
+
+- planned, not implemented yet
 
 Source notes:
 
@@ -383,6 +398,10 @@ Why this may belong in config:
 - it should be versioned and auditable instead of hidden in shell
   history
 
+Current status:
+
+- planned, not implemented yet
+
 Source notes:
 
 - HeuDiConv CLI reference, `--anon-cmd`:
@@ -407,6 +426,10 @@ Why this may belong in config:
 Suggested default direction:
 
 - store it under `state/layouts/raw_bids`
+
+Current status:
+
+- planned, not implemented yet
 
 Source notes:
 

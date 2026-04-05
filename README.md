@@ -44,6 +44,16 @@ Additional commands such as `doctor`, `config`, or `source` can return
 later if they grow into stable user-facing tasks. They are intentionally
 deferred from the first rebuilt CLI.
 
+## Current Implemented Slice
+
+```bash
+bidsflow init [DIRECTORY]
+bidsflow heudiconv bootstrap <sample-path> [--config bidsflow.toml] [--reset] [--dry-run]
+```
+
+The managed `heudiconv convert` step is stubbed in the CLI but not yet
+implemented.
+
 ## `init` Direction
 
 `bidsflow init` is intended to stay small.
@@ -67,8 +77,8 @@ and `--force` are enough for the first pass.
 ## Repository State
 
 - `docs/` contains the active design.
-- `src/` and `tests/` now contain only the first rebuilt command:
-  `bidsflow init`.
+- `src/` and `tests/` now contain `bidsflow init` and the first managed
+  `bidsflow heudiconv bootstrap` slice.
 - The rest of the historical implementation remains intentionally
   removed until the execution model is rebuilt cleanly.
 

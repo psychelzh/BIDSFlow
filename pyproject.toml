@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "bidsflow"
 version = "0.1.0a0"
-description = "A task-first, target-oriented CLI for BIDS workflow logistics"
+description = "A logistics-oriented CLI for BIDS workflow execution and handoff"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [

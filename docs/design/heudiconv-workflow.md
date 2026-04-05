@@ -8,6 +8,26 @@ The reason is not that HeuDiConv deserves special branding in the public
 CLI. The reason is that its official usage already has a real
 multi-stage lifecycle that benefits from orchestration.
 
+## 1.1 Current implementation status
+
+The current codebase implements only the first bootstrap slice:
+
+```bash
+bidsflow heudiconv bootstrap <sample-path> [--config bidsflow.toml] [--reset] [--dry-run]
+```
+
+Current supported behavior:
+
+- default launcher is `["heudiconv"]`
+- projects may override that with `[heudiconv].launcher`
+- bootstrap copies the generated heuristic and `dicominfo.tsv` into
+  `code/heudiconv/`
+- bootstrap records run metadata in `state/heudiconv/bootstrap.json`
+
+Current limit:
+
+- `bidsflow heudiconv convert` is only a placeholder command today
+
 ## 2. What the official HeuDiConv workflow looks like
 
 The official custom-heuristic tutorial describes a retrospective flow
@@ -77,7 +97,7 @@ arguments.
 Examples:
 
 - `["heudiconv"]`
-- `["singularity", "exec", "--cleanenv", "/containers/heudiconv.sif", "heudiconv"]`
+- `["singularity", "run", "/containers/heudiconv.sif"]`
 
 This keeps the workflow managed while still letting users choose local
 execution, wrappers, or container launchers.
@@ -353,6 +373,18 @@ It should include:
 - identity-mapping and anonymization planning for convert
 - automatic `BIDSLayout` database construction after successful convert
 - run records and artifact registration for those steps
+
+Implemented now:
+
+- bootstrap planning and execution
+- optional `[heudiconv].launcher` support
+- bootstrap artifact copying and run-record writing
+
+Not implemented yet:
+
+- managed convert execution
+- identity-mapping and anonymization behavior
+- automatic `BIDSLayout` indexing
 
 It should defer:
 

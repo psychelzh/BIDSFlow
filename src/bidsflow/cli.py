@@ -4,10 +4,20 @@ from pathlib import Path
 
 import typer
 
+from .heudiconv import (
+    HeudiconvBootstrapError,
+    format_command,
+    plan_bootstrap,
+    run_bootstrap,
+)
+from .project import find_project_config, load_project_context
+
 app = typer.Typer(
     help="BIDSFlow: a task-first CLI for BIDS workflow logistics.",
     no_args_is_help=True,
 )
+heudiconv_app = typer.Typer(help="Managed HeuDiConv workflow commands.")
+app.add_typer(heudiconv_app, name="heudiconv")
 
 SCAFFOLD_DIRECTORIES = (
     Path("sourcedata"),
@@ -31,6 +41,7 @@ def _render_project_config(project_name: str) -> str:
             "# Review before first use:",
             "# - adjust [project].name if you want a clearer project label",
             "# - adjust [paths] if your project layout differs from this scaffold",
+            "# - uncomment [heudiconv] if you need a wrapper or Singularity launcher",
             "",
             "[project]",
             f"name = {_toml_string(project_name)}",
@@ -43,6 +54,12 @@ def _render_project_config(project_name: str) -> str:
             'work_root = "work"',
             'logs_root = "logs"',
             'state_root = "state"',
+            "",
+            "# Optional HeuDiConv launcher override.",
+            "# Uncomment and edit this block if HeuDiConv is launched through a wrapper or container.",
+            "# [heudiconv]",
+            '# launcher = ["heudiconv"]',
+            '# launcher = ["singularity", "run", "/containers/heudiconv.sif"]',
             "",
         )
     )
@@ -112,6 +129,80 @@ def init(
 
     typer.echo(f"Initialized BIDSFlow project at {target_directory}")
     typer.echo(f"Config: {config_path}")
+
+
+@heudiconv_app.command("bootstrap")
+def heudiconv_bootstrap(
+    sample_path: Path = typer.Argument(
+        ...,
+        exists=False,
+        help="Representative DICOM sample path used to generate starter HeuDiConv outputs.",
+    ),
+    config: Path | None = typer.Option(
+        None,
+        "--config",
+        help="Path to bidsflow.toml. Defaults to the nearest project config.",
+    ),
+    reset: bool = typer.Option(
+        False,
+        "--reset",
+        help="Regenerate bootstrap outputs after clearing prior HeuDiConv state.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Show the managed command and planned output locations without running it.",
+    ),
+) -> None:
+    """Generate starter heuristic files for a managed HeuDiConv workflow."""
+    try:
+        config_path = find_project_config(config, Path.cwd())
+        context = load_project_context(config_path)
+        plan = plan_bootstrap(context, sample_path)
+    except (HeudiconvBootstrapError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+    if dry_run:
+        typer.echo("Planned HeuDiConv bootstrap command:")
+        typer.echo(format_command(plan.command))
+        typer.echo(f"Config: {config_path}")
+        typer.echo(f"Heuristic: {plan.heuristic_path}")
+        typer.echo(f"DICOM inventory: {plan.dicominfo_path}")
+        typer.echo(f"State: {plan.bootstrap_state_path}")
+        typer.echo(f"Log: {plan.log_path}")
+        return
+
+    try:
+        result = run_bootstrap(context, plan, reset=reset)
+    except HeudiconvBootstrapError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+    typer.echo("Prepared HeuDiConv bootstrap outputs.")
+    typer.echo(f"Heuristic: {result.heuristic_path}")
+    typer.echo(f"DICOM inventory: {result.dicominfo_path}")
+    typer.echo(f"State: {result.bootstrap_state_path}")
+    typer.echo(f"Log: {result.log_path}")
+    typer.echo("Next: edit the heuristic, then run `bidsflow heudiconv convert`.")
+
+
+@heudiconv_app.command("convert")
+def heudiconv_convert(
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Reserved for the future managed convert step.",
+    ),
+) -> None:
+    """Run the managed HeuDiConv conversion step."""
+    _ = dry_run
+    typer.echo(
+        "heudiconv convert is not implemented yet. Edit code/heudiconv/heuristic.py first; "
+        "the managed convert step is the next planned slice.",
+        err=True,
+    )
+    raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":

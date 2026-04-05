@@ -26,6 +26,8 @@ def test_init_creates_scaffold_in_target_directory(tmp_path: Path) -> None:
     config_text = (project_dir / "bidsflow.toml").read_text(encoding="utf-8")
     assert "# Review before first use:" in config_text
     assert "# - adjust [project].name if you want a clearer project label" in config_text
+    assert "# Optional HeuDiConv launcher override." in config_text
+    assert '# launcher = ["singularity", "run", "/containers/heudiconv.sif"]' in config_text
     assert 'name = "demo-project"' in config_text
     assert 'root = "."' in config_text
     assert 'raw_bids_root = "sourcedata/raw"' in config_text

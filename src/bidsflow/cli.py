@@ -191,6 +191,7 @@ def heudiconv_bootstrap(
                 typer.echo(format_command(unit.initial_command))
         typer.echo(f"Config: {config_path}")
         typer.echo(f"Sample paths: {len(plan.sample_paths)}")
+        typer.echo(f"Bootstrap work root: {plan.bootstrap_work_root}")
         typer.echo(f"Heuristic: {plan.heuristic_path}")
         typer.echo(f"DICOM inventories: {plan.dicominfo_root}")
         typer.echo(f"State: {plan.bootstrap_state_path}")
@@ -205,6 +206,7 @@ def heudiconv_bootstrap(
 
     typer.echo("Prepared HeuDiConv bootstrap outputs.")
     typer.echo(f"Bootstrap units: {len(result.unit_results)}")
+    typer.echo(f"Bootstrap work root: {plan.bootstrap_work_root}")
     typer.echo(f"Heuristic: {result.heuristic_path}")
     typer.echo(f"DICOM inventories: {result.dicominfo_root} ({len(result.dicominfo_paths)} files)")
     typer.echo(f"State: {result.bootstrap_state_path}")

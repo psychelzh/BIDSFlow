@@ -38,6 +38,7 @@ def test_heudiconv_bootstrap_dry_run_single_path_uses_generated_subject(tmp_path
     assert "heudiconv --files" in result.output
     assert str(sample_dir) in result.output
     assert "-s bootstrap01" in result.output
+    assert str(project_dir / "state" / "heudiconv" / "bootstrap-work") in result.output
 
 
 def test_heudiconv_bootstrap_dry_run_multiple_paths_shows_session_split(tmp_path: Path) -> None:
@@ -70,6 +71,7 @@ def test_heudiconv_bootstrap_dry_run_multiple_paths_shows_session_split(tmp_path
     assert "bootstrap-ses02" in result.output
     assert "-s bootstrap01 -ss bootstrap-ses01" in result.output
     assert "-s bootstrap01 -ss bootstrap-ses02" in result.output
+    assert str(project_dir / "state" / "heudiconv" / "bootstrap-work") in result.output
 
 
 def test_heudiconv_bootstrap_single_path_uses_generated_subject(tmp_path: Path) -> None:
@@ -129,13 +131,17 @@ def test_heudiconv_bootstrap_single_path_uses_generated_subject(tmp_path: Path) 
     dicominfo_path = project_dir / "code" / "heudiconv" / "dicominfo" / "sample-01" / "dicominfo.tsv"
     state_path = project_dir / "state" / "heudiconv" / "bootstrap.json"
     log_path = project_dir / "logs" / "heudiconv" / "bootstrap.log"
+    bootstrap_work_root = project_dir / "state" / "heudiconv" / "bootstrap-work"
 
     assert heuristic_path.is_file()
     assert dicominfo_path.is_file()
     assert state_path.is_file()
     assert log_path.is_file()
+    assert bootstrap_work_root.is_dir()
+    assert not (project_dir / "sourcedata" / "raw").exists()
     log_text = log_path.read_text(encoding="utf-8")
     assert "-s bootstrap01" in log_text
+    assert str(bootstrap_work_root) in log_text
 
     state = json.loads(state_path.read_text(encoding="utf-8"))
     assert state["status"] == "succeeded"
@@ -143,6 +149,8 @@ def test_heudiconv_bootstrap_single_path_uses_generated_subject(tmp_path: Path) 
     assert state["artifacts"]["heuristic_template"] == str(heuristic_path)
     assert state["artifacts"]["dicom_inventory_dir"] == str(project_dir / "code" / "heudiconv" / "dicominfo")
     assert state["artifacts"]["dicom_inventories"] == [str(dicominfo_path)]
+    assert state["artifacts"]["bootstrap_work_root"] == str(bootstrap_work_root)
+    assert state["artifacts"]["heudiconv_state"] == str(bootstrap_work_root / ".heudiconv")
     assert len(state["units"]) == 1
     assert state["units"][0]["strategy"] == "generated_subject"
     assert state["units"][0]["subject_label"] == "bootstrap01"
@@ -218,12 +226,15 @@ def test_heudiconv_bootstrap_multiple_paths_split_into_session_units(tmp_path: P
     dicominfo_path_two = dicominfo_root / "bootstrap-ses02" / "dicominfo.tsv"
     state_path = project_dir / "state" / "heudiconv" / "bootstrap.json"
     log_path = project_dir / "logs" / "heudiconv" / "bootstrap.log"
+    bootstrap_work_root = project_dir / "state" / "heudiconv" / "bootstrap-work"
 
     assert heuristic_path.is_file()
     assert dicominfo_path_one.is_file()
     assert dicominfo_path_two.is_file()
     assert state_path.is_file()
     assert log_path.is_file()
+    assert bootstrap_work_root.is_dir()
+    assert not (project_dir / "sourcedata" / "raw").exists()
 
     state = json.loads(state_path.read_text(encoding="utf-8"))
     assert state["status"] == "succeeded"
@@ -234,6 +245,8 @@ def test_heudiconv_bootstrap_multiple_paths_split_into_session_units(tmp_path: P
         str(dicominfo_path_one),
         str(dicominfo_path_two),
     ]
+    assert state["artifacts"]["bootstrap_work_root"] == str(bootstrap_work_root)
+    assert state["artifacts"]["heudiconv_state"] == str(bootstrap_work_root / ".heudiconv")
     assert len(state["units"]) == 2
     assert state["units"][0]["subject_label"] == "bootstrap01"
     assert state["units"][0]["session_label"] == "bootstrap-ses01"

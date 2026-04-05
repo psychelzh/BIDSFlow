@@ -61,6 +61,8 @@ Current bootstrap behavior:
 - multiple sample directories are split into separate single-directory
   bootstrap units and treated as temporary sessions of one placeholder
   subject
+- bootstrap uses an isolated work root under `state/heudiconv/` instead
+  of writing into the real raw BIDS output directory
 
 ## `init` Direction
 

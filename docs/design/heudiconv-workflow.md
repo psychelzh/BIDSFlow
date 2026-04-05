@@ -27,6 +27,9 @@ Current supported behavior:
 - those multi-path units are treated as temporary sessions of one
   placeholder subject, and the generated session mapping is recorded in
   bootstrap state
+- bootstrap writes its HeuDiConv working output into an isolated
+  bootstrap work root under `state/heudiconv/` instead of the real raw
+  BIDS output directory
 - bootstrap copies the generated heuristic into `code/heudiconv/`
 - bootstrap copies every generated `dicominfo*.tsv` into
   `code/heudiconv/dicominfo/`
@@ -168,7 +171,7 @@ What BIDSFlow should record:
 - whether bootstrap ran as a single-directory attempt or as a
   multi-session split
 - the configured launcher
-- output directory
+- bootstrap work directory
 - HeuDiConv version
 - the generated `.heudiconv` state path
 - the generated heuristic skeleton path
@@ -205,6 +208,7 @@ Suggested generated files:
 
 - `code/heudiconv/heuristic.py`
 - `code/heudiconv/dicominfo/`
+- `state/heudiconv/bootstrap-work/`
 - `state/heudiconv/bootstrap.json`
 
 Important rerun rule:

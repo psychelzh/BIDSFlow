@@ -28,10 +28,10 @@ class BootstrapPlan:
     sample_paths: tuple[Path, ...]
     launcher: tuple[str, ...]
     units: tuple[BootstrapUnitPlan, ...]
-    raw_bids_root: Path
     code_root: Path
     heuristic_path: Path
     dicominfo_root: Path
+    bootstrap_work_root: Path
     heudiconv_state_path: Path
     bootstrap_state_path: Path
     log_path: Path
@@ -77,10 +77,10 @@ def plan_bootstrap(context: ProjectContext, sample_paths: list[Path]) -> Bootstr
         resolved_samples.append(resolved_sample)
 
     launcher = _load_launcher(context.config)
-    raw_bids_root = context.raw_bids_root
     code_root = context.project_root / "code" / "heudiconv"
     state_root = context.state_root / "heudiconv"
     log_root = context.logs_root / "heudiconv"
+    bootstrap_work_root = state_root / "bootstrap-work"
 
     if len(resolved_samples) == 1:
         units = (
@@ -91,7 +91,7 @@ def plan_bootstrap(context: ProjectContext, sample_paths: list[Path]) -> Bootstr
                 initial_command=_build_bootstrap_command(
                     launcher,
                     resolved_samples[0],
-                    raw_bids_root,
+                    bootstrap_work_root,
                     subject_label="bootstrap01",
                 ),
                 subject_label="bootstrap01",
@@ -108,7 +108,7 @@ def plan_bootstrap(context: ProjectContext, sample_paths: list[Path]) -> Bootstr
                 initial_command=_build_bootstrap_command(
                     launcher,
                     sample_path,
-                    raw_bids_root,
+                    bootstrap_work_root,
                     subject_label=generated_subject,
                     session_label=f"bootstrap-ses{index:02d}",
                 ),
@@ -122,11 +122,11 @@ def plan_bootstrap(context: ProjectContext, sample_paths: list[Path]) -> Bootstr
         sample_paths=tuple(resolved_samples),
         launcher=launcher,
         units=units,
-        raw_bids_root=raw_bids_root,
         code_root=code_root,
         heuristic_path=code_root / "heuristic.py",
         dicominfo_root=code_root / "dicominfo",
-        heudiconv_state_path=raw_bids_root / ".heudiconv",
+        bootstrap_work_root=bootstrap_work_root,
+        heudiconv_state_path=bootstrap_work_root / ".heudiconv",
         bootstrap_state_path=state_root / "bootstrap.json",
         log_path=log_root / "bootstrap.log",
     )
@@ -237,7 +237,7 @@ def _guard_reset_requirement(plan: BootstrapPlan, reset: bool) -> None:
 
 
 def _prepare_bootstrap_directories(plan: BootstrapPlan) -> None:
-    plan.raw_bids_root.mkdir(parents=True, exist_ok=True)
+    plan.bootstrap_work_root.mkdir(parents=True, exist_ok=True)
     plan.code_root.mkdir(parents=True, exist_ok=True)
     plan.dicominfo_root.mkdir(parents=True, exist_ok=True)
     plan.bootstrap_state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -246,6 +246,7 @@ def _prepare_bootstrap_directories(plan: BootstrapPlan) -> None:
 
 def _reset_bootstrap_state(project_root: Path, plan: BootstrapPlan) -> None:
     for path in (
+        plan.bootstrap_work_root,
         plan.heudiconv_state_path,
         plan.heuristic_path,
         plan.dicominfo_root,
@@ -478,6 +479,8 @@ def _write_bootstrap_record(
             "heuristic_template": str(plan.heuristic_path),
             "dicom_inventory_dir": str(plan.dicominfo_root),
             "dicom_inventories": [str(path) for path in copied_dicominfo_paths],
+            "bootstrap_work_root": str(plan.bootstrap_work_root),
+            "heudiconv_state": str(plan.heudiconv_state_path),
         },
         "log_path": str(plan.log_path),
         "units": [

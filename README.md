@@ -48,7 +48,7 @@ deferred from the first rebuilt CLI.
 
 ```bash
 bidsflow init [DIRECTORY]
-bidsflow heudiconv bootstrap <sample-path> [--config bidsflow.toml] [--reset] [--dry-run]
+bidsflow heudiconv bootstrap <sample-path>... [--config bidsflow.toml] [--reset] [--dry-run]
 ```
 
 The managed `heudiconv convert` step is stubbed in the CLI but not yet

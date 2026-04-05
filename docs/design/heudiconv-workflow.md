@@ -13,15 +13,17 @@ multi-stage lifecycle that benefits from orchestration.
 The current codebase implements only the first bootstrap slice:
 
 ```bash
-bidsflow heudiconv bootstrap <sample-path> [--config bidsflow.toml] [--reset] [--dry-run]
+bidsflow heudiconv bootstrap <sample-path>... [--config bidsflow.toml] [--reset] [--dry-run]
 ```
 
 Current supported behavior:
 
 - default launcher is `["heudiconv"]`
 - projects may override that with `[heudiconv].launcher`
-- bootstrap copies the generated heuristic and `dicominfo.tsv` into
-  `code/heudiconv/`
+- bootstrap accepts one or more representative sample paths
+- bootstrap copies the generated heuristic into `code/heudiconv/`
+- bootstrap copies every generated `dicominfo*.tsv` into
+  `code/heudiconv/dicominfo/`
 - bootstrap records run metadata in `state/heudiconv/bootstrap.json`
 
 Current limit:
@@ -34,7 +36,7 @@ The official custom-heuristic tutorial describes a retrospective flow
 with a clear sequence:
 
 1. generate a skeleton heuristic with `convertall`
-2. inspect `dicominfo.tsv` and edit the heuristic manually
+2. inspect the generated `dicominfo` files and edit the heuristic manually
 3. rerun HeuDiConv for the actual conversion
 
 Source notes:
@@ -137,6 +139,8 @@ Why this matters:
 
 - retrospective projects often start from one sample folder whose
   directory name is not yet the final BIDS subject or session label
+- some projects need more than one representative sample path because
+  different sessions may expose different sequence sets
 - users may still need to decide how source identifiers map onto BIDS
   identifiers
 - forcing placeholder `subject` and `session` values too early would
@@ -145,30 +149,31 @@ Why this matters:
 What BIDSFlow should record:
 
 - the input selection method
-- the sample path used for bootstrap
+- the sample paths used for bootstrap
 - the configured launcher
 - output directory
 - HeuDiConv version
 - the generated `.heudiconv` state path
 - the generated heuristic skeleton path
-- the generated `dicominfo.tsv` path
+- the generated `dicominfo` inventory directory and copied file paths
 
 What BIDSFlow should expose as artifacts:
 
 - `heuristic_template`
-- `dicom_inventory`
+- `dicom_inventory_dir`
+- `dicom_inventories`
 - `heudiconv_state`
 - `bootstrap_report`
 
 Suggested first public shape:
 
 ```bash
-bidsflow heudiconv bootstrap <sample-path> [--reset] [--dry-run]
+bidsflow heudiconv bootstrap <sample-path>... [--reset] [--dry-run]
 ```
 
 Suggested first API behavior:
 
-- `<sample-path>` identifies the representative DICOM sample
+- `<sample-path>...` identifies one or more representative DICOM samples
 - `--reset` is required before regenerating bootstrap outputs for the
   same project bootstrap state
 - `--dry-run` shows the planned command, output files, and state paths
@@ -176,7 +181,7 @@ Suggested first API behavior:
 Suggested generated files:
 
 - `code/heudiconv/heuristic.py`
-- `code/heudiconv/dicominfo.tsv`
+- `code/heudiconv/dicominfo/`
 - `state/heudiconv/bootstrap.json`
 
 Important rerun rule:

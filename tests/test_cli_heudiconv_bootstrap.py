@@ -11,25 +11,41 @@ from bidsflow.cli import app
 runner = CliRunner()
 
 
-def test_heudiconv_bootstrap_dry_run_uses_default_launcher(tmp_path: Path) -> None:
+def test_heudiconv_bootstrap_dry_run_accepts_multiple_sample_paths(tmp_path: Path) -> None:
     project_dir = tmp_path / "demo-project"
 
     init_result = runner.invoke(app, ["init", str(project_dir)])
     assert init_result.exit_code == 0, init_result.output
 
-    sample_dir = project_dir / "incoming" / "sample"
-    sample_dir.mkdir(parents=True)
+    sample_dir_one = project_dir / "incoming" / "sample-ses-01"
+    sample_dir_two = project_dir / "incoming" / "sample-ses-02"
+    sample_dir_one.mkdir(parents=True)
+    sample_dir_two.mkdir(parents=True)
 
-    result = runner.invoke(app, ["heudiconv", "bootstrap", str(sample_dir), "--config", str(project_dir / "bidsflow.toml"), "--dry-run"])
+    result = runner.invoke(
+        app,
+        [
+            "heudiconv",
+            "bootstrap",
+            str(sample_dir_one),
+            str(sample_dir_two),
+            "--config",
+            str(project_dir / "bidsflow.toml"),
+            "--dry-run",
+        ],
+    )
 
     assert result.exit_code == 0, result.output
     assert "Planned HeuDiConv bootstrap command:" in result.output
     assert "heudiconv --files" in result.output
+    assert str(sample_dir_one) in result.output
+    assert str(sample_dir_two) in result.output
     assert str(project_dir / "code" / "heudiconv" / "heuristic.py") in result.output
+    assert str(project_dir / "code" / "heudiconv" / "dicominfo") in result.output
     assert str(project_dir / "state" / "heudiconv" / "bootstrap.json") in result.output
 
 
-def test_heudiconv_bootstrap_runs_with_launcher_and_records_outputs(tmp_path: Path) -> None:
+def test_heudiconv_bootstrap_runs_with_launcher_and_records_outputs_for_multiple_sessions(tmp_path: Path) -> None:
     project_dir = tmp_path / "demo-project"
 
     init_result = runner.invoke(app, ["init", str(project_dir)])
@@ -44,10 +60,17 @@ def test_heudiconv_bootstrap_runs_with_launcher_and_records_outputs(tmp_path: Pa
                 "",
                 "argv = sys.argv[1:]",
                 "out_dir = Path(argv[argv.index('-o') + 1])",
+                "sample_paths = argv[argv.index('--files') + 1:argv.index('-o')]",
                 "info_dir = out_dir / '.heudiconv' / 'bootstrap' / 'info'",
                 "info_dir.mkdir(parents=True, exist_ok=True)",
                 "(info_dir / 'heuristic.py').write_text('def infotodict(seqinfo):\\n    return {}\\n', encoding='utf-8')",
-                "(info_dir / 'dicominfo.tsv').write_text('series_id\\tprotocol_name\\n1\\tT1w\\n', encoding='utf-8')",
+                "for index, sample_path in enumerate(sample_paths, start=1):",
+                "    session_dir = info_dir / f'session-{index:02d}'",
+                "    session_dir.mkdir(parents=True, exist_ok=True)",
+                "    (session_dir / 'dicominfo.tsv').write_text(",
+                "        f'series_id\\tprotocol_name\\tsample_path\\n{index}\\tT1w\\t{sample_path}\\n',",
+                "        encoding='utf-8',",
+                "    )",
                 "print('bootstrap ok')",
             )
         )
@@ -65,29 +88,49 @@ def test_heudiconv_bootstrap_runs_with_launcher_and_records_outputs(tmp_path: Pa
         newline="\n",
     )
 
-    sample_dir = project_dir / "incoming" / "sample"
-    sample_dir.mkdir(parents=True)
+    sample_dir_one = project_dir / "incoming" / "sample-ses-01"
+    sample_dir_two = project_dir / "incoming" / "sample-ses-02"
+    sample_dir_one.mkdir(parents=True)
+    sample_dir_two.mkdir(parents=True)
 
-    result = runner.invoke(app, ["heudiconv", "bootstrap", str(sample_dir), "--config", str(config_path)])
+    result = runner.invoke(
+        app,
+        [
+            "heudiconv",
+            "bootstrap",
+            str(sample_dir_one),
+            str(sample_dir_two),
+            "--config",
+            str(config_path),
+        ],
+    )
 
     assert result.exit_code == 0, result.output
 
     heuristic_path = project_dir / "code" / "heudiconv" / "heuristic.py"
-    dicominfo_path = project_dir / "code" / "heudiconv" / "dicominfo.tsv"
+    dicominfo_root = project_dir / "code" / "heudiconv" / "dicominfo"
+    dicominfo_path_one = dicominfo_root / "session-01" / "dicominfo.tsv"
+    dicominfo_path_two = dicominfo_root / "session-02" / "dicominfo.tsv"
     state_path = project_dir / "state" / "heudiconv" / "bootstrap.json"
     log_path = project_dir / "logs" / "heudiconv" / "bootstrap.log"
 
     assert heuristic_path.is_file()
-    assert dicominfo_path.is_file()
+    assert dicominfo_path_one.is_file()
+    assert dicominfo_path_two.is_file()
     assert state_path.is_file()
     assert log_path.is_file()
     assert "bootstrap ok" in log_path.read_text(encoding="utf-8")
 
     state = json.loads(state_path.read_text(encoding="utf-8"))
     assert state["status"] == "succeeded"
+    assert state["sample_paths"] == [str(sample_dir_one.resolve()), str(sample_dir_two.resolve())]
     assert Path(state["launcher"][0]).resolve() == Path(sys.executable).resolve()
     assert state["artifacts"]["heuristic_template"] == str(heuristic_path)
-    assert state["artifacts"]["dicom_inventory"] == str(dicominfo_path)
+    assert state["artifacts"]["dicom_inventory_dir"] == str(dicominfo_root)
+    assert state["artifacts"]["dicom_inventories"] == [
+        str(dicominfo_path_one),
+        str(dicominfo_path_two),
+    ]
 
 
 def test_heudiconv_bootstrap_requires_reset_before_regenerating(tmp_path: Path) -> None:
@@ -125,7 +168,7 @@ def test_heudiconv_bootstrap_requires_reset_before_regenerating(tmp_path: Path) 
         newline="\n",
     )
 
-    sample_dir = project_dir / "incoming" / "sample"
+    sample_dir = project_dir / "incoming" / "sample-ses-01"
     sample_dir.mkdir(parents=True)
 
     first = runner.invoke(app, ["heudiconv", "bootstrap", str(sample_dir), "--config", str(config_path)])

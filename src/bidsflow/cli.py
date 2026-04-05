@@ -133,10 +133,10 @@ def init(
 
 @heudiconv_app.command("bootstrap")
 def heudiconv_bootstrap(
-    sample_path: Path = typer.Argument(
+    sample_paths: list[Path] = typer.Argument(
         ...,
         exists=False,
-        help="Representative DICOM sample path used to generate starter HeuDiConv outputs.",
+        help="One or more representative DICOM sample paths used to generate starter HeuDiConv outputs.",
     ),
     config: Path | None = typer.Option(
         None,
@@ -158,7 +158,7 @@ def heudiconv_bootstrap(
     try:
         config_path = find_project_config(config, Path.cwd())
         context = load_project_context(config_path)
-        plan = plan_bootstrap(context, sample_path)
+        plan = plan_bootstrap(context, sample_paths)
     except (HeudiconvBootstrapError, ValueError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
@@ -167,8 +167,9 @@ def heudiconv_bootstrap(
         typer.echo("Planned HeuDiConv bootstrap command:")
         typer.echo(format_command(plan.command))
         typer.echo(f"Config: {config_path}")
+        typer.echo(f"Sample paths: {len(plan.sample_paths)}")
         typer.echo(f"Heuristic: {plan.heuristic_path}")
-        typer.echo(f"DICOM inventory: {plan.dicominfo_path}")
+        typer.echo(f"DICOM inventories: {plan.dicominfo_root}")
         typer.echo(f"State: {plan.bootstrap_state_path}")
         typer.echo(f"Log: {plan.log_path}")
         return
@@ -181,7 +182,7 @@ def heudiconv_bootstrap(
 
     typer.echo("Prepared HeuDiConv bootstrap outputs.")
     typer.echo(f"Heuristic: {result.heuristic_path}")
-    typer.echo(f"DICOM inventory: {result.dicominfo_path}")
+    typer.echo(f"DICOM inventories: {result.dicominfo_root} ({len(result.dicominfo_paths)} files)")
     typer.echo(f"State: {result.bootstrap_state_path}")
     typer.echo(f"Log: {result.log_path}")
     typer.echo("Next: edit the heuristic, then run `bidsflow heudiconv convert`.")

@@ -54,6 +54,14 @@ bidsflow heudiconv bootstrap <sample-path>... [--config bidsflow.toml] [--reset]
 The managed `heudiconv convert` step is stubbed in the CLI but not yet
 implemented.
 
+Current bootstrap behavior:
+
+- a single sample directory is bootstrapped with one temporary subject
+  label
+- multiple sample directories are split into separate single-directory
+  bootstrap units and treated as temporary sessions of one placeholder
+  subject
+
 ## `init` Direction
 
 `bidsflow init` is intended to stay small.

@@ -171,8 +171,24 @@ def heudiconv_bootstrap(
         raise typer.Exit(code=2) from exc
 
     if dry_run:
-        typer.echo("Planned HeuDiConv bootstrap command:")
-        typer.echo(format_command(plan.command))
+        if len(plan.units) == 1 and plan.units[0].session_label is None:
+            unit = plan.units[0]
+            typer.echo("Planned HeuDiConv bootstrap strategy: single-directory bootstrap")
+            typer.echo(
+                f"Temporary subject for bootstrap: {unit.subject_label}"
+            )
+            typer.echo(format_command(unit.initial_command))
+        else:
+            typer.echo(
+                f"Planned HeuDiConv bootstrap strategy: split {len(plan.units)} directories into "
+                "single-directory session units"
+            )
+            for unit in plan.units:
+                typer.echo(
+                    f"{unit.unit_name}: sample={unit.sample_path} "
+                    f"subject={unit.subject_label} session={unit.session_label}"
+                )
+                typer.echo(format_command(unit.initial_command))
         typer.echo(f"Config: {config_path}")
         typer.echo(f"Sample paths: {len(plan.sample_paths)}")
         typer.echo(f"Heuristic: {plan.heuristic_path}")
@@ -188,6 +204,7 @@ def heudiconv_bootstrap(
         raise typer.Exit(code=2) from exc
 
     typer.echo("Prepared HeuDiConv bootstrap outputs.")
+    typer.echo(f"Bootstrap units: {len(result.unit_results)}")
     typer.echo(f"Heuristic: {result.heuristic_path}")
     typer.echo(f"DICOM inventories: {result.dicominfo_root} ({len(result.dicominfo_paths)} files)")
     typer.echo(f"State: {result.bootstrap_state_path}")

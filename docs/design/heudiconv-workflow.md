@@ -21,6 +21,12 @@ Current supported behavior:
 - default launcher is `["heudiconv"]`
 - projects may override that with `[heudiconv].launcher`
 - bootstrap accepts one or more representative sample paths
+- a single sample path is bootstrapped with one temporary subject label
+- multiple sample paths are split into separate single-directory
+  bootstrap units
+- those multi-path units are treated as temporary sessions of one
+  placeholder subject, and the generated session mapping is recorded in
+  bootstrap state
 - bootstrap copies the generated heuristic into `code/heudiconv/`
 - bootstrap copies every generated `dicominfo*.tsv` into
   `code/heudiconv/dicominfo/`
@@ -132,6 +138,9 @@ Design choice for the first BIDSFlow version:
 
 - bootstrap should use `--files`-style input selection first
 - bootstrap should not require final `subject` or `session` labels
+- bootstrap should treat multiple input directories as multiple
+  single-directory units, not as one implicit HeuDiConv multi-directory
+  grouping
 - template-style dataset expansion with `--dicom_dir_template` can wait
   until the workflow contract is stable
 
@@ -143,6 +152,12 @@ Why this matters:
   different sessions may expose different sequence sets
 - users may still need to decide how source identifiers map onto BIDS
   identifiers
+- HeuDiConv can require a subject id even during bootstrap, so BIDSFlow
+  should provide a temporary subject without pretending it is the final
+  BIDS identity
+- multiple input directories are often "same subject, different
+  sessions" in practice, but HeuDiConv does not reliably treat arbitrary
+  directory lists that way on its own
 - forcing placeholder `subject` and `session` values too early would
   turn a HeuDiConv CLI constraint into a BIDSFlow usability problem
 
@@ -150,12 +165,15 @@ What BIDSFlow should record:
 
 - the input selection method
 - the sample paths used for bootstrap
+- whether bootstrap ran as a single-directory attempt or as a
+  multi-session split
 - the configured launcher
 - output directory
 - HeuDiConv version
 - the generated `.heudiconv` state path
 - the generated heuristic skeleton path
 - the generated `dicominfo` inventory directory and copied file paths
+- any temporary subject or session labels BIDSFlow had to generate
 
 What BIDSFlow should expose as artifacts:
 
@@ -174,6 +192,11 @@ bidsflow heudiconv bootstrap <sample-path>... [--reset] [--dry-run]
 Suggested first API behavior:
 
 - `<sample-path>...` identifies one or more representative DICOM samples
+- when one sample path is provided, BIDSFlow runs one bootstrap unit
+  with a generated temporary subject label
+- when multiple sample paths are provided, BIDSFlow treats them as
+  separate single-directory bootstrap units and assigns temporary
+  session labels such as `bootstrap-ses01`
 - `--reset` is required before regenerating bootstrap outputs for the
   same project bootstrap state
 - `--dry-run` shows the planned command, output files, and state paths

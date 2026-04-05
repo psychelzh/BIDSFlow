@@ -304,7 +304,116 @@ Candidate follow-up topics:
 - whether future config sections should distinguish raw BIDS inputs from
   multiple derivative inputs more explicitly
 
-## 6. Source index
+## 6. Planned HeuDiConv-related config concepts
+
+The following concepts are part of the current design direction for the
+first managed HeuDiConv workflow, but they are **not** part of the
+current supported scaffold yet.
+
+They belong here because they are expected to become project-level
+defaults rather than one-off command line flags.
+
+### 6.1 HeuDiConv launcher
+
+Meaning:
+
+- the command prefix BIDSFlow should use to invoke HeuDiConv
+
+Likely config shape:
+
+- an argv-style list such as `["heudiconv"]`
+- or a wrapper/container prefix such as
+  `["singularity", "exec", "--cleanenv", "/containers/heudiconv.sif", "heudiconv"]`
+
+Why this may belong in config:
+
+- projects vary in how HeuDiConv is launched
+- some users want local execution and others want a wrapper or container
+- BIDSFlow should manage step arguments without forcing users to rewrite
+  the full invocation every time
+
+Design note:
+
+- BIDSFlow should append managed HeuDiConv arguments after the launcher
+- users should not need to maintain the complete HeuDiConv command as a
+  shell string
+
+### 6.2 Identity resolver
+
+Meaning:
+
+- the project rule that maps source naming or source metadata onto final
+  BIDS `subject` and `session` labels
+
+Likely resolver kinds:
+
+- `heuristic`
+- `regex`
+- `script`
+- `literal`
+
+Why this may belong in config:
+
+- the mapping rule is usually a stable project convention
+- keeping it in config makes conversion runs auditable and reusable
+- this avoids forcing bootstrap to invent fake subject or session values
+
+Source notes:
+
+- HeuDiConv heuristics file, `infotoids`:
+  [https://heudiconv.readthedocs.io/en/stable/heuristics.html](https://heudiconv.readthedocs.io/en/stable/heuristics.html)
+- HeuDiConv CLI reference:
+  [https://heudiconv.readthedocs.io/en/latest/commandline.html](https://heudiconv.readthedocs.io/en/latest/commandline.html)
+
+### 6.3 Anonymization command
+
+Meaning:
+
+- a project-owned helper command used to rewrite source identifiers into
+  output subject labels during conversion
+
+Likely config shape:
+
+- a script or command path, for example a helper like
+  [`format_subject.py`](https://github.com/CAMP-BNU/preproc-mri/blob/main/template/heudiconv/format_subject.py)
+
+Why this may belong in config:
+
+- anonymization policy is usually project-wide
+- it should be versioned and auditable instead of hidden in shell
+  history
+
+Source notes:
+
+- HeuDiConv CLI reference, `--anon-cmd`:
+  [https://heudiconv.readthedocs.io/en/latest/commandline.html](https://heudiconv.readthedocs.io/en/latest/commandline.html)
+
+### 6.4 Raw BIDS layout database
+
+Meaning:
+
+- the persisted `BIDSLayout` index for the curated raw BIDS dataset
+
+Likely role:
+
+- speed up later analysis, validation, and artifact lookup steps
+
+Why this may belong in config:
+
+- the database path is a reusable project-level choice
+- BIDSFlow may want to rebuild it automatically after successful
+  HeuDiConv conversion
+
+Suggested default direction:
+
+- store it under `state/layouts/raw_bids`
+
+Source notes:
+
+- PyBIDS `BIDSLayout`, `database_path` and `reset_database`:
+  [https://bids-standard.github.io/pybids/generated/bids.layout.BIDSLayout.html](https://bids-standard.github.io/pybids/generated/bids.layout.BIDSLayout.html)
+
+## 7. Source index
 
 - BIDS common principles:
   [https://bids-specification.readthedocs.io/en/latest/common-principles.html](https://bids-specification.readthedocs.io/en/latest/common-principles.html)
@@ -320,3 +429,9 @@ Candidate follow-up topics:
   [https://xcp-d.readthedocs.io/en/stable/usage.html](https://xcp-d.readthedocs.io/en/stable/usage.html)
 - HeuDiConv reproin output structure:
   [https://heudiconv.readthedocs.io/en/latest/reproin.html](https://heudiconv.readthedocs.io/en/latest/reproin.html)
+- HeuDiConv heuristics file:
+  [https://heudiconv.readthedocs.io/en/stable/heuristics.html](https://heudiconv.readthedocs.io/en/stable/heuristics.html)
+- HeuDiConv CLI reference:
+  [https://heudiconv.readthedocs.io/en/latest/commandline.html](https://heudiconv.readthedocs.io/en/latest/commandline.html)
+- PyBIDS `BIDSLayout`:
+  [https://bids-standard.github.io/pybids/generated/bids.layout.BIDSLayout.html](https://bids-standard.github.io/pybids/generated/bids.layout.BIDSLayout.html)

@@ -59,8 +59,8 @@ decisions about execution internals.
 - inspect source directories
 - submit or preview execution
 
-Those concerns belong to later tasks such as `source`, `check`, and
-`run`.
+Those concerns belong to later tasks such as `check` and `run`, or to a
+future dedicated task namespace if one proves necessary.
 
 ## 6. Initial Config Shape
 

@@ -27,29 +27,21 @@ bidsflow run fmriprep
 bidsflow status xcpd
 ```
 
-The main exception is `source`, which remains a task namespace with its
-own subcommands:
-
-```bash
-bidsflow source bootstrap
-bidsflow source scan
-bidsflow source link
-```
-
 ## 3. Top-level Commands
 
 The initial top-level command set should stay small:
 
 - `init`
-- `doctor`
-- `config`
-- `source`
 - `check`
 - `run`
 - `status`
 
-This is enough to express project setup, source logistics, readiness
-checks, execution, and state inspection.
+This is enough to express project setup, readiness checks, execution,
+and state inspection.
+
+Other task namespaces can be added later once they carry stable,
+non-trivial behavior. They should not appear in the first rebuilt CLI
+just to mirror an internal implementation detail.
 
 ## 4. Why Targets Should Not Be Top-level Commands
 
@@ -98,7 +90,7 @@ Good public parameters:
 - `--session-label`
 - `--all`
 - `--dry-run`
-- source paths, manifest paths, and output roots
+- input paths, manifest paths, and output roots when a target needs them
 
 Avoid exposing raw native tool flags directly in the public surface.
 
@@ -109,9 +101,6 @@ top-level BIDSFlow CLI.
 
 ```bash
 bidsflow init .
-bidsflow source bootstrap --sample-path /data/source/sub041_session1
-bidsflow source scan --source-template "/data/source/TJNU_WQ_CAMP_SUB{subject}_*_{session}"
-bidsflow source link --manifest code/source-manifest.tsv
 bidsflow check curate --subject-label 041 --session-label 01
 bidsflow run curate --subject-label 041 --session-label 01
 bidsflow run fmriprep --subject-label 041
@@ -124,3 +113,6 @@ BIDSFlow should own the verbs.
 
 Targets, including BIDS Apps, should remain explicit as nouns under
 those verbs.
+
+The first rebuilt CLI should keep that verb set minimal: `init`,
+`check`, `run`, and `status`.

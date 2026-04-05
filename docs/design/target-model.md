@@ -2,7 +2,15 @@
 
 ## 1. Purpose
 
-BIDSFlow should model workflow work in terms of **targets**, not stages.
+This document describes one possible **public naming layer** for BIDSFlow.
+
+It should not be treated as the primary runtime model. Runtime
+orchestration should instead be based on managed workflows, command
+templates, artifact records, and run records. See
+[execution-model.md](execution-model.md).
+
+BIDSFlow should still prefer **targets** over stages when it needs a
+user-facing noun.
 
 The word `stage` over-emphasizes a linear pipeline, while the real
 workflow shape is a graph with branching, fan-out, and multiple kinds of
@@ -17,7 +25,6 @@ A task is the user-facing verb.
 Examples:
 
 - `init`
-- `source scan`
 - `check`
 - `run`
 - `status`
@@ -122,9 +129,16 @@ That means:
 - avoid public `--stage` flags
 - avoid one top-level command per app
 
+Dedicated task namespaces such as `source` may still appear later, but
+they should be introduced only when they represent stable user-facing
+work rather than a thin wrapper around one adapter.
+
 ## 7. Summary
 
-The next implementation should use `TargetId` and `TargetSpec` as its
-core internal language.
+If BIDSFlow keeps a public target naming layer, `TargetId` and
+`TargetSpec` can still be useful for that purpose.
 
-`stage` should not be the organizing abstraction for the rebuilt CLI.
+But the rebuilt runtime should not use `stage` or `target` as its sole
+organizing abstraction. The primary runtime model should live in
+managed workflows, command templates, artifact records, and run
+records.

@@ -2,11 +2,12 @@
 
 ## 1. Purpose
 
-BIDSFlow should treat transitions between targets as **formal handoffs**
-rather than as informal path passing.
+BIDSFlow should treat transitions between runs, managed workflow steps,
+or public targets as **formal handoffs** rather than as informal path
+passing.
 
-A handoff contract records what an upstream target has produced, what a
-downstream target expects, and which blockers still prevent execution.
+A handoff contract records what an upstream run has produced, what a
+downstream run expects, and which blockers still prevent execution.
 
 ## 2. Why This Matters
 
@@ -119,8 +120,8 @@ class HandoffContract(BaseModel):
 
 ## 7. Summary
 
-The handoff contract should be defined in terms of **targets**, not
-stages.
+The handoff contract should stay concrete and artifact-aware.
 
-It is the mechanism that lets BIDSFlow coordinate app-backed work
-without collapsing everything into opaque path passing.
+It is the mechanism that lets BIDSFlow coordinate app-backed work and
+managed workflows without collapsing everything into opaque path
+passing.

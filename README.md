@@ -2,8 +2,8 @@
 
 ## Design Reset
 
-BIDSFlow is being reset around a **task-first, target-oriented** command
-line model for BIDS workflow logistics.
+BIDSFlow is being reset around a **task-first, logistics-oriented**
+command line model for BIDS workflow work.
 
 The historical implementation and stage-first design notes were removed
 on purpose from this branch because they encoded the wrong abstraction
@@ -13,10 +13,11 @@ next implementation pass.
 ## Core Direction
 
 - Users should express **what task** they want to perform first.
-- Tasks should operate on **targets** such as `curate`, `validate`,
-  `fmriprep`, or `xcpd`.
-- Some targets are backed by BIDS Apps, while others are BIDSFlow-owned
-  workflow targets.
+- BIDSFlow should own run logistics: inputs, outputs, logs, state,
+  resumability, and downstream handoff.
+- Multi-stage workflows such as HeuDiConv should be managed explicitly.
+- Most other tools can stay template-driven instead of being deeply
+  re-wrapped.
 - Adapters, backends, and schedulers should stay behind the public CLI
   surface.
 
@@ -24,30 +25,24 @@ next implementation pass.
 
 ```bash
 bidsflow init [DIRECTORY]
-bidsflow doctor
-bidsflow config validate --config bidsflow.toml
-
-bidsflow source bootstrap
-bidsflow source scan
-bidsflow source link
-
 bidsflow check <target>
 bidsflow run <target>
 bidsflow status [<target>]
 ```
 
-Representative targets:
+Representative managed work:
 
-- `curate`
-- `validate`
-- `fmriprep`
-- `mriqc`
-- `xcpd`
-- `qsiprep`
-- `qsirecon`
+- HeuDiConv bootstrap and convert steps
+- validation and app-backed runs that consume recorded artifacts
+- template-backed jobs such as `fmriprep`, `mriqc`, and `xcpd`
 
-This keeps BIDSFlow's public language centered on workflow logistics,
-while still allowing app-backed targets to be explicit and visible.
+This keeps BIDSFlow's public language centered on workflow logistics
+instead of turning the package into a large wrapper around tool-native
+flags.
+
+Additional commands such as `doctor`, `config`, or `source` can return
+later if they grow into stable user-facing tasks. They are intentionally
+deferred from the first rebuilt CLI.
 
 ## `init` Direction
 
@@ -75,11 +70,12 @@ and `--force` are enough for the first pass.
 - `src/` and `tests/` now contain only the first rebuilt command:
   `bidsflow init`.
 - The rest of the historical implementation remains intentionally
-  removed until the target model is rebuilt cleanly.
+  removed until the execution model is rebuilt cleanly.
 
 ## Active Design Docs
 
-- [Target model](docs/design/target-model.md)
+- [Execution model](docs/design/execution-model.md)
+- [HeuDiConv workflow](docs/design/heudiconv-workflow.md)
 - [Task-first CLI](docs/design/task-first-cli.md)
 - [Project initialization](docs/design/project-init.md)
 - [Config reference](docs/design/config.md)
@@ -87,7 +83,9 @@ and `--force` are enough for the first pass.
 
 ## Next Implementation Milestones
 
-1. Define a target registry and request model.
-2. Rebuild `check`, `run`, and `status` around targets.
-3. Add adapters, backends, and schedulers only after the public model
+1. Define artifact records, run records, and managed workflow state.
+2. Rebuild HeuDiConv around explicit bootstrap and convert steps.
+3. Rebuild `check`, `run`, and `status` around the execution model.
+4. Add template-backed app runs after the core runtime stabilizes.
+5. Add adapters, backends, and schedulers only after the public model
    stabilizes.

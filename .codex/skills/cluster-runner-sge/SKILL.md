@@ -1,21 +1,21 @@
 ---
 name: cluster-runner-sge
-description: Design and implement SGE execution for BIDSFlow, with Debian-packaged Son of Grid Engine as the first target. Use when adding `qsub` submission, translating execution settings into SGE resources, handling `qstat` or `qacct` state checks, wiring dependencies, organizing logs, or supporting optional DRMAA1 integration for participant-level execution units.
+description: Design future SGE integration for BIDSFlow after the target and run model stabilizes. Use when reintroducing scheduler support for target executions, mapping execution requests to `qsub`, handling `qstat` or `qacct` state checks, wiring dependencies, or organizing scheduler-facing state without letting SGE shape the public CLI.
 ---
 
 # Cluster Runner Sge
 
 Translate BIDSFlow execution units into reliable SGE submissions while
-keeping scheduler concerns separate from BIDS App argument construction.
+keeping scheduler concerns separate from target semantics and adapter
+logic.
 
 ## Quick Start
 
 Start by reading these files:
 
-- `src/bidsflow/cli.py`
-- `src/bidsflow/config/models.py`
-- `src/bidsflow/core/stages.py`
-- `docs/design/stage-model.md`
+- `README.md`
+- `docs/design/target-model.md`
+- `docs/design/task-first-cli.md`
 - `docs/design/handoff-contract.md`
 
 Read `references/sge-patterns.md` before adding submission or job-state
@@ -25,6 +25,10 @@ logic.
 
 Treat the scheduler as a transport layer over a launch specification.
 
+This skill is intentionally downstream of the current design reset. Use
+it only after the task and target model are stable enough to support
+real execution requests.
+
 Keep these pieces separate:
 
 - execution unit selection
@@ -33,8 +37,11 @@ Keep these pieces separate:
 - batch script rendering
 - submission result and state tracking
 
-Prefer one `participant x stage` execution unit per submitted job unless
+Prefer one `target x scope-unit` execution unit per submitted job unless
 resource homogeneity and failure semantics clearly favor job arrays.
+
+Do not let scheduler concerns leak back upward into top-level command
+design.
 
 ## Submission Rules
 
@@ -47,7 +54,7 @@ Prefer machine-readable submission flows:
 
 Model dependencies explicitly:
 
-- use `-hold_jid` or equivalent dependency links for stage chaining
+- use `-hold_jid` or equivalent dependency links for target dependencies
 - keep dependency calculation outside raw command building
 - store upstream job ids alongside the submitted unit
 
@@ -63,7 +70,7 @@ Treat Debian-packaged Son of Grid Engine as the first supported variant:
 Persist enough data to make `status`, rerun, and debugging possible:
 
 - job id
-- stage id
+- target id
 - participant or session scope
 - requested resources
 - submission timestamp
@@ -73,19 +80,11 @@ Persist enough data to make `status`, rerun, and debugging possible:
 
 ## Validation
 
-Run local checks after SGE runner edits:
+If work is still in design, validate that scheduler language remains
+strictly below the task and target model.
 
-```bash
-python -m mypy src
-python -m ruff check .
-```
-
-If you touch CLI submission surfaces, also run:
-
-```bash
-bidsflow --help
-bidsflow status
-```
+If implementation resumes later, run the narrowest scheduler-facing
+checks available for the code you changed.
 
 ## References
 

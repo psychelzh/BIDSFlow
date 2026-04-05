@@ -2,190 +2,126 @@
 
 ## 1. Purpose
 
-BIDSFlow should treat transitions between stages as **formal handoffs**
-rather than informal path passing. A handoff contract defines what an
-upstream stage must provide before a downstream stage can be executed
-safely.
+BIDSFlow should treat transitions between runs, managed workflow steps,
+or public targets as **formal handoffs** rather than as informal path
+passing.
 
-This is one of the central responsibilities of BIDSFlow: not merely
-launching tools, but ensuring that stage boundaries are well-formed.
+A handoff contract records what an upstream run has produced, what a
+downstream run expects, and which blockers still prevent execution.
 
-## 2. Contract concept
+## 2. Why This Matters
 
-A handoff contract is a structured description of:
+Passing only a directory path is not enough.
 
-- what dataset is being handed off
-- what scope units are covered
-- what modality or derivative class is available
-- what provenance produced it
-- what downstream assumptions are satisfied
-- what unresolved constraints still block execution
+Downstream work needs explicit assurances about:
 
-## 3. Required contract fields
+- coverage
+- modality availability
+- derivative lineage
+- provenance
+- compatibility with the intended target
 
-Each handoff object should minimally include the following fields.
+This is one of the main value propositions of BIDSFlow: not replacing
+scientific tools, but making their boundaries explicit and auditable.
 
-### 3.1 Identity
+## 3. Required Fields
 
-- `from_stage`
-- `to_stage`
+Each handoff object should minimally carry:
+
+- `from_target`
+- `to_target`
 - `project_root`
 - `dataset_root`
-- `dataset_type` (`raw` or `derivative`)
-- `scope_units` (participants / sessions / tasks as relevant)
+- `dataset_kind`
+- `scope_units`
+- `coverage`
+- `modalities`
+- `provenance`
+- `guarantees`
+- `blockers`
 
-### 3.2 Dataset metadata
+The exact schema may evolve, but these concepts should remain stable.
 
-- presence of `dataset_description.json`
-- derivative `GeneratedBy` content when applicable
-- dataset name and derivative lineage
-
-### 3.3 Coverage
-
-- participant list
-- session coverage if applicable
-- modality availability
-- task coverage if relevant
-
-### 3.4 Provenance
-
-- BIDSFlow version
-- stage configuration snapshot
-- backend type
-- container image reference
-- execution timestamp
-- upstream signature or hash
-
-### 3.5 Stage-specific guarantees
-
-Examples:
-
-- required spaces available for XCP-D
-- expected diffusion derivatives available for QSIRecon
-- raw BIDS compliance level sufficient for MRIQC or fMRIPrep
-
-### 3.6 Blocking issues
-
-A handoff should explicitly record unresolved blockers rather than failing silently.
-
-Examples:
-
-- missing participant outputs
-- missing `fsLR` outputs needed for CIFTI downstream processing
-- missing `dataset_description.json`
-- unsupported modality combination
-
-## 4. Handoff classes in the initial BIDSFlow scope
+## 4. Example Handoffs
 
 ### 4.1 `curate -> validate`
 
-The curation stage should hand off:
+The handoff should describe:
 
-- a raw BIDS root
-- top-level BIDS metadata
-- participant/session coverage summary
-- any known curation warnings
+- the raw BIDS root
+- participant and session coverage
+- top-level metadata presence
+- curation warnings that remain unresolved
 
 ### 4.2 `validate -> fmriprep`
 
-Validation should hand off confirmation that:
+The handoff should confirm:
 
-- the raw dataset is structurally readable
-- necessary functional/anatomical modalities exist for the selected participant(s)
-- no blocking dataset-level errors remain
+- the selected scope exists
+- the necessary anatomical and functional inputs are present
+- no blocking raw-data issues remain
 
 ### 4.3 `validate -> mriqc`
 
-Validation should hand off confirmation that:
+The handoff should confirm:
 
-- the selected participant(s) exist in raw BIDS
-- raw image files needed for MRIQC are available
-- the intended scope selection is coherent
+- the selected raw inputs exist
+- the intended scope is coherent
+- dataset structure is sufficient for the requested check
 
 ### 4.4 `fmriprep -> xcpd`
 
-This is a critical derivative handoff. The contract should verify at least:
+The handoff should confirm:
 
-- fMRIPrep derivative root exists
-- derivative `dataset_description.json` exists
-- participant coverage matches the intended scope
-- required spaces or file formats for the requested XCP-D mode are available
-- provenance records identify the upstream fMRIPrep run
+- the derivative root exists
+- derivative metadata are present
+- participant coverage matches the request
+- required spaces and file classes are available
+- provenance identifies the upstream run
 
 ### 4.5 `validate -> qsiprep`
 
-Validation should hand off confirmation that:
+The handoff should confirm:
 
-- diffusion data are present for selected participants
-- accompanying structural inputs exist if required by the chosen configuration
-- no blocking raw-data structure issues remain
+- diffusion inputs exist for the selected scope
+- accompanying structural data are present when needed
+- no blocking structure issues remain
 
 ### 4.6 `qsiprep -> qsirecon`
 
-This derivative handoff should verify at least:
+The handoff should confirm:
 
-- QSIPrep derivative root exists
-- derivative metadata are intact
-- required reconstruction inputs exist
-- the requested reconstruction specification is compatible with available products
+- upstream derivatives exist
+- reconstruction inputs are complete
+- the requested reconstruction contract matches the available products
 
-## 5. Why path passing is insufficient
+## 5. Evaluation Outcomes
 
-Passing only a directory path is inadequate because downstream stages
-need more than location. They need assurances about:
+A handoff evaluation should return one of:
 
-- semantic compatibility
-- participant/session coverage
-- modality completeness
-- provenance lineage
-- configuration compatibility
+- `ready`
+- `warning`
+- `blocked`
 
-Therefore, BIDSFlow should internally compile a structured handoff
-object, even if the final backend execution still uses filesystem paths.
+This separates fatal blockers from non-fatal caveats.
 
-## 6. Suggested internal representation
-
-A future Python model may look conceptually like this:
+## 6. Suggested Internal Shape
 
 ```python
 class HandoffContract(BaseModel):
-    from_stage: str
-    to_stage: str
+    from_target: str
+    to_target: str
     dataset_root: Path
-    dataset_type: str
+    dataset_kind: str
     scope_units: list[str]
-    modalities: list[str]
-    provenance: dict
     guarantees: dict
     blockers: list[str]
 ```
 
-The exact schema may evolve, but the principle should remain stable.
+## 7. Summary
 
-## 7. Contract evaluation outcomes
+The handoff contract should stay concrete and artifact-aware.
 
-A handoff evaluation should return one of three high-level outcomes:
-
-- `ready`: downstream stage may proceed
-- `warning`: downstream stage may proceed, but non-blocking issues exist
-- `blocked`: downstream stage must not proceed
-
-This makes it possible to separate fatal from non-fatal issues.
-
-## 8. Relationship to provenance and resumability
-
-The handoff contract should be stored in the run state because it supports:
-
-- rerun diagnostics
-- stale detection
-- downstream reproducibility
-- audit trails
-
-If a downstream result is questioned later, the recorded handoff object
-should explain what was assumed at execution time.
-
-## 9. Summary
-
-BIDSFlow should regard stage transitions as first-class objects. This is
-the mechanism by which it can deliver robust orchestration without
-replacing the scientific tools themselves.
+It is the mechanism that lets BIDSFlow coordinate app-backed work and
+managed workflows without collapsing everything into opaque path
+passing.

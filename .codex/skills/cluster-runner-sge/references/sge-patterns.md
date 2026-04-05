@@ -18,7 +18,7 @@ Keep these boundaries intact:
 
 ## Default Execution Unit
 
-Use `participant x stage` as the default submitted unit for heavy
+Use `target x scope-unit` as the default submitted unit for heavy
 applications.
 
 Consider job arrays only when:
@@ -43,7 +43,7 @@ Persist at least:
 
 - job id
 - scheduler name
-- stage id
+- target id
 - scope unit
 - resource request
 - dependency expression
@@ -58,3 +58,4 @@ Persist at least:
 - Keep DRMAA1 optional behind a separate driver path.
 - Do not assume site-specific resource names are portable.
 - Prefer explicit environment exports over blanket `-V` inheritance.
+- Do not let SGE constraints dictate the public task-first CLI.

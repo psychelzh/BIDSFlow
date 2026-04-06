@@ -23,7 +23,7 @@ def test_heudiconv_manifest_dry_run_shows_empty_column_behavior(tmp_path: Path) 
     init_result = runner.invoke(app, ["init", str(project_dir)])
     assert init_result.exit_code == 0, init_result.output
 
-    source_root = project_dir / "incoming"
+    source_root = project_dir / "sourcedata"
     (source_root / "SUB001_SES01").mkdir(parents=True)
     (source_root / "SUB001_SES02").mkdir(parents=True)
 
@@ -32,7 +32,6 @@ def test_heudiconv_manifest_dry_run_shows_empty_column_behavior(tmp_path: Path) 
         [
             "heudiconv",
             "manifest",
-            str(source_root),
             "--config",
             str(project_dir / "bidsflow.toml"),
             "--dry-run",
@@ -54,7 +53,7 @@ def test_heudiconv_manifest_writes_blank_review_table_by_default(tmp_path: Path)
     init_result = runner.invoke(app, ["init", str(project_dir)])
     assert init_result.exit_code == 0, init_result.output
 
-    source_root = project_dir / "incoming"
+    source_root = project_dir / "sourcedata"
     (source_root / "SUB001_SES01").mkdir(parents=True)
     (source_root / "SUB002_SES03").mkdir(parents=True)
 
@@ -63,7 +62,6 @@ def test_heudiconv_manifest_writes_blank_review_table_by_default(tmp_path: Path)
         [
             "heudiconv",
             "manifest",
-            str(source_root),
             "--config",
             str(project_dir / "bidsflow.toml"),
         ],
@@ -108,7 +106,7 @@ def test_heudiconv_manifest_applies_explicit_regex_extraction(tmp_path: Path) ->
     init_result = runner.invoke(app, ["init", str(project_dir)])
     assert init_result.exit_code == 0, init_result.output
 
-    source_root = project_dir / "incoming"
+    source_root = project_dir / "sourcedata"
     (source_root / "CAMP_SUB041_VISIT01").mkdir(parents=True)
     (source_root / "CAMP_SUB041_VISIT02").mkdir(parents=True)
 
@@ -117,7 +115,6 @@ def test_heudiconv_manifest_applies_explicit_regex_extraction(tmp_path: Path) ->
         [
             "heudiconv",
             "manifest",
-            str(source_root),
             "--config",
             str(project_dir / "bidsflow.toml"),
             "--subject-regex",
@@ -147,18 +144,18 @@ def test_heudiconv_manifest_requires_reset_before_regenerating(tmp_path: Path) -
     init_result = runner.invoke(app, ["init", str(project_dir)])
     assert init_result.exit_code == 0, init_result.output
 
-    source_root = project_dir / "incoming"
+    source_root = project_dir / "sourcedata"
     (source_root / "SUB001_SES01").mkdir(parents=True)
 
     first = runner.invoke(
         app,
-        ["heudiconv", "manifest", str(source_root), "--config", str(project_dir / "bidsflow.toml")],
+        ["heudiconv", "manifest", "--config", str(project_dir / "bidsflow.toml")],
     )
     assert first.exit_code == 0, first.output
 
     blocked = runner.invoke(
         app,
-        ["heudiconv", "manifest", str(source_root), "--config", str(project_dir / "bidsflow.toml")],
+        ["heudiconv", "manifest", "--config", str(project_dir / "bidsflow.toml")],
     )
     assert blocked.exit_code == 2
     assert "Existing HeuDiConv manifest state was found" in blocked.output
@@ -168,10 +165,38 @@ def test_heudiconv_manifest_requires_reset_before_regenerating(tmp_path: Path) -
         [
             "heudiconv",
             "manifest",
-            str(source_root),
             "--config",
             str(project_dir / "bidsflow.toml"),
             "--reset",
         ],
     )
     assert allowed.exit_code == 0, allowed.output
+
+
+def test_heudiconv_manifest_uses_configured_source_root(tmp_path: Path) -> None:
+    project_dir = tmp_path / "demo-project"
+
+    init_result = runner.invoke(app, ["init", str(project_dir)])
+    assert init_result.exit_code == 0, init_result.output
+
+    config_path = project_dir / "bidsflow.toml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            'source_root = "sourcedata"',
+            'source_root = "incoming"',
+        ),
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    source_root = project_dir / "incoming"
+    (source_root / "SUB010_SES01").mkdir(parents=True)
+
+    result = runner.invoke(
+        app,
+        ["heudiconv", "manifest", "--config", str(config_path)],
+    )
+
+    assert result.exit_code == 0, result.output
+    state = json.loads((project_dir / "state" / "heudiconv" / "manifest.json").read_text(encoding="utf-8"))
+    assert state["source_root"] == str(source_root.resolve())

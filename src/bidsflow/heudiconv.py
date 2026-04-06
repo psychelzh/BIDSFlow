@@ -219,16 +219,19 @@ def run_skeleton(context: ProjectContext, plan: SkeletonPlan, reset: bool) -> Sk
 
 def plan_manifest(
     context: ProjectContext,
-    source_root: Path,
     *,
     subject_regex: str | None = None,
     session_regex: str | None = None,
 ) -> ManifestPlan:
-    resolved_source_root = source_root.resolve()
+    resolved_source_root = context.source_root.resolve()
     if not resolved_source_root.exists():
-        raise HeudiconvManifestError(f"Source root does not exist: {resolved_source_root}")
+        raise HeudiconvManifestError(
+            f"Configured source root does not exist: {resolved_source_root}"
+        )
     if not resolved_source_root.is_dir():
-        raise HeudiconvManifestError(f"Source root is not a directory: {resolved_source_root}")
+        raise HeudiconvManifestError(
+            f"Configured source root is not a directory: {resolved_source_root}"
+        )
 
     subject_pattern = _compile_optional_regex(subject_regex, "subject")
     session_pattern = _compile_optional_regex(session_regex, "session")

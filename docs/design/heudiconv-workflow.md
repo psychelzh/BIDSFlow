@@ -13,14 +13,14 @@ multi-stage lifecycle that benefits from orchestration.
 The current codebase implements two early slices:
 
 ```bash
-bidsflow heudiconv manifest <source-root> [--config bidsflow.toml] [--subject-regex REGEX] [--session-regex REGEX] [--reset] [--dry-run]
+bidsflow heudiconv manifest [--config bidsflow.toml] [--subject-regex REGEX] [--session-regex REGEX] [--reset] [--dry-run]
 bidsflow heudiconv skeleton <sample-path>... [--config bidsflow.toml] [--reset] [--dry-run]
 ```
 
 Current supported behavior:
 
-- manifest scans the immediate child directories under a chosen source
-  root
+- manifest scans the immediate child directories under the configured
+  `source_root`
 - manifest does not call HeuDiConv
 - manifest writes a reviewable `manifest.tsv` plus `manifest.json`
 - by default manifest leaves `subject/session` fields blank instead of
@@ -154,7 +154,9 @@ Design choice for the first BIDSFlow version:
 
 - manifest should be a filesystem-only step and should not call
   HeuDiConv
-- manifest should scan the immediate child directories under one source
+- manifest should use the configured project `source_root` instead of a
+  separate command-line input root
+- manifest should scan the immediate child directories under that source
   root
 - manifest should default to empty `subject_raw/session_raw` and empty
   final `subject_label/session_label`
@@ -172,7 +174,7 @@ Design choice for the first BIDSFlow version:
 Suggested first public shape:
 
 ```bash
-bidsflow heudiconv manifest <source-root> [--subject-regex REGEX] [--session-regex REGEX] [--reset] [--dry-run]
+bidsflow heudiconv manifest [--subject-regex REGEX] [--session-regex REGEX] [--reset] [--dry-run]
 ```
 
 Suggested generated files:

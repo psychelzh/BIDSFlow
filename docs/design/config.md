@@ -130,6 +130,9 @@ Why this default:
 - `sourcedata` is the official BIDS name for source data
 - this keeps source inputs separate from curated raw BIDS data and from
   derivatives
+- the managed HeuDiConv `manifest` step should consume this configured
+  location directly instead of asking for a second source-root path on
+  the CLI
 
 Source notes:
 

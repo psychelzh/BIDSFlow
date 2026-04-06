@@ -48,7 +48,7 @@ deferred from the first rebuilt CLI.
 
 ```bash
 bidsflow init [DIRECTORY]
-bidsflow heudiconv manifest <source-root> [--config bidsflow.toml] [--subject-regex REGEX] [--session-regex REGEX] [--reset] [--dry-run]
+bidsflow heudiconv manifest [--config bidsflow.toml] [--subject-regex REGEX] [--session-regex REGEX] [--reset] [--dry-run]
 bidsflow heudiconv skeleton <sample-path>... [--config bidsflow.toml] [--reset] [--dry-run]
 ```
 
@@ -57,7 +57,8 @@ implemented.
 
 Current manifest behavior:
 
-- manifest scans the immediate child directories under one source root
+- manifest scans the immediate child directories under the configured
+  `source_root`
 - manifest does not call HeuDiConv
 - by default it writes a review table with empty `subject/session`
   columns

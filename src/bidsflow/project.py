@@ -10,6 +10,7 @@ import tomllib
 class ProjectContext:
     config_path: Path
     project_root: Path
+    source_root: Path
     raw_bids_root: Path
     logs_root: Path
     state_root: Path
@@ -46,6 +47,7 @@ def load_project_context(config_path: Path) -> ProjectContext:
         raise ValueError("[project].root must be a string path.")
 
     project_root = _resolve_from_config_dir(config_path, Path(project_root_value))
+    source_root = _resolve_within_project(project_root, paths_section, "source_root", "sourcedata")
     raw_bids_root = _resolve_within_project(project_root, paths_section, "raw_bids_root", "sourcedata/raw")
     logs_root = _resolve_within_project(project_root, paths_section, "logs_root", "logs")
     state_root = _resolve_within_project(project_root, paths_section, "state_root", "state")
@@ -53,6 +55,7 @@ def load_project_context(config_path: Path) -> ProjectContext:
     return ProjectContext(
         config_path=config_path,
         project_root=project_root,
+        source_root=source_root,
         raw_bids_root=raw_bids_root,
         logs_root=logs_root,
         state_root=state_root,

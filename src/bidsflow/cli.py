@@ -222,13 +222,6 @@ def heudiconv_skeleton(
 
 @heudiconv_app.command("manifest")
 def heudiconv_manifest(
-    source_root: Path = typer.Argument(
-        ...,
-        exists=False,
-        file_okay=False,
-        dir_okay=True,
-        help="Root directory whose immediate child directories should be listed in the manifest.",
-    ),
     config: Path | None = typer.Option(
         None,
         "--config",
@@ -255,13 +248,12 @@ def heudiconv_manifest(
         help="Show the planned manifest outputs without writing files.",
     ),
 ) -> None:
-    """Enumerate source directories into a reviewable HeuDiConv manifest."""
+    """Enumerate the configured source root into a reviewable HeuDiConv manifest."""
     try:
         config_path = find_project_config(config, Path.cwd())
         context = load_project_context(config_path)
         plan = plan_manifest(
             context,
-            source_root,
             subject_regex=subject_regex,
             session_regex=session_regex,
         )

@@ -48,11 +48,28 @@ deferred from the first rebuilt CLI.
 
 ```bash
 bidsflow init [DIRECTORY]
+bidsflow heudiconv manifest <source-root> [--config bidsflow.toml] [--subject-regex REGEX] [--session-regex REGEX] [--reset] [--dry-run]
 bidsflow heudiconv skeleton <sample-path>... [--config bidsflow.toml] [--reset] [--dry-run]
 ```
 
 The managed `heudiconv convert` step is stubbed in the CLI but not yet
 implemented.
+
+Current manifest behavior:
+
+- manifest scans the immediate child directories under one source root
+- manifest does not call HeuDiConv
+- by default it writes a review table with empty `subject/session`
+  columns
+- optional explicit regex rules can fill `subject_raw/session_raw`
+  without guessing from directory names
+- manifest is the project-owned truth source for later HeuDiConv
+  conversion handoff
+- manifest does not create normalized links or other execution views
+- future `convert` runs may materialize temporary links from the
+  confirmed manifest when needed and clean them up afterward
+- manifest writes `code/heudiconv/manifest.tsv` and
+  `state/heudiconv/manifest.json`
 
 Current skeleton behavior:
 
@@ -63,6 +80,12 @@ Current skeleton behavior:
   subject
 - skeleton uses an isolated work root under `state/heudiconv/` instead
   of writing into the real raw BIDS output directory
+- skeleton and manifest are parallel preparation steps; neither is a
+  strict prerequisite for the other
+- in many real projects, skeleton happens first because heuristic work
+  must start before final naming is frozen
+- convert is the first step that should assume both a confirmed
+  manifest and a reviewed heuristic
 
 ## `init` Direction
 

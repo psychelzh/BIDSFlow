@@ -10,14 +10,25 @@ multi-stage lifecycle that benefits from orchestration.
 
 ## 1.1 Current implementation status
 
-The current codebase implements only the first skeleton slice:
+The current codebase implements two early slices:
 
 ```bash
+bidsflow heudiconv manifest <source-root> [--config bidsflow.toml] [--subject-regex REGEX] [--session-regex REGEX] [--reset] [--dry-run]
 bidsflow heudiconv skeleton <sample-path>... [--config bidsflow.toml] [--reset] [--dry-run]
 ```
 
 Current supported behavior:
 
+- manifest scans the immediate child directories under a chosen source
+  root
+- manifest does not call HeuDiConv
+- manifest writes a reviewable `manifest.tsv` plus `manifest.json`
+- by default manifest leaves `subject/session` fields blank instead of
+  guessing from directory names
+- optional explicit regex rules can fill `subject_raw/session_raw`
+- manifest is the project-owned truth source for later conversion
+  handoff
+- manifest does not create links or other execution views
 - default launcher is `["heudiconv"]`
 - projects may override that with `[heudiconv].launcher`
 - skeleton accepts one or more representative sample paths
@@ -83,6 +94,7 @@ contracts rather than as one opaque command.
 
 The main managed concerns are:
 
+- freezing a reviewable manifest before conversion
 - preserving the skeleton outputs that the user must inspect
 - providing a clean human-edit step between skeleton and conversion
 - recording `.heudiconv` provenance and rerun behavior
@@ -90,6 +102,17 @@ The main managed concerns are:
   for the run
 - making the raw BIDS dataset an explicit downstream artifact
 - separating one-time finalization from repeated conversion runs
+
+Relationship between early preparation steps:
+
+- `manifest` and `skeleton` solve different preparation problems
+- `manifest` standardizes dataset-wide naming and handoff
+- `skeleton` produces sample-level heuristic starter material
+- neither step should be treated as a strict prerequisite for the other
+- many projects will run `skeleton` first because heuristic work often
+  starts before final subject/session naming is frozen
+- `convert` is the first step that should rely on both a confirmed
+  manifest and a reviewed heuristic
 
 Source notes:
 
@@ -118,7 +141,52 @@ It also avoids introducing a large backend abstraction too early.
 
 ## 4. Proposed managed steps
 
-### 4.1 `skeleton`
+### 4.1 `manifest`
+
+Goal:
+
+- enumerate candidate source directories into a reviewable handoff table
+- avoid guessing subject or session labels unless the user provides an
+  explicit extraction rule
+- provide a project-owned manifest that later conversion can consume
+
+Design choice for the first BIDSFlow version:
+
+- manifest should be a filesystem-only step and should not call
+  HeuDiConv
+- manifest should scan the immediate child directories under one source
+  root
+- manifest should default to empty `subject_raw/session_raw` and empty
+  final `subject_label/session_label`
+- optional explicit regex rules may fill `subject_raw/session_raw`
+- manifest should leave final naming decisions visible and editable in
+  the output table
+- manifest should be the durable truth source for later conversion
+  inputs
+- manifest should not create symlink trees or other execution views on
+  its own
+- if conversion later needs a normalized input tree, `convert` should
+  materialize it temporarily from the confirmed manifest and remove it
+  when the run finishes
+
+Suggested first public shape:
+
+```bash
+bidsflow heudiconv manifest <source-root> [--subject-regex REGEX] [--session-regex REGEX] [--reset] [--dry-run]
+```
+
+Suggested generated files:
+
+- `code/heudiconv/manifest.tsv`
+- `state/heudiconv/manifest.json`
+
+Ordering note:
+
+- `manifest` does not need to happen before `skeleton`
+- it is one of two preparation tracks that eventually hand off into
+  `convert`
+
+### 4.2 `skeleton`
 
 Goal:
 
@@ -212,6 +280,13 @@ Suggested generated files:
 - `state/heudiconv/skeleton-work/`
 - `state/heudiconv/skeleton.json`
 
+Ordering note:
+
+- `skeleton` does not need to wait for `manifest`
+- in practice it often happens earlier because heuristic editing starts
+  from representative sample data rather than from finalized dataset
+  naming
+
 Important rerun rule:
 
 - the official tutorial says skeleton should normally be done once per
@@ -231,7 +306,7 @@ Source notes:
 - HeuDiConv CLI reference, `--files` and `-s/--subjects` behavior:
   [https://heudiconv.readthedocs.io/en/latest/commandline.html](https://heudiconv.readthedocs.io/en/latest/commandline.html)
 
-### 4.2 `edit-heuristic`
+### 4.3 `edit-heuristic`
 
 Goal:
 
@@ -254,7 +329,7 @@ Design implication:
 - BIDSFlow should treat heuristic editing as a first-class pause point,
   not as an invisible side effect
 
-### 4.3 `convert`
+### 4.4 `convert`
 
 Goal:
 
@@ -329,6 +404,11 @@ Design implication:
 - a successful convert run should register the raw BIDS root as a named
   artifact for downstream tools instead of leaving later steps to guess
   the path
+- when conversion needs a normalized input tree, it should materialize
+  a temporary links view from the confirmed manifest rather than
+  treating links as a second truth source
+- those temporary links should live under the run state area and should
+  normally be removed after success or failure
 - if the heuristic defines `POPULATE_INTENDED_FOR_OPTS`, `IntendedFor`
   handling should be treated as part of `convert`, not as a mandatory
   extra step
@@ -354,7 +434,7 @@ Source notes:
 - PyBIDS `BIDSLayout`, persistent database support:
   [https://bids-standard.github.io/pybids/generated/bids.layout.BIDSLayout.html](https://bids-standard.github.io/pybids/generated/bids.layout.BIDSLayout.html)
 
-### 4.4 Optional maintenance actions
+### 4.5 Optional maintenance actions
 
 Goal:
 
@@ -399,6 +479,7 @@ The first rebuilt HeuDiConv integration should stay small.
 
 It should include:
 
+- a manifest run model
 - a skeleton run model
 - explicit heuristic-edit handoff metadata
 - a convert run model
@@ -409,6 +490,7 @@ It should include:
 
 Implemented now:
 
+- manifest planning and generation
 - skeleton planning and execution
 - optional `[heudiconv].launcher` support
 - skeleton artifact copying and run-record writing
@@ -431,12 +513,15 @@ It should defer:
 ## 6. Recommended implementation order
 
 1. Define the HeuDiConv run record and artifact shapes.
-2. Implement `skeleton` planning and execution.
-3. Implement the explicit handoff into human heuristic editing.
-4. Define launcher, identity-mapping, and anonymization configuration
+2. Implement `manifest` and `skeleton` as independent preparation
+   tracks.
+3. Keep their user-facing order flexible, even if the codebase happens
+   to land one before the other.
+4. Implement the explicit handoff into human heuristic editing.
+5. Define launcher, identity-mapping, and anonymization configuration
    for `convert`.
-5. Implement `convert` together with raw BIDS `BIDSLayout` indexing.
-6. Add optional maintenance actions only if a real workflow gap remains.
+6. Implement `convert` together with raw BIDS `BIDSLayout` indexing.
+7. Add optional maintenance actions only if a real workflow gap remains.
 
 This keeps the first slice aligned with the official workflow rather
 than with an overgeneralized app abstraction.

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import csv
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import time
@@ -62,6 +64,41 @@ class SkeletonResult:
 
 
 class HeudiconvSkeletonError(Exception):
+    pass
+
+
+@dataclass(frozen=True)
+class ManifestEntry:
+    unit_id: str
+    source_path: Path
+    source_name: str
+    subject_raw: str
+    session_raw: str
+    subject_label: str
+    session_label: str
+    include: bool
+    status: str
+    notes: str
+
+
+@dataclass(frozen=True)
+class ManifestPlan:
+    source_root: Path
+    manifest_path: Path
+    manifest_state_path: Path
+    subject_regex: str | None
+    session_regex: str | None
+    entries: tuple[ManifestEntry, ...]
+
+
+@dataclass(frozen=True)
+class ManifestResult:
+    manifest_path: Path
+    manifest_state_path: Path
+    entry_count: int
+
+
+class HeudiconvManifestError(Exception):
     pass
 
 
@@ -180,8 +217,115 @@ def run_skeleton(context: ProjectContext, plan: SkeletonPlan, reset: bool) -> Sk
     )
 
 
+def plan_manifest(
+    context: ProjectContext,
+    source_root: Path,
+    *,
+    subject_regex: str | None = None,
+    session_regex: str | None = None,
+) -> ManifestPlan:
+    resolved_source_root = source_root.resolve()
+    if not resolved_source_root.exists():
+        raise HeudiconvManifestError(f"Source root does not exist: {resolved_source_root}")
+    if not resolved_source_root.is_dir():
+        raise HeudiconvManifestError(f"Source root is not a directory: {resolved_source_root}")
+
+    subject_pattern = _compile_optional_regex(subject_regex, "subject")
+    session_pattern = _compile_optional_regex(session_regex, "session")
+
+    source_units = tuple(
+        sorted(
+            (
+                candidate.resolve()
+                for candidate in resolved_source_root.iterdir()
+                if candidate.is_dir() and not candidate.name.startswith(".")
+            ),
+            key=lambda candidate: candidate.name.lower(),
+        )
+    )
+
+    entries: list[ManifestEntry] = []
+    for index, candidate in enumerate(source_units, start=1):
+        subject_raw, subject_note = _extract_optional_value(subject_pattern, candidate.name, "subject")
+        session_raw, session_note = _extract_optional_value(session_pattern, candidate.name, "session")
+        notes = "; ".join(note for note in (subject_note, session_note) if note)
+
+        entries.append(
+            ManifestEntry(
+                unit_id=f"unit-{index:04d}",
+                source_path=candidate,
+                source_name=candidate.name,
+                subject_raw=subject_raw,
+                session_raw=session_raw,
+                subject_label="",
+                session_label="",
+                include=True,
+                status="needs_review",
+                notes=notes,
+            )
+        )
+
+    code_root = context.project_root / "code" / "heudiconv"
+    state_root = context.state_root / "heudiconv"
+
+    return ManifestPlan(
+        source_root=resolved_source_root,
+        manifest_path=code_root / "manifest.tsv",
+        manifest_state_path=state_root / "manifest.json",
+        subject_regex=subject_regex,
+        session_regex=session_regex,
+        entries=tuple(entries),
+    )
+
+
+def run_manifest(context: ProjectContext, plan: ManifestPlan, reset: bool) -> ManifestResult:
+    _guard_manifest_reset_requirement(plan, reset)
+    _prepare_manifest_directories(plan)
+
+    if reset:
+        _reset_manifest_state(context.project_root, plan)
+        _prepare_manifest_directories(plan)
+
+    _write_manifest_tsv(plan.manifest_path, plan.entries)
+    _write_manifest_state(context, plan)
+
+    return ManifestResult(
+        manifest_path=plan.manifest_path,
+        manifest_state_path=plan.manifest_state_path,
+        entry_count=len(plan.entries),
+    )
+
+
 def format_command(argv: tuple[str, ...]) -> str:
     return subprocess.list2cmdline(list(argv))
+
+
+def _compile_optional_regex(value: str | None, field_name: str) -> re.Pattern[str] | None:
+    if value is None:
+        return None
+    try:
+        return re.compile(value)
+    except re.error as exc:
+        raise HeudiconvManifestError(f"Invalid {field_name} regex: {exc}") from exc
+
+
+def _extract_optional_value(
+    pattern: re.Pattern[str] | None,
+    source_name: str,
+    field_name: str,
+) -> tuple[str, str]:
+    if pattern is None:
+        return "", ""
+
+    match = pattern.search(source_name)
+    if match is None:
+        return "", f"{field_name} regex did not match"
+
+    if field_name in match.groupdict() and match.group(field_name) is not None:
+        return match.group(field_name), ""
+    if match.lastindex:
+        return match.group(1), ""
+    return match.group(0), ""
 
 
 def _build_skeleton_command(
@@ -227,6 +371,28 @@ def _load_launcher(config: dict[str, Any]) -> tuple[str, ...]:
     return tuple(launcher)
 
 
+def _guard_manifest_reset_requirement(plan: ManifestPlan, reset: bool) -> None:
+    if reset:
+        return
+    if plan.manifest_path.exists() or plan.manifest_state_path.exists():
+        raise HeudiconvManifestError(
+            "Existing HeuDiConv manifest state was found. Use --reset to regenerate it."
+        )
+
+
+def _prepare_manifest_directories(plan: ManifestPlan) -> None:
+    plan.manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    plan.manifest_state_path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _reset_manifest_state(project_root: Path, plan: ManifestPlan) -> None:
+    try:
+        for path in (plan.manifest_path, plan.manifest_state_path):
+            _remove_project_path(project_root, path)
+    except ValueError as exc:
+        raise HeudiconvManifestError(str(exc)) from exc
+
+
 def _guard_skeleton_reset_requirement(plan: SkeletonPlan, reset: bool) -> None:
     if reset:
         return
@@ -245,22 +411,25 @@ def _prepare_skeleton_directories(plan: SkeletonPlan) -> None:
 
 
 def _reset_skeleton_state(project_root: Path, plan: SkeletonPlan) -> None:
-    for path in (
-        plan.skeleton_work_root,
-        plan.heudiconv_state_path,
-        plan.heuristic_path,
-        plan.dicominfo_root,
-        plan.skeleton_state_path,
-        plan.log_path,
-    ):
-        _remove_project_path(project_root, path)
+    try:
+        for path in (
+            plan.skeleton_work_root,
+            plan.heudiconv_state_path,
+            plan.heuristic_path,
+            plan.dicominfo_root,
+            plan.skeleton_state_path,
+            plan.log_path,
+        ):
+            _remove_project_path(project_root, path)
+    except ValueError as exc:
+        raise HeudiconvSkeletonError(str(exc)) from exc
 
 
 def _remove_project_path(project_root: Path, path: Path) -> None:
     resolved_root = project_root.resolve()
     resolved_path = path.resolve()
     if not resolved_path.is_relative_to(resolved_root):
-        raise HeudiconvSkeletonError(f"Refusing to remove path outside the project root: {resolved_path}")
+        raise ValueError(f"Refusing to remove path outside the project root: {resolved_path}")
     if not resolved_path.exists():
         return
     if resolved_path.is_dir():
@@ -454,6 +623,89 @@ def _copy_dicominfo_files(destination_root: Path, generated_paths: tuple[Path, .
         copied_paths.append(destination)
 
     return tuple(copied_paths)
+
+
+def _write_manifest_tsv(manifest_path: Path, entries: tuple[ManifestEntry, ...]) -> None:
+    with manifest_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+        writer.writerow(
+            (
+                "unit_id",
+                "source_path",
+                "source_name",
+                "subject_raw",
+                "session_raw",
+                "subject_label",
+                "session_label",
+                "include",
+                "status",
+                "notes",
+            )
+        )
+        for entry in entries:
+            writer.writerow(
+                (
+                    entry.unit_id,
+                    str(entry.source_path),
+                    entry.source_name,
+                    entry.subject_raw,
+                    entry.session_raw,
+                    entry.subject_label,
+                    entry.session_label,
+                    "true" if entry.include else "false",
+                    entry.status,
+                    entry.notes,
+                )
+            )
+
+
+def _write_manifest_state(context: ProjectContext, plan: ManifestPlan) -> None:
+    payload = {
+        "step": "manifest",
+        "status": "succeeded",
+        "recorded_at": datetime.now(UTC).isoformat(),
+        "config_path": str(context.config_path),
+        "project_root": str(context.project_root),
+        "source_root": str(plan.source_root),
+        "artifacts": {
+            "manifest": str(plan.manifest_path),
+        },
+        "handoff": {
+            "role": "truth_source",
+            "derived_execution_views": {
+                "links": {
+                    "managed_by": "convert",
+                    "lifecycle": "ephemeral",
+                }
+            },
+        },
+        "extraction": {
+            "subject_regex": plan.subject_regex,
+            "session_regex": plan.session_regex,
+        },
+        "entry_count": len(plan.entries),
+        "entries": [
+            {
+                "unit_id": entry.unit_id,
+                "source_path": str(entry.source_path),
+                "source_name": entry.source_name,
+                "subject_raw": entry.subject_raw,
+                "session_raw": entry.session_raw,
+                "subject_label": entry.subject_label,
+                "session_label": entry.session_label,
+                "include": entry.include,
+                "status": entry.status,
+                "notes": entry.notes,
+            }
+            for entry in plan.entries
+        ],
+    }
+
+    plan.manifest_state_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
 
 
 def _write_skeleton_record(

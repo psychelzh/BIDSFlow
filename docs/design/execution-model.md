@@ -113,6 +113,26 @@ orchestration logic, not for every BIDS App.
 The first candidate is HeuDiConv because its official workflow already
 has a natural multi-step shape.
 
+### 4.5 Derived execution view
+
+Some runs may need a temporary filesystem view that is derived from a
+durable artifact but is not itself the source of truth.
+
+Examples include:
+
+- a normalized symlink tree materialized from a confirmed manifest
+- a per-run working directory assembled from recorded inputs
+
+These views should be:
+
+- derived from an explicit durable record
+- reproducible on demand
+- safe to delete after the run ends
+
+This keeps long-lived truth in artifacts such as `manifest.tsv` while
+letting execution steps materialize short-lived helper structures only
+when they are actually needed.
+
 ## 5. Two execution styles
 
 The first rebuilt runtime should support two styles of work.

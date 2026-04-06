@@ -5,9 +5,12 @@ from pathlib import Path
 import typer
 
 from .heudiconv import (
+    HeudiconvManifestError,
     HeudiconvSkeletonError,
     format_command,
+    plan_manifest,
     plan_skeleton,
+    run_manifest,
     run_skeleton,
 )
 from .project import find_project_config, load_project_context
@@ -211,7 +214,93 @@ def heudiconv_skeleton(
     typer.echo(f"DICOM inventories: {result.dicominfo_root} ({len(result.dicominfo_paths)} files)")
     typer.echo(f"State: {result.skeleton_state_path}")
     typer.echo(f"Log: {result.log_path}")
-    typer.echo("Next: edit the heuristic, then run `bidsflow heudiconv convert`.")
+    typer.echo(
+        "Next: review and edit the heuristic. Manifest can be prepared before or after "
+        "skeleton, but convert will need both a confirmed manifest and a reviewed heuristic."
+    )
+
+
+@heudiconv_app.command("manifest")
+def heudiconv_manifest(
+    source_root: Path = typer.Argument(
+        ...,
+        exists=False,
+        file_okay=False,
+        dir_okay=True,
+        help="Root directory whose immediate child directories should be listed in the manifest.",
+    ),
+    config: Path | None = typer.Option(
+        None,
+        "--config",
+        help="Path to bidsflow.toml. Defaults to the nearest project config.",
+    ),
+    subject_regex: str | None = typer.Option(
+        None,
+        "--subject-regex",
+        help="Optional regex applied to each source directory name to fill subject_raw.",
+    ),
+    session_regex: str | None = typer.Option(
+        None,
+        "--session-regex",
+        help="Optional regex applied to each source directory name to fill session_raw.",
+    ),
+    reset: bool = typer.Option(
+        False,
+        "--reset",
+        help="Regenerate the manifest after clearing prior manifest state.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Show the planned manifest outputs without writing files.",
+    ),
+) -> None:
+    """Enumerate source directories into a reviewable HeuDiConv manifest."""
+    try:
+        config_path = find_project_config(config, Path.cwd())
+        context = load_project_context(config_path)
+        plan = plan_manifest(
+            context,
+            source_root,
+            subject_regex=subject_regex,
+            session_regex=session_regex,
+        )
+    except (HeudiconvManifestError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+    if dry_run:
+        typer.echo("Planned HeuDiConv manifest generation.")
+        typer.echo(f"Config: {config_path}")
+        typer.echo(f"Source root: {plan.source_root}")
+        typer.echo(f"Entries discovered: {len(plan.entries)}")
+        typer.echo(f"Manifest: {plan.manifest_path}")
+        typer.echo(f"State: {plan.manifest_state_path}")
+        typer.echo("Links: not created by manifest; convert will materialize temporary links if needed.")
+        if plan.subject_regex is None and plan.session_regex is None:
+            typer.echo("Extraction: no regex provided; subject/session columns will be left blank.")
+        else:
+            typer.echo(
+                f"Extraction: subject_regex={plan.subject_regex!r} "
+                f"session_regex={plan.session_regex!r}"
+            )
+        return
+
+    try:
+        result = run_manifest(context, plan, reset=reset)
+    except HeudiconvManifestError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+    typer.echo("Wrote HeuDiConv manifest.")
+    typer.echo(f"Entries: {result.entry_count}")
+    typer.echo(f"Manifest: {result.manifest_path}")
+    typer.echo(f"State: {result.manifest_state_path}")
+    typer.echo(
+        "Next: review manifest.tsv, then decide whether to fill labels manually or add "
+        "explicit extraction rules. Skeleton may happen before or after manifest, but "
+        "convert will materialize any temporary links it needs from the confirmed manifest."
+    )
 
 
 @heudiconv_app.command("convert")

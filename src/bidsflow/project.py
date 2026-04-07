@@ -7,14 +7,27 @@ import tomllib
 
 
 @dataclass(frozen=True)
+class HeudiconvConfig:
+    launcher: tuple[str, ...]
+    heuristic: Path
+
+
+@dataclass(frozen=True)
+class ProjectPaths:
+    source_root: Path
+    raw_bids_root: Path
+    derivatives_root: Path
+    work_root: Path
+    logs_root: Path
+    state_root: Path
+
+
+@dataclass(frozen=True)
 class ProjectContext:
     config_path: Path
     project_root: Path
-    source_root: Path
-    raw_bids_root: Path
-    logs_root: Path
-    state_root: Path
-    config: dict[str, Any]
+    paths: ProjectPaths
+    heudiconv: HeudiconvConfig
 
 
 def find_project_config(explicit_config: Path | None, start_dir: Path) -> Path:
@@ -47,19 +60,14 @@ def load_project_context(config_path: Path) -> ProjectContext:
         raise ValueError("[project].root must be a string path.")
 
     project_root = _resolve_from_config_dir(config_path, Path(project_root_value))
-    source_root = _resolve_within_project(project_root, paths_section, "source_root", "sourcedata")
-    raw_bids_root = _resolve_within_project(project_root, paths_section, "raw_bids_root", "sourcedata/raw")
-    logs_root = _resolve_within_project(project_root, paths_section, "logs_root", "logs")
-    state_root = _resolve_within_project(project_root, paths_section, "state_root", "state")
+    paths = _load_project_paths(project_root, paths_section)
+    heudiconv = _load_heudiconv_config(project_root, _require_table(raw_config, "heudiconv"))
 
     return ProjectContext(
         config_path=config_path,
         project_root=project_root,
-        source_root=source_root,
-        raw_bids_root=raw_bids_root,
-        logs_root=logs_root,
-        state_root=state_root,
-        config=raw_config,
+        paths=paths,
+        heudiconv=heudiconv,
     )
 
 
@@ -78,16 +86,44 @@ def _resolve_from_config_dir(config_path: Path, candidate: Path) -> Path:
     return (config_path.parent / candidate).resolve()
 
 
-def _resolve_within_project(
+def _resolve_config_path(
     project_root: Path,
     section: dict[str, Any],
+    section_name: str,
     key: str,
     default: str,
 ) -> Path:
     value = section.get(key, default)
     if not isinstance(value, str):
-        raise ValueError(f"[paths].{key} must be a string path.")
+        raise ValueError(f"[{section_name}].{key} must be a string path.")
     candidate = Path(value)
     if candidate.is_absolute():
         return candidate.resolve()
     return (project_root / candidate).resolve()
+
+
+def _load_project_paths(project_root: Path, paths_section: dict[str, Any]) -> ProjectPaths:
+    return ProjectPaths(
+        source_root=_resolve_config_path(project_root, paths_section, "paths", "source_root", "sourcedata"),
+        raw_bids_root=_resolve_config_path(project_root, paths_section, "paths", "raw_bids_root", "sourcedata/raw"),
+        derivatives_root=_resolve_config_path(project_root, paths_section, "paths", "derivatives_root", "derivatives"),
+        work_root=_resolve_config_path(project_root, paths_section, "paths", "work_root", "work"),
+        logs_root=_resolve_config_path(project_root, paths_section, "paths", "logs_root", "logs"),
+        state_root=_resolve_config_path(project_root, paths_section, "paths", "state_root", "state"),
+    )
+
+
+def _load_heudiconv_config(project_root: Path, heudiconv_section: dict[str, Any]) -> HeudiconvConfig:
+    heuristic = _resolve_config_path(
+        project_root,
+        heudiconv_section,
+        "heudiconv",
+        "heuristic",
+        "code/heudiconv/heuristic.py",
+    )
+    launcher = heudiconv_section.get("launcher")
+    if launcher is None:
+        return HeudiconvConfig(launcher=("heudiconv",), heuristic=heuristic)
+    if not isinstance(launcher, list) or not launcher or not all(isinstance(item, str) for item in launcher):
+        raise ValueError("[heudiconv].launcher must be a non-empty list of strings.")
+    return HeudiconvConfig(launcher=tuple(launcher), heuristic=heuristic)

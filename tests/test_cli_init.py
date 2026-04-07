@@ -27,6 +27,7 @@ def test_init_writes_config_without_materializing_layout_by_default(tmp_path: Pa
     assert "# Review before first use:" in config_text
     assert "# - adjust [project].name if you want a clearer project label" in config_text
     assert "# Optional HeuDiConv launcher override." in config_text
+    assert 'heuristic = "code/heudiconv/heuristic.py"' in config_text
     assert '# launcher = ["singularity", "run", "/containers/heudiconv.sif"]' in config_text
     assert 'name = "demo-project"' in config_text
     assert 'root = "."' in config_text

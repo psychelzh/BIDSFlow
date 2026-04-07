@@ -81,6 +81,8 @@ Current skeleton behavior:
   subject
 - skeleton uses an isolated work root under `state/heudiconv/` instead
   of writing into the real raw BIDS output directory
+- skeleton writes the generated heuristic to `[heudiconv].heuristic`,
+  which defaults to `code/heudiconv/heuristic.py`
 - skeleton and manifest are parallel preparation steps; neither is a
   strict prerequisite for the other
 - in many real projects, skeleton happens first because heuristic work

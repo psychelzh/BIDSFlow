@@ -10,7 +10,6 @@ import re
 import shutil
 import subprocess
 import time
-from typing import Any
 
 from .project import ProjectContext
 
@@ -113,10 +112,10 @@ def plan_skeleton(context: ProjectContext, sample_paths: list[Path]) -> Skeleton
             raise HeudiconvSkeletonError(f"Sample path does not exist: {resolved_sample}")
         resolved_samples.append(resolved_sample)
 
-    launcher = _load_launcher(context.config)
+    launcher = context.heudiconv.launcher
     code_root = context.project_root / "code" / "heudiconv"
-    state_root = context.state_root / "heudiconv"
-    log_root = context.logs_root / "heudiconv"
+    state_root = context.paths.state_root / "heudiconv"
+    log_root = context.paths.logs_root / "heudiconv"
     skeleton_work_root = state_root / "skeleton-work"
 
     if len(resolved_samples) == 1:
@@ -160,7 +159,7 @@ def plan_skeleton(context: ProjectContext, sample_paths: list[Path]) -> Skeleton
         launcher=launcher,
         units=units,
         code_root=code_root,
-        heuristic_path=code_root / "heuristic.py",
+        heuristic_path=context.heudiconv.heuristic,
         dicominfo_root=code_root / "dicominfo",
         skeleton_work_root=skeleton_work_root,
         heudiconv_state_path=skeleton_work_root / ".heudiconv",
@@ -223,7 +222,7 @@ def plan_manifest(
     subject_regex: str | None = None,
     session_regex: str | None = None,
 ) -> ManifestPlan:
-    resolved_source_root = context.source_root.resolve()
+    resolved_source_root = context.paths.source_root.resolve()
     if not resolved_source_root.exists():
         raise HeudiconvManifestError(
             f"Configured source root does not exist: {resolved_source_root}"
@@ -269,7 +268,7 @@ def plan_manifest(
         )
 
     code_root = context.project_root / "code" / "heudiconv"
-    state_root = context.state_root / "heudiconv"
+    state_root = context.paths.state_root / "heudiconv"
 
     return ManifestPlan(
         source_root=resolved_source_root,
@@ -357,23 +356,6 @@ def _build_skeleton_command(
     return tuple(command)
 
 
-def _load_launcher(config: dict[str, Any]) -> tuple[str, ...]:
-    heudiconv_section = config.get("heudiconv", {})
-    if heudiconv_section == {}:
-        return ("heudiconv",)
-    if not isinstance(heudiconv_section, dict):
-        raise HeudiconvSkeletonError("[heudiconv] must be a TOML table.")
-
-    launcher = heudiconv_section.get("launcher")
-    if launcher is None:
-        return ("heudiconv",)
-
-    if not isinstance(launcher, list) or not launcher or not all(isinstance(item, str) for item in launcher):
-        raise HeudiconvSkeletonError("[heudiconv].launcher must be a non-empty list of strings.")
-
-    return tuple(launcher)
-
-
 def _guard_manifest_reset_requirement(plan: ManifestPlan, reset: bool) -> None:
     if reset:
         return
@@ -408,6 +390,7 @@ def _guard_skeleton_reset_requirement(plan: SkeletonPlan, reset: bool) -> None:
 def _prepare_skeleton_directories(plan: SkeletonPlan) -> None:
     plan.skeleton_work_root.mkdir(parents=True, exist_ok=True)
     plan.code_root.mkdir(parents=True, exist_ok=True)
+    plan.heuristic_path.parent.mkdir(parents=True, exist_ok=True)
     plan.dicominfo_root.mkdir(parents=True, exist_ok=True)
     plan.skeleton_state_path.parent.mkdir(parents=True, exist_ok=True)
     plan.log_path.parent.mkdir(parents=True, exist_ok=True)

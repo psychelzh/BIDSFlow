@@ -11,6 +11,17 @@ from bidsflow.cli import app
 runner = CliRunner()
 
 
+def _set_launcher(config_path: Path, launcher_line: str) -> None:
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            '# launcher = ["heudiconv"]',
+            launcher_line,
+        ),
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
 def test_heudiconv_skeleton_dry_run_single_path_uses_generated_subject(tmp_path: Path) -> None:
     project_dir = tmp_path / "demo-project"
 
@@ -74,6 +85,42 @@ def test_heudiconv_skeleton_dry_run_multiple_paths_shows_session_split(tmp_path:
     assert str(project_dir / "state" / "heudiconv" / "skeleton-work") in result.output
 
 
+def test_heudiconv_skeleton_dry_run_uses_configured_heuristic_path(tmp_path: Path) -> None:
+    project_dir = tmp_path / "demo-project"
+
+    init_result = runner.invoke(app, ["init", str(project_dir)])
+    assert init_result.exit_code == 0, init_result.output
+
+    config_path = project_dir / "bidsflow.toml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            'heuristic = "code/heudiconv/heuristic.py"',
+            'heuristic = "code/custom/heuristic.py"',
+        ),
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    sample_dir = project_dir / "incoming" / "sample-ses-01"
+    sample_dir.mkdir(parents=True)
+
+    result = runner.invoke(
+        app,
+        [
+            "heudiconv",
+            "skeleton",
+            str(sample_dir),
+            "--config",
+            str(config_path),
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert str(project_dir / "code" / "custom" / "heuristic.py") in result.output
+    assert str(project_dir / "code" / "heudiconv" / "dicominfo") in result.output
+
+
 def test_heudiconv_skeleton_single_path_uses_generated_subject(tmp_path: Path) -> None:
     project_dir = tmp_path / "demo-project"
 
@@ -108,12 +155,9 @@ def test_heudiconv_skeleton_single_path_uses_generated_subject(tmp_path: Path) -
     )
 
     config_path = project_dir / "bidsflow.toml"
-    config_path.write_text(
-        config_path.read_text(encoding="utf-8")
-        + "\n[heudiconv]\n"
-        + f'launcher = ["{sys.executable.replace("\\", "/")}", "{launcher_script.as_posix()}"]\n',
-        encoding="utf-8",
-        newline="\n",
+    _set_launcher(
+        config_path,
+        f'launcher = ["{sys.executable.replace("\\", "/")}", "{launcher_script.as_posix()}"]',
     )
 
     sample_dir = project_dir / "incoming" / "sample-ses-01"
@@ -192,12 +236,9 @@ def test_heudiconv_skeleton_multiple_paths_split_into_session_units(tmp_path: Pa
     )
 
     config_path = project_dir / "bidsflow.toml"
-    config_path.write_text(
-        config_path.read_text(encoding="utf-8")
-        + "\n[heudiconv]\n"
-        + f'launcher = ["{sys.executable.replace("\\", "/")}", "{launcher_script.as_posix()}"]\n',
-        encoding="utf-8",
-        newline="\n",
+    _set_launcher(
+        config_path,
+        f'launcher = ["{sys.executable.replace("\\", "/")}", "{launcher_script.as_posix()}"]',
     )
 
     sample_dir_one = project_dir / "incoming" / "sample-ses-01"
@@ -285,12 +326,9 @@ def test_heudiconv_skeleton_requires_reset_before_regenerating(tmp_path: Path) -
     )
 
     config_path = project_dir / "bidsflow.toml"
-    config_path.write_text(
-        config_path.read_text(encoding="utf-8")
-        + "\n[heudiconv]\n"
-        + f'launcher = ["{sys.executable.replace("\\", "/")}", "{launcher_script.as_posix()}"]\n',
-        encoding="utf-8",
-        newline="\n",
+    _set_launcher(
+        config_path,
+        f'launcher = ["{sys.executable.replace("\\", "/")}", "{launcher_script.as_posix()}"]',
     )
 
     sample_dir = project_dir / "incoming" / "sample-ses-01"
@@ -308,4 +346,32 @@ def test_heudiconv_skeleton_requires_reset_before_regenerating(tmp_path: Path) -
         ["heudiconv", "skeleton", str(sample_dir), "--config", str(config_path), "--reset"],
     )
     assert allowed.exit_code == 0, allowed.output
+
+
+def test_heudiconv_skeleton_rejects_invalid_launcher_config(tmp_path: Path) -> None:
+    project_dir = tmp_path / "demo-project"
+
+    init_result = runner.invoke(app, ["init", str(project_dir)])
+    assert init_result.exit_code == 0, init_result.output
+
+    config_path = project_dir / "bidsflow.toml"
+    _set_launcher(config_path, 'launcher = "heudiconv"')
+
+    sample_dir = project_dir / "incoming" / "sample-ses-01"
+    sample_dir.mkdir(parents=True)
+
+    result = runner.invoke(
+        app,
+        [
+            "heudiconv",
+            "skeleton",
+            str(sample_dir),
+            "--config",
+            str(config_path),
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "[heudiconv].launcher must be a non-empty list of strings." in result.output
 

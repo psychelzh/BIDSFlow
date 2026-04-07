@@ -29,6 +29,8 @@ Current supported behavior:
 - manifest is the project-owned truth source for later conversion
   handoff
 - manifest does not create links or other execution views
+- default heuristic is `code/heudiconv/heuristic.py`, and it may be
+  absent until skeleton runs
 - default launcher is `["heudiconv"]`
 - projects may override that with `[heudiconv].launcher`
 - skeleton accepts one or more representative sample paths
@@ -495,6 +497,7 @@ Implemented now:
 - manifest planning and generation
 - skeleton planning and execution
 - optional `[heudiconv].launcher` support
+- `[heudiconv].heuristic` parsing and skeleton destination support
 - skeleton artifact copying and run-record writing
 
 Not implemented yet:

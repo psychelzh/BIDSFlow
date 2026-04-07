@@ -42,7 +42,8 @@ for that value.
 # Review before first use:
 # - adjust [project].name if you want a clearer project label
 # - adjust [paths] if your project layout differs from this scaffold
-# - uncomment [heudiconv] if you need a wrapper or Singularity launcher
+# - keep or adjust [heudiconv].heuristic before conversion
+# - uncomment [heudiconv].launcher if you need a wrapper or Singularity launcher
 
 [project]
 name = "<target-directory-name>"
@@ -56,9 +57,12 @@ work_root = "work"
 logs_root = "logs"
 state_root = "state"
 
+[heudiconv]
+# Expected project-owned heuristic path. The file may not exist until skeleton runs.
+heuristic = "code/heudiconv/heuristic.py"
+
 # Optional HeuDiConv launcher override.
-# Uncomment and edit this block if HeuDiConv is launched through a wrapper or container.
-# [heudiconv]
+# Uncomment and edit one launcher if HeuDiConv is launched through a wrapper or container.
 # launcher = ["heudiconv"]
 # launcher = ["singularity", "run", "/containers/heudiconv.sif"]
 ```
@@ -356,7 +360,34 @@ Current status:
 - supported now by `bidsflow heudiconv skeleton`
 - shown as a commented example in the scaffold produced by `bidsflow init`
 
-### 6.2 Identity resolver
+### 6.2 HeuDiConv heuristic
+
+Meaning:
+
+- the project-owned heuristic path BIDSFlow should use for managed
+  HeuDiConv conversion
+
+Current default:
+
+- `code/heudiconv/heuristic.py`
+
+Why this default:
+
+- it gives `skeleton` a stable place to write the starter heuristic
+- it gives future `convert` a stable project-level reference instead of
+  requiring the user to repeat the heuristic path on every command
+- the file is allowed to be absent before `skeleton` runs or before the
+  user chooses a custom heuristic
+
+Current status:
+
+- parsed into `ProjectContext.heudiconv.heuristic`
+- used by `bidsflow heudiconv skeleton` as the destination for the
+  generated heuristic
+- not yet validated by `convert` because managed convert is not
+  implemented yet
+
+### 6.3 Identity resolver
 
 Meaning:
 
@@ -387,7 +418,7 @@ Source notes:
 - HeuDiConv CLI reference:
   [https://heudiconv.readthedocs.io/en/latest/commandline.html](https://heudiconv.readthedocs.io/en/latest/commandline.html)
 
-### 6.3 Anonymization command
+### 6.4 Anonymization command
 
 Meaning:
 
@@ -414,7 +445,7 @@ Source notes:
 - HeuDiConv CLI reference, `--anon-cmd`:
   [https://heudiconv.readthedocs.io/en/latest/commandline.html](https://heudiconv.readthedocs.io/en/latest/commandline.html)
 
-### 6.4 Raw BIDS layout database
+### 6.5 Raw BIDS layout database
 
 Meaning:
 

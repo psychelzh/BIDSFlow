@@ -48,7 +48,7 @@ deferred from the first rebuilt CLI.
 
 ```bash
 bidsflow init [DIRECTORY]
-bidsflow heudiconv manifest [--config bidsflow.toml] [--subject-regex REGEX] [--session-regex REGEX] [--reset] [--dry-run]
+bidsflow heudiconv manifest [--config bidsflow.toml] [--reset] [--dry-run]
 bidsflow heudiconv skeleton <sample-path>... [--config bidsflow.toml] [--reset] [--dry-run]
 ```
 
@@ -60,10 +60,11 @@ Current manifest behavior:
 - manifest scans the immediate child directories under the configured
   `source_root`
 - manifest does not call HeuDiConv
-- by default it writes a review table with empty `subject/session`
-  columns
-- optional explicit regex rules can fill `subject_raw/session_raw`
-  without guessing from directory names
+- by default it writes a review table with empty final label columns
+- if `[heudiconv.manifest].template` is configured, it derives final
+  `subject_label/session_label` directly from `source_name`
+- if `[heudiconv.manifest].command` is configured, it calls that
+  project-owned command with `source_name` and expects JSON label output
 - manifest is the project-owned truth source for later HeuDiConv
   conversion handoff
 - manifest does not create normalized links or other execution views
@@ -71,6 +72,8 @@ Current manifest behavior:
   confirmed manifest when needed and clean them up afterward
 - manifest writes `code/heudiconv/manifest.tsv` and
   `state/heudiconv/manifest.json`
+- manifest stdout includes a summary of `ready`, `needs_review`,
+  `collision`, `missing_source`, and `excluded` rows
 
 Current skeleton behavior:
 

@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+from string import Formatter
 import subprocess
 import time
 
@@ -68,11 +69,7 @@ class HeudiconvSkeletonError(Exception):
 
 @dataclass(frozen=True)
 class ManifestEntry:
-    unit_id: str
-    source_path: Path
     source_name: str
-    subject_raw: str
-    session_raw: str
     subject_label: str
     session_label: str
     include: bool
@@ -85,8 +82,8 @@ class ManifestPlan:
     source_root: Path
     manifest_path: Path
     manifest_state_path: Path
-    subject_regex: str | None
-    session_regex: str | None
+    template: str | None
+    command: tuple[str, ...] | None
     entries: tuple[ManifestEntry, ...]
 
 
@@ -94,7 +91,7 @@ class ManifestPlan:
 class ManifestResult:
     manifest_path: Path
     manifest_state_path: Path
-    entry_count: int
+    entries: tuple[ManifestEntry, ...]
 
 
 class HeudiconvManifestError(Exception):
@@ -218,9 +215,6 @@ def run_skeleton(context: ProjectContext, plan: SkeletonPlan, reset: bool) -> Sk
 
 def plan_manifest(
     context: ProjectContext,
-    *,
-    subject_regex: str | None = None,
-    session_regex: str | None = None,
 ) -> ManifestPlan:
     resolved_source_root = context.paths.source_root.resolve()
     if not resolved_source_root.exists():
@@ -231,9 +225,6 @@ def plan_manifest(
         raise HeudiconvManifestError(
             f"Configured source root is not a directory: {resolved_source_root}"
         )
-
-    subject_pattern = _compile_optional_regex(subject_regex, "subject")
-    session_pattern = _compile_optional_regex(session_regex, "session")
 
     source_units = tuple(
         sorted(
@@ -246,27 +237,41 @@ def plan_manifest(
         )
     )
 
+    manifest_config = context.heudiconv.manifest
+    template_pattern: re.Pattern[str] | None
+    if manifest_config.template is not None:
+        template_pattern = _compile_manifest_template(manifest_config.template)
+    else:
+        template_pattern = None
+
     entries: list[ManifestEntry] = []
-    for index, candidate in enumerate(source_units, start=1):
-        subject_raw, subject_note = _extract_optional_value(subject_pattern, candidate.name, "subject")
-        session_raw, session_note = _extract_optional_value(session_pattern, candidate.name, "session")
-        notes = "; ".join(note for note in (subject_note, session_note) if note)
+    for candidate in source_units:
+        if template_pattern is not None:
+            subject_label, session_label, notes = _derive_manifest_labels_from_template(
+                template_pattern,
+                candidate.name,
+            )
+        elif manifest_config.command is not None:
+            subject_label, session_label, notes = _derive_manifest_labels_from_command(
+                context,
+                manifest_config.command,
+                candidate.name,
+            )
+        else:
+            subject_label, session_label, notes = "", "", ""
 
         entries.append(
             ManifestEntry(
-                unit_id=f"unit-{index:04d}",
-                source_path=candidate,
                 source_name=candidate.name,
-                subject_raw=subject_raw,
-                session_raw=session_raw,
-                subject_label="",
-                session_label="",
+                subject_label=subject_label,
+                session_label=session_label,
                 include=True,
-                status="needs_review",
+                status="",
                 notes=notes,
             )
         )
 
+    computed_entries = _compute_manifest_statuses(resolved_source_root, tuple(entries))
     code_root = context.project_root / "code" / "heudiconv"
     state_root = context.paths.state_root / "heudiconv"
 
@@ -274,9 +279,9 @@ def plan_manifest(
         source_root=resolved_source_root,
         manifest_path=code_root / "manifest.tsv",
         manifest_state_path=state_root / "manifest.json",
-        subject_regex=subject_regex,
-        session_regex=session_regex,
-        entries=tuple(entries),
+        template=manifest_config.template,
+        command=manifest_config.command,
+        entries=computed_entries,
     )
 
 
@@ -294,7 +299,7 @@ def run_manifest(context: ProjectContext, plan: ManifestPlan, reset: bool) -> Ma
     return ManifestResult(
         manifest_path=plan.manifest_path,
         manifest_state_path=plan.manifest_state_path,
-        entry_count=len(plan.entries),
+        entries=plan.entries,
     )
 
 
@@ -302,32 +307,162 @@ def format_command(argv: tuple[str, ...]) -> str:
     return subprocess.list2cmdline(list(argv))
 
 
-def _compile_optional_regex(value: str | None, field_name: str) -> re.Pattern[str] | None:
-    if value is None:
-        return None
+def _compile_manifest_template(template: str) -> re.Pattern[str]:
+    pattern_parts: list[str] = ["^"]
+    fields: list[str] = []
+
+    for literal_text, field_name, format_spec, conversion in Formatter().parse(template):
+        pattern_parts.append(re.escape(literal_text))
+        if field_name is None:
+            continue
+        if format_spec or conversion:
+            raise HeudiconvManifestError(
+                "HeuDiConv manifest template does not support format specs or conversions."
+            )
+        if not field_name.isidentifier():
+            raise HeudiconvManifestError(
+                f"HeuDiConv manifest template field is not a valid identifier: {field_name!r}"
+            )
+        if field_name not in {"subject", "session"}:
+            raise HeudiconvManifestError(
+                "HeuDiConv manifest template only supports {subject} and optional {session}."
+            )
+        fields.append(field_name)
+        pattern_parts.append(f"(?P<{field_name}>.+?)")
+
+    if "subject" not in fields:
+        raise HeudiconvManifestError(
+            "HeuDiConv manifest template must include a {subject} field."
+        )
+
+    pattern_parts.append("$")
     try:
-        return re.compile(value)
+        return re.compile("".join(pattern_parts))
     except re.error as exc:
-        raise HeudiconvManifestError(f"Invalid {field_name} regex: {exc}") from exc
+        raise HeudiconvManifestError(f"Invalid HeuDiConv manifest template: {exc}") from exc
 
 
-def _extract_optional_value(
-    pattern: re.Pattern[str] | None,
+def _derive_manifest_labels_from_template(
+    template_pattern: re.Pattern[str],
     source_name: str,
-    field_name: str,
-) -> tuple[str, str]:
-    if pattern is None:
-        return "", ""
-
-    match = pattern.search(source_name)
+) -> tuple[str, str, str]:
+    match = template_pattern.fullmatch(source_name)
     if match is None:
-        return "", f"{field_name} regex did not match"
+        return "", "", "manifest template did not match source_name"
 
-    if field_name in match.groupdict() and match.group(field_name) is not None:
-        return match.group(field_name), ""
-    if match.lastindex:
-        return match.group(1), ""
-    return match.group(0), ""
+    subject_label = match.groupdict().get("subject", "") or ""
+    session_label = match.groupdict().get("session", "") or ""
+    return subject_label, session_label, ""
+
+
+def _derive_manifest_labels_from_command(
+    context: ProjectContext,
+    command: tuple[str, ...],
+    source_name: str,
+) -> tuple[str, str, str]:
+    invocation = [*command, source_name]
+    try:
+        completed = subprocess.run(
+            invocation,
+            cwd=context.project_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise HeudiconvManifestError(
+            f"Failed to start manifest command while processing {source_name}: {exc}"
+        ) from exc
+
+    if completed.returncode != 0:
+        stderr = (completed.stderr or completed.stdout or "").strip()
+        details = f" {stderr}" if stderr else ""
+        raise HeudiconvManifestError(
+            f"Manifest command failed for {source_name} with exit code {completed.returncode}.{details}"
+        )
+
+    output = (completed.stdout or "").strip()
+    if not output:
+        raise HeudiconvManifestError(
+            f"Manifest command returned empty output for {source_name}."
+        )
+
+    try:
+        payload = json.loads(output)
+    except json.JSONDecodeError as exc:
+        raise HeudiconvManifestError(
+            f"Manifest command did not return valid JSON for {source_name}: {exc}"
+        ) from exc
+
+    if not isinstance(payload, dict):
+        raise HeudiconvManifestError(
+            f"Manifest command output for {source_name} must be a JSON object."
+        )
+
+    subject_label = _coerce_optional_manifest_string(payload.get("subject_label"), "subject_label")
+    session_label = _coerce_optional_manifest_string(payload.get("session_label"), "session_label")
+    notes = _coerce_optional_manifest_string(payload.get("notes"), "notes")
+    return subject_label, session_label, notes
+
+
+def _coerce_optional_manifest_string(value: object, field_name: str) -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise HeudiconvManifestError(
+            f"Manifest command field {field_name!r} must be a string when provided."
+        )
+    return value
+
+
+def _compute_manifest_statuses(
+    source_root: Path,
+    entries: tuple[ManifestEntry, ...],
+) -> tuple[ManifestEntry, ...]:
+    included_entries = [entry for entry in entries if entry.include]
+    subject_counts: dict[str, int] = {}
+    target_counts: dict[tuple[str, str], int] = {}
+
+    for entry in included_entries:
+        subject_label = entry.subject_label.strip()
+        session_label = entry.session_label.strip()
+        if subject_label:
+            subject_counts[subject_label] = subject_counts.get(subject_label, 0) + 1
+        if subject_label and session_label:
+            key = (subject_label, session_label)
+            target_counts[key] = target_counts.get(key, 0) + 1
+
+    updated_entries: list[ManifestEntry] = []
+    for entry in entries:
+        source_path = (source_root / entry.source_name).resolve()
+        subject_label = entry.subject_label.strip()
+        session_label = entry.session_label.strip()
+
+        if not entry.include:
+            status = "excluded"
+        elif not source_path.exists():
+            status = "missing_source"
+        elif not subject_label:
+            status = "needs_review"
+        elif session_label and target_counts.get((subject_label, session_label), 0) > 1:
+            status = "collision"
+        elif not session_label and subject_counts.get(subject_label, 0) > 1:
+            status = "needs_review"
+        else:
+            status = "ready"
+
+        updated_entries.append(
+            ManifestEntry(
+                source_name=entry.source_name,
+                subject_label=subject_label,
+                session_label=session_label,
+                include=entry.include,
+                status=status,
+                notes=entry.notes,
+            )
+        )
+
+    return tuple(updated_entries)
 
 
 def _build_skeleton_command(
@@ -616,11 +751,7 @@ def _write_manifest_tsv(manifest_path: Path, entries: tuple[ManifestEntry, ...])
         writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
         writer.writerow(
             (
-                "unit_id",
-                "source_path",
                 "source_name",
-                "subject_raw",
-                "session_raw",
                 "subject_label",
                 "session_label",
                 "include",
@@ -631,11 +762,7 @@ def _write_manifest_tsv(manifest_path: Path, entries: tuple[ManifestEntry, ...])
         for entry in entries:
             writer.writerow(
                 (
-                    entry.unit_id,
-                    str(entry.source_path),
                     entry.source_name,
-                    entry.subject_raw,
-                    entry.session_raw,
                     entry.subject_label,
                     entry.session_label,
                     "true" if entry.include else "false",
@@ -665,18 +792,15 @@ def _write_manifest_state(context: ProjectContext, plan: ManifestPlan) -> None:
                 }
             },
         },
-        "extraction": {
-            "subject_regex": plan.subject_regex,
-            "session_regex": plan.session_regex,
+        "label_generation": {
+            "template": plan.template,
+            "command": list(plan.command) if plan.command is not None else None,
         },
         "entry_count": len(plan.entries),
+        "status_summary": _summarize_manifest_entries(plan.entries),
         "entries": [
             {
-                "unit_id": entry.unit_id,
-                "source_path": str(entry.source_path),
                 "source_name": entry.source_name,
-                "subject_raw": entry.subject_raw,
-                "session_raw": entry.session_raw,
                 "subject_label": entry.subject_label,
                 "session_label": entry.session_label,
                 "include": entry.include,
@@ -692,6 +816,48 @@ def _write_manifest_state(context: ProjectContext, plan: ManifestPlan) -> None:
         encoding="utf-8",
         newline="\n",
     )
+
+
+def summarize_manifest_entries(entries: tuple[ManifestEntry, ...]) -> dict[str, int]:
+    return _summarize_manifest_entries(entries)
+
+
+def list_manifest_review_issues(entries: tuple[ManifestEntry, ...]) -> list[str]:
+    issues: list[str] = []
+
+    missing_labels = [entry.source_name for entry in entries if entry.status == "needs_review"]
+    if missing_labels:
+        issues.append(
+            f"needs_review: {len(missing_labels)} row(s) still need final labels or session disambiguation"
+        )
+
+    collisions = [entry.source_name for entry in entries if entry.status == "collision"]
+    if collisions:
+        issues.append(
+            "collision: " + ", ".join(collisions)
+        )
+
+    missing_sources = [entry.source_name for entry in entries if entry.status == "missing_source"]
+    if missing_sources:
+        issues.append(
+            "missing_source: " + ", ".join(missing_sources)
+        )
+
+    return issues
+
+
+def _summarize_manifest_entries(entries: tuple[ManifestEntry, ...]) -> dict[str, int]:
+    summary = {
+        "total": len(entries),
+        "ready": 0,
+        "needs_review": 0,
+        "collision": 0,
+        "missing_source": 0,
+        "excluded": 0,
+    }
+    for entry in entries:
+        summary[entry.status] = summary.get(entry.status, 0) + 1
+    return summary
 
 
 def _write_skeleton_record(

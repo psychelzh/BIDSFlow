@@ -44,6 +44,7 @@ for that value.
 # - adjust [paths] if your project layout differs from this scaffold
 # - keep or adjust [heudiconv].heuristic before conversion
 # - uncomment [heudiconv].launcher if you need a wrapper or Singularity launcher
+# - optionally configure [heudiconv.manifest] when source directory names map cleanly to final labels
 
 [project]
 name = "<target-directory-name>"
@@ -65,6 +66,12 @@ heuristic = "code/heudiconv/heuristic.py"
 # Uncomment and edit one launcher if HeuDiConv is launched through a wrapper or container.
 # launcher = ["heudiconv"]
 # launcher = ["singularity", "run", "/containers/heudiconv.sif"]
+
+# Optional manifest label generation. Configure one strategy when directory names
+# can be mapped automatically onto final subject/session labels.
+# [heudiconv.manifest]
+# template = "SUB{subject}_SES{session}"
+# command = ["python", "code/heudiconv/derive_labels.py"]
 ```
 
 ## 3. Section-by-section reference
@@ -387,63 +394,74 @@ Current status:
 - not yet validated by `convert` because managed convert is not
   implemented yet
 
-### 6.3 Identity resolver
+### 6.3 Manifest template
 
 Meaning:
 
-- the project rule that maps source naming or source metadata onto final
-  BIDS `subject` and `session` labels
-
-Likely resolver kinds:
-
-- `heuristic`
-- `regex`
-- `script`
-- `literal`
-
-Why this may belong in config:
-
-- the mapping rule is usually a stable project convention
-- keeping it in config makes conversion runs auditable and reusable
-- this avoids forcing skeleton to invent fake subject or session values
-
-Current status:
-
-- planned, not implemented yet
-
-Source notes:
-
-- HeuDiConv heuristics file, `infotoids`:
-  [https://heudiconv.readthedocs.io/en/stable/heuristics.html](https://heudiconv.readthedocs.io/en/stable/heuristics.html)
-- HeuDiConv CLI reference:
-  [https://heudiconv.readthedocs.io/en/latest/commandline.html](https://heudiconv.readthedocs.io/en/latest/commandline.html)
-
-### 6.4 Anonymization command
-
-Meaning:
-
-- a project-owned helper command used to rewrite source identifiers into
-  output subject labels during conversion
+- a project-owned template that derives final `subject_label` and
+  optional `session_label` directly from each `source_name`
 
 Likely config shape:
 
-- a script or command path, for example a helper like
-  [`format_subject.py`](https://github.com/CAMP-BNU/preproc-mri/blob/main/template/heudiconv/format_subject.py)
+- `[heudiconv.manifest].template = "SUB{subject}_SES{session}"`
 
 Why this may belong in config:
 
-- anonymization policy is usually project-wide
-- it should be versioned and auditable instead of hidden in shell
-  history
+- source directory naming is usually a project-wide convention
+- keeping it in config lets `manifest` generate final labels without
+  adding ad hoc command-line flags
+- the template can remain human-readable and versioned with the project
 
 Current status:
 
-- planned, not implemented yet
+- supported now by the managed `manifest` step
+- the template is applied to `source_name`, not to full source paths
+- `{subject}` is required and becomes `subject_label`
+- `{session}` is optional and becomes `session_label` when present
+- no other dynamic template fields are supported
 
 Source notes:
 
-- HeuDiConv CLI reference, `--anon-cmd`:
-  [https://heudiconv.readthedocs.io/en/latest/commandline.html](https://heudiconv.readthedocs.io/en/latest/commandline.html)
+- This is a BIDSFlow manifest design choice inspired by HeuDiConv-style
+  path templates, but applied to source directory names rather than
+  direct DICOM discovery.
+
+### 6.4 Manifest label command
+
+Meaning:
+
+- a project-owned helper command that receives one `source_name` and
+  returns final labels for `manifest.tsv`
+
+Likely config shape:
+
+- `[heudiconv.manifest].command = ["python", "code/heudiconv/derive_labels.py"]`
+
+Why this may belong in config:
+
+- complex site-specific naming rules often exceed what a single template
+  can express
+- a project-owned command keeps those rules versioned and auditable
+- `manifest` can stay generic while still supporting custom label logic
+
+Current status:
+
+- supported now by the managed `manifest` step
+- the command receives `source_name` as its final argv item
+- the command runs with `cwd = project_root`
+- this allows project-local helper files such as CSV lookup tables to be
+  read by relative path
+- the command must print a JSON object on stdout
+- supported JSON fields are `subject_label`, `session_label`, and
+  optional `notes`
+- `[heudiconv.manifest].template` and `[heudiconv.manifest].command`
+  are mutually exclusive
+
+Source notes:
+
+- This intentionally differs from HeuDiConv `--anon-cmd`: BIDSFlow uses
+  a richer JSON contract because `manifest` may need both subject and
+  session labels.
 
 ### 6.5 Raw BIDS layout database
 

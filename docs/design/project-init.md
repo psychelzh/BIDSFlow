@@ -79,6 +79,7 @@ The initial generated config should stay minimal:
 # - adjust [paths] if your project layout differs from this scaffold
 # - keep or adjust [heudiconv].heuristic before conversion
 # - uncomment [heudiconv].launcher if you need a wrapper or Singularity launcher
+# - optionally configure [heudiconv.manifest] when source directory names map cleanly to final labels
 
 [project]
 name = "Example BIDSFlow project"
@@ -100,6 +101,12 @@ heuristic = "code/heudiconv/heuristic.py"
 # Uncomment and edit one launcher if HeuDiConv is launched through a wrapper or container.
 # launcher = ["heudiconv"]
 # launcher = ["singularity", "run", "/containers/heudiconv.sif"]
+
+# Optional manifest label generation. Configure one strategy when directory names
+# can be mapped automatically onto final subject/session labels.
+# [heudiconv.manifest]
+# template = "SUB{subject}_SES{session}"
+# command = ["python", "code/heudiconv/derive_labels.py"]
 ```
 
 This is enough to anchor project layout without prematurely encoding

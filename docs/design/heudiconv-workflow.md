@@ -13,7 +13,7 @@ multi-stage lifecycle that benefits from orchestration.
 The current codebase implements two early slices:
 
 ```bash
-bidsflow heudiconv manifest [--config bidsflow.toml] [--subject-regex REGEX] [--session-regex REGEX] [--reset] [--dry-run]
+bidsflow heudiconv manifest [--config bidsflow.toml] [--reset] [--dry-run]
 bidsflow heudiconv skeleton <sample-path>... [--config bidsflow.toml] [--reset] [--dry-run]
 ```
 
@@ -23,9 +23,11 @@ Current supported behavior:
   `source_root`
 - manifest does not call HeuDiConv
 - manifest writes a reviewable `manifest.tsv` plus `manifest.json`
-- by default manifest leaves `subject/session` fields blank instead of
-  guessing from directory names
-- optional explicit regex rules can fill `subject_raw/session_raw`
+- by default manifest leaves final `subject_label/session_label` blank
+- if `[heudiconv.manifest].template` is configured, manifest derives
+  final labels directly from `source_name`
+- if `[heudiconv.manifest].command` is configured, manifest calls that
+  project-owned command with `source_name`
 - manifest is the project-owned truth source for later conversion
   handoff
 - manifest does not create links or other execution views
@@ -160,9 +162,9 @@ Design choice for the first BIDSFlow version:
   separate command-line input root
 - manifest should scan the immediate child directories under that source
   root
-- manifest should default to empty `subject_raw/session_raw` and empty
-  final `subject_label/session_label`
-- optional explicit regex rules may fill `subject_raw/session_raw`
+- manifest should default to empty final `subject_label/session_label`
+- manifest may derive final labels either from a configured template or
+  from a configured project-owned command
 - manifest should leave final naming decisions visible and editable in
   the output table
 - manifest should be the durable truth source for later conversion
@@ -176,13 +178,19 @@ Design choice for the first BIDSFlow version:
 Suggested first public shape:
 
 ```bash
-bidsflow heudiconv manifest [--subject-regex REGEX] [--session-regex REGEX] [--reset] [--dry-run]
+bidsflow heudiconv manifest [--reset] [--dry-run]
 ```
 
 Suggested generated files:
 
 - `code/heudiconv/manifest.tsv`
 - `state/heudiconv/manifest.json`
+
+Suggested generated table:
+
+```tsv
+source_name	subject_label	session_label	include	status	notes
+```
 
 Ordering note:
 
@@ -364,12 +372,18 @@ Suggested resolver kinds:
 - `script`: call a project-owned script that returns the desired labels
 - `literal`: use fixed labels for debugging or one-off recovery only
 
-Suggested anonymization support:
+Suggested manifest automation support:
 
-- BIDSFlow should allow a project-owned `anon-cmd` helper for output ID
-  rewriting when the project needs that behavior
-- this is distinct from skeleton because it belongs to the actual
-  conversion contract, not to starter-material generation
+- BIDSFlow should allow either a project-owned manifest template or a
+  project-owned manifest command
+- both mechanisms should generate final labels directly in
+  `manifest.tsv`
+- `source_name` should be the common input because `source_path` is
+  already implied by `source_root`
+- when a manifest command is used, it should run with `cwd = project_root`
+  so project-local mapping tables can be loaded by relative path
+- the manifest command should print JSON to stdout with
+  `subject_label`, `session_label`, and optional `notes`
 
 Suggested first public shape:
 

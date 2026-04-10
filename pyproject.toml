@@ -26,5 +26,8 @@ bidsflow = "bidsflow.cli:app"
 [tool.hatch.build.targets.wheel]
 packages = ["src/bidsflow"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"src/bidsflow/templates" = "bidsflow/templates"
+
 [tool.pytest.ini_options]
 addopts = "-q"

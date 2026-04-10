@@ -10,6 +10,13 @@ import tomllib
 class HeudiconvConfig:
     launcher: tuple[str, ...]
     heuristic: Path
+    manifest: "HeudiconvManifestConfig"
+
+
+@dataclass(frozen=True)
+class HeudiconvManifestConfig:
+    template: str | None
+    command: tuple[str, ...] | None
 
 
 @dataclass(frozen=True)
@@ -123,7 +130,40 @@ def _load_heudiconv_config(project_root: Path, heudiconv_section: dict[str, Any]
     )
     launcher = heudiconv_section.get("launcher")
     if launcher is None:
-        return HeudiconvConfig(launcher=("heudiconv",), heuristic=heuristic)
-    if not isinstance(launcher, list) or not launcher or not all(isinstance(item, str) for item in launcher):
+        launcher_value = ("heudiconv",)
+    elif not isinstance(launcher, list) or not launcher or not all(isinstance(item, str) for item in launcher):
         raise ValueError("[heudiconv].launcher must be a non-empty list of strings.")
-    return HeudiconvConfig(launcher=tuple(launcher), heuristic=heuristic)
+    else:
+        launcher_value = tuple(launcher)
+
+    manifest = _load_heudiconv_manifest_config(_require_table(heudiconv_section, "manifest"))
+    return HeudiconvConfig(
+        launcher=launcher_value,
+        heuristic=heuristic,
+        manifest=manifest,
+    )
+
+
+def _load_heudiconv_manifest_config(
+    manifest_section: dict[str, Any],
+) -> HeudiconvManifestConfig:
+    template = manifest_section.get("template")
+    command = manifest_section.get("command")
+
+    if template is not None and not isinstance(template, str):
+        raise ValueError("[heudiconv.manifest].template must be a string.")
+    if command is not None and (
+        not isinstance(command, list)
+        or not command
+        or not all(isinstance(item, str) for item in command)
+    ):
+        raise ValueError("[heudiconv.manifest].command must be a non-empty list of strings.")
+    if template is not None and command is not None:
+        raise ValueError(
+            "[heudiconv.manifest] may define template or command, but not both."
+        )
+
+    return HeudiconvManifestConfig(
+        template=template,
+        command=tuple(command) if command is not None else None,
+    )

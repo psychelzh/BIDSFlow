@@ -163,7 +163,6 @@ def test_heudiconv_manifest_applies_configured_command(tmp_path: Path) -> None:
     command_script.write_text(
         "\n".join(
             (
-                "import json",
                 "import re",
                 "import sys",
                 "",
@@ -171,7 +170,8 @@ def test_heudiconv_manifest_applies_configured_command(tmp_path: Path) -> None:
                 "match = re.search(r'SUB(\\d+).*?(?:VISIT|SES)(\\d+)', source_name)",
                 "if not match:",
                 "    raise SystemExit('cannot parse labels')",
-                "print(json.dumps({'subject_label': match.group(1), 'session_label': match.group(2)}))",
+                "print(match.group(1))",
+                "print(match.group(2))",
             )
         )
         + "\n",
@@ -205,7 +205,11 @@ def test_heudiconv_manifest_applies_configured_command(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert "Label generation used command:" in result.output
-    assert "Command contract: source_name is passed as the last argv item; cwd is project_root." in result.output
+    assert (
+        "Command contract: source_name is passed as the last argv item; cwd is project_root; "
+        "stdout line 1 is subject_label; stdout line 2 is optional session_label."
+        in result.output
+    )
 
     rows = _read_manifest_rows(project_dir / "code" / "heudiconv" / "manifest.tsv")
     assert [row["subject_label"] for row in rows] == ["001", "001"]
@@ -225,8 +229,8 @@ def test_heudiconv_manifest_reports_collisions(tmp_path: Path) -> None:
     command_script.write_text(
         "\n".join(
             (
-                "import json",
-                "print(json.dumps({'subject_label': '001', 'session_label': '01'}))",
+                "print('001')",
+                "print('01')",
             )
         )
         + "\n",
@@ -264,6 +268,54 @@ def test_heudiconv_manifest_reports_collisions(tmp_path: Path) -> None:
     rows = _read_manifest_rows(project_dir / "code" / "heudiconv" / "manifest.tsv")
     assert rows[0]["status"] == "collision"
     assert rows[1]["status"] == "collision"
+
+
+def test_heudiconv_manifest_rejects_command_with_more_than_two_lines(tmp_path: Path) -> None:
+    project_dir = tmp_path / "demo-project"
+
+    init_result = runner.invoke(app, ["init", str(project_dir)])
+    assert init_result.exit_code == 0, init_result.output
+
+    config_path = project_dir / "bidsflow.toml"
+    command_script = project_dir / "code" / "heudiconv" / "derive_too_many_lines.py"
+    command_script.parent.mkdir(parents=True, exist_ok=True)
+    command_script.write_text(
+        "\n".join(
+            (
+                "print('001')",
+                "print('01')",
+                "print('extra')",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    python_executable = sys.executable.replace("\\", "\\\\")
+    _append_manifest_config(
+        config_path,
+        [
+            "[heudiconv.manifest]",
+            f'command = ["{python_executable}", "code/heudiconv/derive_too_many_lines.py"]',
+        ],
+    )
+
+    source_root = project_dir / "sourcedata"
+    (source_root / "SITE_SUB001_VISIT01").mkdir(parents=True)
+
+    result = runner.invoke(
+        app,
+        [
+            "heudiconv",
+            "manifest",
+            "--config",
+            str(config_path),
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "returned more than two non-empty output lines" in result.output
 
 
 def test_heudiconv_manifest_requires_reset_before_regenerating(tmp_path: Path) -> None:

@@ -382,8 +382,9 @@ Suggested manifest automation support:
   already implied by `source_root`
 - when a manifest command is used, it should run with `cwd = project_root`
   so project-local mapping tables can be loaded by relative path
-- the manifest command should print JSON to stdout with
-  `subject_label`, `session_label`, and optional `notes`
+- the manifest command should print one stdout line for `subject_label`
+- it may print a second stdout line for `session_label`
+- more than two non-empty stdout lines should be treated as an error
 
 Suggested first public shape:
 

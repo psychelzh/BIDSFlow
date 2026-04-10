@@ -31,7 +31,8 @@ def test_init_writes_config_without_materializing_layout_by_default(tmp_path: Pa
     assert '# launcher = ["singularity", "run", "/containers/heudiconv.sif"]' in config_text
     assert "# [heudiconv.manifest]" in config_text
     assert '# template = "SUB{subject}_SES{session}"' in config_text
-    assert "# command receives source_name as its last argument and runs from project_root." in config_text
+    assert "# command receives source_name as its last argument, runs from project_root," in config_text
+    assert "# and must print one line (subject_label) or two lines (subject_label, session_label)." in config_text
     assert '# command = ["python", "code/heudiconv/derive_labels.py"]' in config_text
     assert 'name = "demo-project"' in config_text
     assert 'root = "."' in config_text

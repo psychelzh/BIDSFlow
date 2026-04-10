@@ -387,32 +387,15 @@ def _derive_manifest_labels_from_command(
             f"Manifest command returned empty output for {source_name}."
         )
 
-    try:
-        payload = json.loads(output)
-    except json.JSONDecodeError as exc:
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    if len(lines) > 2:
         raise HeudiconvManifestError(
-            f"Manifest command did not return valid JSON for {source_name}: {exc}"
-        ) from exc
-
-    if not isinstance(payload, dict):
-        raise HeudiconvManifestError(
-            f"Manifest command output for {source_name} must be a JSON object."
+            f"Manifest command returned more than two non-empty output lines for {source_name}."
         )
 
-    subject_label = _coerce_optional_manifest_string(payload.get("subject_label"), "subject_label")
-    session_label = _coerce_optional_manifest_string(payload.get("session_label"), "session_label")
-    notes = _coerce_optional_manifest_string(payload.get("notes"), "notes")
-    return subject_label, session_label, notes
-
-
-def _coerce_optional_manifest_string(value: object, field_name: str) -> str:
-    if value is None:
-        return ""
-    if not isinstance(value, str):
-        raise HeudiconvManifestError(
-            f"Manifest command field {field_name!r} must be a string when provided."
-        )
-    return value
+    subject_label = lines[0]
+    session_label = lines[1] if len(lines) == 2 else ""
+    return subject_label, session_label, ""
 
 
 def _compute_manifest_statuses(

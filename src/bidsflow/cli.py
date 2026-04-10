@@ -219,7 +219,7 @@ def heudiconv_manifest(
         help="Show the planned manifest outputs without writing files.",
     ),
 ) -> None:
-    """Enumerate source_root into a reviewable manifest; label generation is configured in [heudiconv.manifest]."""
+    """Enumerate source_root into a reviewable manifest; configured commands receive source_name and must print one or two lines: subject_label, then optional session_label."""
     try:
         config_path = find_project_config(config, Path.cwd())
         context = load_project_context(config_path)
@@ -240,7 +240,11 @@ def heudiconv_manifest(
             typer.echo(f"Label generation: template={plan.template!r}")
         elif plan.command is not None:
             typer.echo(f"Label generation: command={format_command(plan.command)}")
-            typer.echo("Command contract: source_name is passed as the last argv item; cwd is project_root.")
+            typer.echo(
+                "Command contract: source_name is passed as the last argv item; "
+                "cwd is project_root; stdout line 1 is subject_label; "
+                "stdout line 2 is optional session_label."
+            )
         else:
             typer.echo("Label generation: no template or command configured; labels will be left blank.")
         return
@@ -257,7 +261,11 @@ def heudiconv_manifest(
     typer.echo(f"State: {result.manifest_state_path}")
     if plan.command is not None:
         typer.echo(f"Label generation used command: {format_command(plan.command)}")
-        typer.echo("Command contract: source_name is passed as the last argv item; cwd is project_root.")
+        typer.echo(
+            "Command contract: source_name is passed as the last argv item; "
+            "cwd is project_root; stdout line 1 is subject_label; "
+            "stdout line 2 is optional session_label."
+        )
     typer.echo("Summary:")
     summary = summarize_manifest_entries(result.entries)
     for key in ("total", "ready", "needs_review", "collision", "missing_source", "excluded"):

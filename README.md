@@ -64,7 +64,8 @@ Current manifest behavior:
 - if `[heudiconv.manifest].template` is configured, it derives final
   `subject_label/session_label` directly from `source_name`
 - if `[heudiconv.manifest].command` is configured, it calls that
-  project-owned command with `source_name` and expects JSON label output
+  project-owned command with `source_name` and expects one stdout line
+  for `subject_label`, plus an optional second line for `session_label`
 - manifest is the project-owned truth source for later HeuDiConv
   conversion handoff
 - manifest does not create normalized links or other execution views

@@ -71,6 +71,8 @@ heuristic = "code/heudiconv/heuristic.py"
 # can be mapped automatically onto final subject/session labels.
 # [heudiconv.manifest]
 # template = "SUB{subject}_SES{session}"
+# command receives source_name as its last argument, runs from project_root,
+# and must print one line (subject_label) or two lines (subject_label, session_label).
 # command = ["python", "code/heudiconv/derive_labels.py"]
 ```
 
@@ -451,17 +453,20 @@ Current status:
 - the command runs with `cwd = project_root`
 - this allows project-local helper files such as CSV lookup tables to be
   read by relative path
-- the command must print a JSON object on stdout
-- supported JSON fields are `subject_label`, `session_label`, and
-  optional `notes`
+- the command must print one or two non-empty stdout lines
+- stdout line 1 is `subject_label`
+- stdout line 2, when present, is `session_label`
+- more than two non-empty lines are rejected
+- minimal stdout examples:
+  `001`
+  `001` + newline + `01`
 - `[heudiconv.manifest].template` and `[heudiconv.manifest].command`
   are mutually exclusive
 
 Source notes:
 
-- This intentionally differs from HeuDiConv `--anon-cmd`: BIDSFlow uses
-  a richer JSON contract because `manifest` may need both subject and
-  session labels.
+- This keeps the contract close to HeuDiConv `--anon-cmd` simplicity
+  while still allowing an optional session line.
 
 ### 6.5 Raw BIDS layout database
 
@@ -514,4 +519,3 @@ Source notes:
   [https://heudiconv.readthedocs.io/en/latest/commandline.html](https://heudiconv.readthedocs.io/en/latest/commandline.html)
 - PyBIDS `BIDSLayout`:
   [https://bids-standard.github.io/pybids/generated/bids.layout.BIDSLayout.html](https://bids-standard.github.io/pybids/generated/bids.layout.BIDSLayout.html)
-

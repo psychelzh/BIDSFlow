@@ -28,7 +28,7 @@ def test_heudiconv_skeleton_dry_run_single_path_uses_generated_subject(tmp_path:
     init_result = runner.invoke(app, ["init", str(project_dir)])
     assert init_result.exit_code == 0, init_result.output
 
-    sample_dir = project_dir / "incoming" / "sample-ses-01"
+    sample_dir = project_dir / "sourcedata" / "sample-ses-01"
     sample_dir.mkdir(parents=True)
 
     result = runner.invoke(
@@ -36,7 +36,7 @@ def test_heudiconv_skeleton_dry_run_single_path_uses_generated_subject(tmp_path:
         [
             "heudiconv",
             "skeleton",
-            str(sample_dir),
+            "sample-ses-01",
             "--config",
             str(project_dir / "bidsflow.toml"),
             "--dry-run",
@@ -58,8 +58,8 @@ def test_heudiconv_skeleton_dry_run_multiple_paths_shows_session_split(tmp_path:
     init_result = runner.invoke(app, ["init", str(project_dir)])
     assert init_result.exit_code == 0, init_result.output
 
-    sample_dir_one = project_dir / "incoming" / "sample-ses-01"
-    sample_dir_two = project_dir / "incoming" / "sample-ses-02"
+    sample_dir_one = project_dir / "sourcedata" / "sample-ses-01"
+    sample_dir_two = project_dir / "sourcedata" / "sample-ses-02"
     sample_dir_one.mkdir(parents=True)
     sample_dir_two.mkdir(parents=True)
 
@@ -68,8 +68,8 @@ def test_heudiconv_skeleton_dry_run_multiple_paths_shows_session_split(tmp_path:
         [
             "heudiconv",
             "skeleton",
-            str(sample_dir_one),
-            str(sample_dir_two),
+            "sample-ses-01",
+            "sample-ses-02",
             "--config",
             str(project_dir / "bidsflow.toml"),
             "--dry-run",
@@ -101,7 +101,7 @@ def test_heudiconv_skeleton_dry_run_uses_configured_heuristic_path(tmp_path: Pat
         newline="\n",
     )
 
-    sample_dir = project_dir / "incoming" / "sample-ses-01"
+    sample_dir = project_dir / "sourcedata" / "sample-ses-01"
     sample_dir.mkdir(parents=True)
 
     result = runner.invoke(
@@ -109,7 +109,7 @@ def test_heudiconv_skeleton_dry_run_uses_configured_heuristic_path(tmp_path: Pat
         [
             "heudiconv",
             "skeleton",
-            str(sample_dir),
+            "sample-ses-01",
             "--config",
             str(config_path),
             "--dry-run",
@@ -160,12 +160,12 @@ def test_heudiconv_skeleton_single_path_uses_generated_subject(tmp_path: Path) -
         f'launcher = ["{sys.executable.replace("\\", "/")}", "{launcher_script.as_posix()}"]',
     )
 
-    sample_dir = project_dir / "incoming" / "sample-ses-01"
+    sample_dir = project_dir / "sourcedata" / "sample-ses-01"
     sample_dir.mkdir(parents=True)
 
     result = runner.invoke(
         app,
-        ["heudiconv", "skeleton", str(sample_dir), "--config", str(config_path)],
+        ["heudiconv", "skeleton", "sample-ses-01", "--config", str(config_path)],
     )
 
     assert result.exit_code == 0, result.output
@@ -241,8 +241,8 @@ def test_heudiconv_skeleton_multiple_paths_split_into_session_units(tmp_path: Pa
         f'launcher = ["{sys.executable.replace("\\", "/")}", "{launcher_script.as_posix()}"]',
     )
 
-    sample_dir_one = project_dir / "incoming" / "sample-ses-01"
-    sample_dir_two = project_dir / "incoming" / "sample-ses-02"
+    sample_dir_one = project_dir / "sourcedata" / "sample-ses-01"
+    sample_dir_two = project_dir / "sourcedata" / "sample-ses-02"
     sample_dir_one.mkdir(parents=True)
     sample_dir_two.mkdir(parents=True)
 
@@ -251,8 +251,8 @@ def test_heudiconv_skeleton_multiple_paths_split_into_session_units(tmp_path: Pa
         [
             "heudiconv",
             "skeleton",
-            str(sample_dir_one),
-            str(sample_dir_two),
+            "sample-ses-01",
+            "sample-ses-02",
             "--config",
             str(config_path),
         ],
@@ -331,19 +331,19 @@ def test_heudiconv_skeleton_requires_reset_before_regenerating(tmp_path: Path) -
         f'launcher = ["{sys.executable.replace("\\", "/")}", "{launcher_script.as_posix()}"]',
     )
 
-    sample_dir = project_dir / "incoming" / "sample-ses-01"
+    sample_dir = project_dir / "sourcedata" / "sample-ses-01"
     sample_dir.mkdir(parents=True)
 
-    first = runner.invoke(app, ["heudiconv", "skeleton", str(sample_dir), "--config", str(config_path)])
+    first = runner.invoke(app, ["heudiconv", "skeleton", "sample-ses-01", "--config", str(config_path)])
     assert first.exit_code == 0, first.output
 
-    blocked = runner.invoke(app, ["heudiconv", "skeleton", str(sample_dir), "--config", str(config_path)])
+    blocked = runner.invoke(app, ["heudiconv", "skeleton", "sample-ses-01", "--config", str(config_path)])
     assert blocked.exit_code == 2
     assert "Existing HeuDiConv skeleton state was found" in blocked.output
 
     allowed = runner.invoke(
         app,
-        ["heudiconv", "skeleton", str(sample_dir), "--config", str(config_path), "--reset"],
+        ["heudiconv", "skeleton", "sample-ses-01", "--config", str(config_path), "--reset"],
     )
     assert allowed.exit_code == 0, allowed.output
 
@@ -357,7 +357,7 @@ def test_heudiconv_skeleton_rejects_invalid_launcher_config(tmp_path: Path) -> N
     config_path = project_dir / "bidsflow.toml"
     _set_launcher(config_path, 'launcher = "heudiconv"')
 
-    sample_dir = project_dir / "incoming" / "sample-ses-01"
+    sample_dir = project_dir / "sourcedata" / "sample-ses-01"
     sample_dir.mkdir(parents=True)
 
     result = runner.invoke(
@@ -365,7 +365,7 @@ def test_heudiconv_skeleton_rejects_invalid_launcher_config(tmp_path: Path) -> N
         [
             "heudiconv",
             "skeleton",
-            str(sample_dir),
+            "sample-ses-01",
             "--config",
             str(config_path),
             "--dry-run",
@@ -374,4 +374,30 @@ def test_heudiconv_skeleton_rejects_invalid_launcher_config(tmp_path: Path) -> N
 
     assert result.exit_code == 2
     assert "[heudiconv].launcher must be a non-empty list of strings." in result.output
+
+
+def test_heudiconv_skeleton_rejects_sample_outside_configured_source_root(tmp_path: Path) -> None:
+    project_dir = tmp_path / "demo-project"
+
+    init_result = runner.invoke(app, ["init", str(project_dir)])
+    assert init_result.exit_code == 0, init_result.output
+
+    (project_dir / "sourcedata").mkdir(parents=True)
+    outside_sample_dir = project_dir / "other-data" / "sample-ses-01"
+    outside_sample_dir.mkdir(parents=True)
+
+    result = runner.invoke(
+        app,
+        [
+            "heudiconv",
+            "skeleton",
+            str(outside_sample_dir),
+            "--config",
+            str(project_dir / "bidsflow.toml"),
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "Sample path must resolve under the configured source root" in result.output
 

@@ -127,7 +127,7 @@ def heudiconv_skeleton(
     sample_paths: list[Path] = typer.Argument(
         ...,
         exists=False,
-        help="One or more representative DICOM sample paths used to generate starter HeuDiConv outputs.",
+        help="One or more representative sample paths under the configured source_root used to generate starter HeuDiConv outputs.",
     ),
     config: Path | None = typer.Option(
         None,
@@ -145,7 +145,7 @@ def heudiconv_skeleton(
         help="Show the managed command and planned output locations without running it.",
     ),
 ) -> None:
-    """Generate a HeuDiConv skeleton from representative sample paths."""
+    """Generate a HeuDiConv skeleton from representative sample paths under source_root."""
     try:
         config_path = find_project_config(config, Path.cwd())
         context = load_project_context(config_path)

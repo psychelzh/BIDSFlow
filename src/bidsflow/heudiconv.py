@@ -102,9 +102,23 @@ def plan_skeleton(context: ProjectContext, sample_paths: list[Path]) -> Skeleton
     if not sample_paths:
         raise HeudiconvSkeletonError("At least one sample path is required for skeleton generation.")
 
+    source_root = context.paths.source_root.resolve()
+    if not source_root.exists():
+        raise HeudiconvSkeletonError(
+            f"Configured source root does not exist: {source_root}"
+        )
+    if not source_root.is_dir():
+        raise HeudiconvSkeletonError(
+            f"Configured source root is not a directory: {source_root}"
+        )
+
     resolved_samples: list[Path] = []
     for sample_path in sample_paths:
-        resolved_sample = sample_path.resolve()
+        resolved_sample = _resolve_skeleton_sample_path(
+            source_root=source_root,
+            project_root=context.project_root,
+            sample_path=sample_path,
+        )
         if not resolved_sample.exists():
             raise HeudiconvSkeletonError(f"Sample path does not exist: {resolved_sample}")
         resolved_samples.append(resolved_sample)
@@ -163,6 +177,30 @@ def plan_skeleton(context: ProjectContext, sample_paths: list[Path]) -> Skeleton
         skeleton_state_path=state_root / "skeleton.json",
         log_path=log_root / "skeleton.log",
     )
+
+
+def _resolve_skeleton_sample_path(
+    *,
+    source_root: Path,
+    project_root: Path,
+    sample_path: Path,
+) -> Path:
+    if sample_path.is_absolute():
+        resolved_sample = sample_path.resolve()
+    else:
+        source_relative = (source_root / sample_path).resolve()
+        project_relative = (project_root / sample_path).resolve()
+        if source_relative.exists() or not project_relative.exists():
+            resolved_sample = source_relative
+        else:
+            resolved_sample = project_relative
+
+    if not resolved_sample.is_relative_to(source_root):
+        raise HeudiconvSkeletonError(
+            f"Sample path must resolve under the configured source root {source_root}: {sample_path}"
+        )
+
+    return resolved_sample
 
 
 def run_skeleton(context: ProjectContext, plan: SkeletonPlan, reset: bool) -> SkeletonResult:

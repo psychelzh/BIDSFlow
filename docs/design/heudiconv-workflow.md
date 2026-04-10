@@ -14,7 +14,8 @@ The current codebase implements two early slices:
 
 ```bash
 bidsflow heudiconv manifest [--config bidsflow.toml] [--reset] [--dry-run]
-bidsflow heudiconv skeleton <sample-path>... [--config bidsflow.toml] [--reset] [--dry-run]
+bidsflow heudiconv skeleton <sample-path>... \
+  [--config bidsflow.toml] [--reset] [--dry-run]
 ```
 
 Current supported behavior:
@@ -189,7 +190,7 @@ Suggested generated files:
 Suggested generated table:
 
 ```tsv
-source_name	subject_label	session_label	include	status	notes
+source_name subject_label session_label include status notes
 ```
 
 Ordering note:
@@ -275,7 +276,11 @@ bidsflow heudiconv skeleton <sample-path>... [--reset] [--dry-run]
 
 Suggested first API behavior:
 
-- `<sample-path>...` identifies one or more representative DICOM samples
+- `<sample-path>...` identifies one or more representative sample paths
+  under the configured `source_root`
+- relative sample paths should be interpreted relative to `source_root`
+- absolute sample paths should still be required to resolve under that
+  same `source_root`
 - when one sample path is provided, BIDSFlow runs one skeleton unit
   with a generated temporary subject label
 - when multiple sample paths are provided, BIDSFlow treats them as
@@ -354,7 +359,8 @@ Goal:
 Typical HeuDiConv shape:
 
 ```bash
-heudiconv --files <dicom-files> -o <output-dir> -f <heuristic.py> -s <subject> -c dcm2niix -b
+heudiconv --files <dicom-files> -o <output-dir> \
+  -f <heuristic.py> -s <subject> -c dcm2niix -b
 ```
 
 Identity concern:
@@ -545,4 +551,3 @@ It should defer:
 
 This keeps the first slice aligned with the official workflow rather
 than with an overgeneralized app abstraction.
-

@@ -49,7 +49,8 @@ deferred from the first rebuilt CLI.
 ```bash
 bidsflow init [DIRECTORY]
 bidsflow heudiconv manifest [--config bidsflow.toml] [--reset] [--dry-run]
-bidsflow heudiconv skeleton <sample-path>... [--config bidsflow.toml] [--reset] [--dry-run]
+bidsflow heudiconv skeleton <sample-path>... \
+  [--config bidsflow.toml] [--reset] [--dry-run]
 ```
 
 The managed `heudiconv convert` step is stubbed in the CLI but not yet
@@ -83,6 +84,10 @@ Current skeleton behavior:
 - multiple sample directories are split into separate single-directory
   skeleton units and treated as temporary sessions of one placeholder
   subject
+- relative `sample-path` arguments are interpreted under the configured
+  `source_root`
+- absolute `sample-path` arguments are only accepted when they still
+  resolve under that same `source_root`
 - skeleton uses an isolated work root under `state/heudiconv/` instead
   of writing into the real raw BIDS output directory
 - skeleton writes the generated heuristic to `[heudiconv].heuristic`,
@@ -140,4 +145,3 @@ The initial option set should stay narrow: `--name`, `--config-name`,
 4. Add template-backed app runs after the core runtime stabilizes.
 5. Add adapters, backends, and schedulers only after the public model
    stabilizes.
-

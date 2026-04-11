@@ -1273,17 +1273,6 @@ def _write_manifest_state(context: ProjectContext, plan: ManifestPlan) -> None:
         },
         "entry_count": len(plan.entries),
         "status_summary": _summarize_manifest_entries(plan.entries),
-        "entries": [
-            {
-                "source_name": entry.source_name,
-                "subject_label": entry.subject_label,
-                "session_label": entry.session_label,
-                "include": entry.include,
-                "status": entry.status,
-                "notes": entry.notes,
-            }
-            for entry in plan.entries
-        ],
     }
 
     plan.manifest_state_path.write_text(

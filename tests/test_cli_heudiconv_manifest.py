@@ -105,8 +105,7 @@ def test_heudiconv_manifest_writes_blank_review_table_by_default(tmp_path: Path)
     assert state["handoff"]["derived_execution_views"]["links"]["lifecycle"] == "ephemeral"
     assert state["entry_count"] == 2
     assert state["status_summary"]["needs_review"] == 2
-    assert state["entries"][0]["source_name"] == "SUB001_SES01"
-    assert state["entries"][1]["subject_label"] == ""
+    assert "entries" not in state
 
 
 def test_heudiconv_manifest_applies_configured_template(tmp_path: Path) -> None:

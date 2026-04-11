@@ -51,10 +51,8 @@ bidsflow init [DIRECTORY]
 bidsflow heudiconv manifest [--config bidsflow.toml] [--reset] [--dry-run]
 bidsflow heudiconv skeleton <sample-path>... \
   [--config bidsflow.toml] [--reset] [--dry-run]
+bidsflow heudiconv convert [--config bidsflow.toml] [--dry-run]
 ```
-
-The managed `heudiconv convert` step is stubbed in the CLI but not yet
-implemented.
 
 Current manifest behavior:
 
@@ -98,6 +96,27 @@ Current skeleton behavior:
   must start before final naming is frozen
 - convert is the first step that should assume both a confirmed
   manifest and a reviewed heuristic
+
+Current convert behavior:
+
+- convert reads `code/heudiconv/manifest.tsv` and recomputes row status
+  from the current table contents instead of trusting a stale `status`
+  column
+- convert requires every included row to be `ready`
+- convert resolves each `source_name` back under the configured
+  `source_root`
+- convert uses `[heudiconv].heuristic` and `[heudiconv].launcher`
+- convert materializes a temporary execution view under
+  `state/heudiconv/convert-runs/<run-id>/links/`
+- convert runs one managed HeuDiConv invocation per ready manifest row
+- convert writes run state to
+  `state/heudiconv/convert-runs/<run-id>/convert.json`
+- convert writes logs to `logs/heudiconv/convert-<run-id>.log`
+- convert removes the temporary execution view after success or failure
+
+Current convert limit:
+
+- automatic persisted `BIDSLayout` indexing is still not implemented
 
 ## `init` Direction
 

@@ -44,7 +44,8 @@ for that value.
 # - adjust [paths] if your project layout differs from this scaffold
 # - keep or adjust [heudiconv].heuristic before conversion
 # - uncomment [heudiconv].launcher if you need a wrapper or Singularity launcher
-# - optionally configure [heudiconv.manifest] when source directory names map cleanly to final labels
+# - optionally configure [heudiconv.manifest] when source directory
+#   names map cleanly to final labels
 
 [project]
 name = "<target-directory-name>"
@@ -63,7 +64,8 @@ state_root = "state"
 heuristic = "code/heudiconv/heuristic.py"
 
 # Optional HeuDiConv launcher override.
-# Uncomment and edit one launcher if HeuDiConv is launched through a wrapper or container.
+# Uncomment and edit one launcher if HeuDiConv is launched through a
+# wrapper or container.
 # launcher = ["heudiconv"]
 # launcher = ["singularity", "run", "/containers/heudiconv.sif"]
 
@@ -393,8 +395,7 @@ Current status:
 - parsed into `ProjectContext.heudiconv.heuristic`
 - used by `bidsflow heudiconv skeleton` as the destination for the
   generated heuristic
-- not yet validated by `convert` because managed convert is not
-  implemented yet
+- validated and used by the managed `convert` step before conversion
 
 ### 6.3 Manifest template
 

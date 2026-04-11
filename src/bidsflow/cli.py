@@ -6,12 +6,15 @@ from pathlib import Path
 import typer
 
 from .heudiconv import (
+    HeudiconvConvertError,
     HeudiconvManifestError,
     HeudiconvSkeletonError,
     format_command,
     list_manifest_review_issues,
+    plan_convert,
     plan_manifest,
     plan_skeleton,
+    run_convert,
     run_manifest,
     run_skeleton,
     summarize_manifest_entries,
@@ -284,20 +287,55 @@ def heudiconv_manifest(
 
 @heudiconv_app.command("convert")
 def heudiconv_convert(
+    config: Path | None = typer.Option(
+        None,
+        "--config",
+        help="Path to bidsflow.toml. Defaults to the nearest project config.",
+    ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
-        help="Reserved for the future managed convert step.",
+        help="Show the managed conversion commands and planned outputs without running them.",
     ),
 ) -> None:
     """Run the managed HeuDiConv conversion step."""
-    _ = dry_run
-    typer.echo(
-        "heudiconv convert is not implemented yet. Edit code/heudiconv/heuristic.py first; "
-        "the managed convert step is the next planned slice.",
-        err=True,
-    )
-    raise typer.Exit(code=1)
+    try:
+        config_path = find_project_config(config, Path.cwd())
+        context = load_project_context(config_path)
+        plan = plan_convert(context)
+    except (HeudiconvConvertError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+    if dry_run:
+        typer.echo("Planned HeuDiConv convert run.")
+        typer.echo(f"Config: {config_path}")
+        typer.echo(f"Manifest: {plan.manifest_path}")
+        typer.echo(f"Heuristic: {plan.heuristic_path}")
+        typer.echo(f"Raw BIDS root: {plan.raw_bids_root}")
+        typer.echo(f"Execution view root: {plan.execution_view_root}")
+        typer.echo(f"State: {plan.state_path}")
+        typer.echo(f"Log: {plan.log_path}")
+        typer.echo(f"Conversion units: {len(plan.units)}")
+        for unit in plan.units:
+            typer.echo(
+                f"{unit.source_name}: subject={unit.subject_label} "
+                f"session={unit.session_label or '-'}"
+            )
+            typer.echo(format_command(unit.command))
+        return
+
+    try:
+        result = run_convert(context, plan)
+    except HeudiconvConvertError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+    typer.echo("Completed managed HeuDiConv conversion.")
+    typer.echo(f"Conversion units: {len(result.unit_results)}")
+    typer.echo(f"Raw BIDS root: {result.raw_bids_root}")
+    typer.echo(f"State: {result.state_path}")
+    typer.echo(f"Log: {result.log_path}")
 
 
 if __name__ == "__main__":

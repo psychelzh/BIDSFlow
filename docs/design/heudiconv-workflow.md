@@ -16,6 +16,7 @@ The current codebase implements two early slices:
 bidsflow heudiconv manifest [--config bidsflow.toml] [--reset] [--dry-run]
 bidsflow heudiconv skeleton <sample-path>... \
   [--config bidsflow.toml] [--reset] [--dry-run]
+bidsflow heudiconv convert [--config bidsflow.toml] [--dry-run]
 ```
 
 Current supported behavior:
@@ -51,10 +52,21 @@ Current supported behavior:
 - skeleton copies every generated `dicominfo*.tsv` into
   `code/heudiconv/dicominfo/`
 - skeleton records run metadata in `state/heudiconv/skeleton.json`
+- convert reads `code/heudiconv/manifest.tsv` and recomputes the
+  current manifest status from table contents
+- convert requires every included manifest row to be `ready`
+- convert materializes a temporary execution view under
+  `state/heudiconv/convert-runs/<run-id>/links/`
+- convert currently runs one managed HeuDiConv invocation per ready
+  manifest row
+- convert uses the configured heuristic path and launcher
+- convert records run metadata in
+  `state/heudiconv/convert-runs/<run-id>/convert.json`
+- convert removes the temporary execution view after success or failure
 
 Current limit:
 
-- `bidsflow heudiconv convert` is only a placeholder command today
+- automatic persisted `BIDSLayout` indexing is still not implemented
 
 ## 2. What the official HeuDiConv workflow looks like
 
@@ -405,6 +417,12 @@ Suggested first API behavior:
 - `convert` should use the configured launcher to invoke HeuDiConv
 - identity mapping and anonymization behavior should initially come from
   the heuristic or project config rather than from many public flags
+- the current implementation already consumes final labels directly from
+  `manifest.tsv`
+- the current implementation materializes a temporary execution view and
+  runs one HeuDiConv command per ready manifest row with `--files`
+- the current implementation does not yet build a persisted
+  `BIDSLayout` database after conversion
 
 What BIDSFlow should record:
 
@@ -517,14 +535,17 @@ Implemented now:
 
 - manifest planning and generation
 - skeleton planning and execution
+- convert planning and execution
 - optional `[heudiconv].launcher` support
 - `[heudiconv].heuristic` parsing and skeleton destination support
+- `[heudiconv].heuristic` validation and convert usage
 - skeleton artifact copying and run-record writing
+- convert run-record writing and temporary execution-view cleanup
 
 Not implemented yet:
 
-- managed convert execution
-- identity-mapping and anonymization behavior
+- additional convert-time identity-mapping helpers beyond the current
+  manifest-derived final labels
 - automatic `BIDSLayout` indexing
 
 It should defer:

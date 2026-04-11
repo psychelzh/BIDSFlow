@@ -98,6 +98,56 @@ class HeudiconvManifestError(Exception):
     pass
 
 
+@dataclass(frozen=True)
+class ConvertUnitPlan:
+    index: int
+    source_name: str
+    source_path: Path
+    subject_label: str
+    session_label: str | None
+    execution_path: Path
+    command: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ConvertPlan:
+    manifest_path: Path
+    manifest_state_path: Path
+    launcher: tuple[str, ...]
+    heuristic_path: Path
+    raw_bids_root: Path
+    execution_view_root: Path
+    run_root: Path
+    state_path: Path
+    log_path: Path
+    entries: tuple[ManifestEntry, ...]
+    units: tuple[ConvertUnitPlan, ...]
+
+
+@dataclass(frozen=True)
+class ConvertUnitResult:
+    index: int
+    source_name: str
+    source_path: Path
+    subject_label: str
+    session_label: str | None
+    execution_path: Path
+    command: tuple[str, ...]
+    execution_view_kind: str
+
+
+@dataclass(frozen=True)
+class ConvertResult:
+    raw_bids_root: Path
+    state_path: Path
+    log_path: Path
+    unit_results: tuple[ConvertUnitResult, ...]
+
+
+class HeudiconvConvertError(Exception):
+    pass
+
+
 def plan_skeleton(context: ProjectContext, sample_paths: list[Path]) -> SkeletonPlan:
     if not sample_paths:
         raise HeudiconvSkeletonError("At least one sample path is required for skeleton generation.")
@@ -341,6 +391,166 @@ def run_manifest(context: ProjectContext, plan: ManifestPlan, reset: bool) -> Ma
     )
 
 
+def plan_convert(context: ProjectContext) -> ConvertPlan:
+    manifest_path = context.project_root / "code" / "heudiconv" / "manifest.tsv"
+    if not manifest_path.exists():
+        raise HeudiconvConvertError(
+            f"HeuDiConv manifest does not exist: {manifest_path}. Run `bidsflow heudiconv manifest` first."
+        )
+
+    heuristic_path = context.heudiconv.heuristic
+    if not heuristic_path.exists():
+        raise HeudiconvConvertError(
+            f"HeuDiConv heuristic does not exist: {heuristic_path}. Run `bidsflow heudiconv skeleton` or create the heuristic first."
+        )
+    if not heuristic_path.is_file():
+        raise HeudiconvConvertError(
+            f"HeuDiConv heuristic is not a file: {heuristic_path}"
+        )
+
+    entries = _load_confirmed_manifest(context.paths.source_root, manifest_path)
+    ready_entries = tuple(
+        entry
+        for entry in entries
+        if entry.include and entry.status == "ready"
+    )
+    blocking_entries = tuple(
+        entry
+        for entry in entries
+        if entry.include and entry.status != "ready"
+    )
+
+    if blocking_entries:
+        issue_summary = "; ".join(list_manifest_review_issues(entries))
+        suffix = f" Issues: {issue_summary}" if issue_summary else ""
+        raise HeudiconvConvertError(
+            "HeuDiConv manifest still needs review before conversion." + suffix
+        )
+    if not ready_entries:
+        raise HeudiconvConvertError(
+            "HeuDiConv manifest does not contain any included ready rows to convert."
+        )
+
+    run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    run_root = context.paths.state_root / "heudiconv" / "convert-runs" / run_id
+    execution_view_root = run_root / "links"
+    state_path = run_root / "convert.json"
+    log_path = context.paths.logs_root / "heudiconv" / f"convert-{run_id}.log"
+
+    units: list[ConvertUnitPlan] = []
+    for index, entry in enumerate(ready_entries, start=1):
+        session_label = entry.session_label or None
+        execution_path = _build_convert_execution_path(
+            execution_view_root,
+            entry.subject_label,
+            session_label,
+        )
+        units.append(
+            ConvertUnitPlan(
+                index=index,
+                source_name=entry.source_name,
+                source_path=_resolve_manifest_source_path(
+                    context.paths.source_root,
+                    entry.source_name,
+                ),
+                subject_label=entry.subject_label,
+                session_label=session_label,
+                execution_path=execution_path,
+                command=_build_convert_command(
+                    launcher=context.heudiconv.launcher,
+                    execution_path=execution_path,
+                    raw_bids_root=context.paths.raw_bids_root,
+                    heuristic_path=heuristic_path,
+                    subject_label=entry.subject_label,
+                    session_label=session_label,
+                ),
+            )
+        )
+
+    return ConvertPlan(
+        manifest_path=manifest_path,
+        manifest_state_path=context.paths.state_root / "heudiconv" / "manifest.json",
+        launcher=context.heudiconv.launcher,
+        heuristic_path=heuristic_path,
+        raw_bids_root=context.paths.raw_bids_root,
+        execution_view_root=execution_view_root,
+        run_root=run_root,
+        state_path=state_path,
+        log_path=log_path,
+        entries=entries,
+        units=tuple(units),
+    )
+
+
+def run_convert(context: ProjectContext, plan: ConvertPlan) -> ConvertResult:
+    _prepare_convert_directories(plan)
+    plan.log_path.write_text("", encoding="utf-8", newline="\n")
+
+    unit_results: list[ConvertUnitResult] = []
+    try:
+        for unit in plan.units:
+            execution_view_kind = _materialize_convert_execution_view(
+                unit.execution_path,
+                unit.source_path,
+            )
+            completed = _run_convert_command(
+                context,
+                plan.log_path,
+                unit.command,
+                label=unit.source_name,
+            )
+            if completed.returncode != 0:
+                raise HeudiconvConvertError(
+                    "HeuDiConv conversion failed while processing "
+                    f"{unit.source_name}. See {plan.log_path} for details."
+                )
+
+            unit_results.append(
+                ConvertUnitResult(
+                    index=unit.index,
+                    source_name=unit.source_name,
+                    source_path=unit.source_path,
+                    subject_label=unit.subject_label,
+                    session_label=unit.session_label,
+                    execution_path=unit.execution_path,
+                    command=unit.command,
+                    execution_view_kind=execution_view_kind,
+                )
+            )
+    except HeudiconvConvertError as exc:
+        _write_convert_record(
+            context=context,
+            plan=plan,
+            status="failed",
+            unit_results=tuple(unit_results),
+            execution_view_cleaned=_cleanup_convert_execution_view(
+                context.project_root,
+                plan.execution_view_root,
+            ),
+            error=str(exc),
+        )
+        raise
+
+    execution_view_cleaned = _cleanup_convert_execution_view(
+        context.project_root,
+        plan.execution_view_root,
+    )
+    _write_convert_record(
+        context=context,
+        plan=plan,
+        status="succeeded",
+        unit_results=tuple(unit_results),
+        execution_view_cleaned=execution_view_cleaned,
+    )
+
+    return ConvertResult(
+        raw_bids_root=plan.raw_bids_root,
+        state_path=plan.state_path,
+        log_path=plan.log_path,
+        unit_results=tuple(unit_results),
+    )
+
+
 def format_command(argv: tuple[str, ...]) -> str:
     return subprocess.list2cmdline(list(argv))
 
@@ -455,7 +665,10 @@ def _compute_manifest_statuses(
 
     updated_entries: list[ManifestEntry] = []
     for entry in entries:
-        source_path = (source_root / entry.source_name).resolve()
+        try:
+            source_path = _resolve_manifest_source_path(source_root, entry.source_name)
+        except HeudiconvConvertError:
+            source_path = source_root / "__invalid_source_name__"
         subject_label = entry.subject_label.strip()
         session_label = entry.session_label.strip()
 
@@ -484,6 +697,247 @@ def _compute_manifest_statuses(
         )
 
     return tuple(updated_entries)
+
+
+def _load_confirmed_manifest(
+    source_root: Path,
+    manifest_path: Path,
+) -> tuple[ManifestEntry, ...]:
+    with manifest_path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        if reader.fieldnames is None:
+            raise HeudiconvConvertError(
+                f"HeuDiConv manifest is missing a header row: {manifest_path}"
+            )
+
+        required_columns = {
+            "source_name",
+            "subject_label",
+            "session_label",
+            "include",
+            "status",
+            "notes",
+        }
+        missing_columns = sorted(required_columns.difference(reader.fieldnames))
+        if missing_columns:
+            raise HeudiconvConvertError(
+                "HeuDiConv manifest is missing required columns: "
+                + ", ".join(missing_columns)
+            )
+
+        entries: list[ManifestEntry] = []
+        for row_number, row in enumerate(reader, start=2):
+            source_name = (row.get("source_name") or "").strip()
+            if not source_name:
+                raise HeudiconvConvertError(
+                    f"HeuDiConv manifest row {row_number} is missing source_name."
+                )
+
+            include = _parse_manifest_include(row.get("include"), row_number)
+            entries.append(
+                ManifestEntry(
+                    source_name=source_name,
+                    subject_label=(row.get("subject_label") or "").strip(),
+                    session_label=(row.get("session_label") or "").strip(),
+                    include=include,
+                    status="",
+                    notes=(row.get("notes") or "").strip(),
+                )
+            )
+
+    return _compute_manifest_statuses(source_root.resolve(), tuple(entries))
+
+
+def _parse_manifest_include(value: str | None, row_number: int) -> bool:
+    normalized = (value or "").strip().lower()
+    if normalized in {"true", "1", "yes"}:
+        return True
+    if normalized in {"false", "0", "no"}:
+        return False
+    raise HeudiconvConvertError(
+        f"HeuDiConv manifest row {row_number} has invalid include value: {value!r}"
+    )
+
+
+def _resolve_manifest_source_path(source_root: Path, source_name: str) -> Path:
+    source_candidate = Path(source_name)
+    if source_candidate.name != source_name or source_name in {"", ".", ".."}:
+        raise HeudiconvConvertError(
+            f"HeuDiConv manifest source_name must name an immediate child directory under source_root: {source_name!r}"
+        )
+    resolved_source_path = (source_root / source_candidate).resolve()
+    if not resolved_source_path.is_relative_to(source_root.resolve()):
+        raise HeudiconvConvertError(
+            f"HeuDiConv manifest source_name resolves outside source_root: {source_name!r}"
+        )
+    return resolved_source_path
+
+
+def _build_convert_execution_path(
+    execution_view_root: Path,
+    subject_label: str,
+    session_label: str | None,
+) -> Path:
+    if session_label is None:
+        return execution_view_root / f"sub-{subject_label}"
+    return execution_view_root / f"sub-{subject_label}" / f"ses-{session_label}"
+
+
+def _build_convert_command(
+    *,
+    launcher: tuple[str, ...],
+    execution_path: Path,
+    raw_bids_root: Path,
+    heuristic_path: Path,
+    subject_label: str,
+    session_label: str | None,
+) -> tuple[str, ...]:
+    command: list[str] = [
+        *launcher,
+        "--files",
+        str(execution_path),
+        "-o",
+        str(raw_bids_root),
+        "-f",
+        str(heuristic_path),
+        "-c",
+        "dcm2niix",
+        "-b",
+        "-s",
+        subject_label,
+    ]
+    if session_label is not None:
+        command.extend(["-ss", session_label])
+    return tuple(command)
+
+
+def _prepare_convert_directories(plan: ConvertPlan) -> None:
+    plan.run_root.mkdir(parents=True, exist_ok=True)
+    plan.execution_view_root.mkdir(parents=True, exist_ok=True)
+    plan.raw_bids_root.mkdir(parents=True, exist_ok=True)
+    plan.state_path.parent.mkdir(parents=True, exist_ok=True)
+    plan.log_path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _materialize_convert_execution_view(execution_path: Path, source_path: Path) -> str:
+    execution_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        execution_path.symlink_to(source_path, target_is_directory=True)
+        return "symlink"
+    except OSError:
+        if os.name != "nt":
+            raise HeudiconvConvertError(
+                f"Failed to create temporary execution link: {execution_path} -> {source_path}"
+            ) from None
+
+    completed = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(execution_path), str(source_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0 or not execution_path.exists():
+        details = (completed.stderr or completed.stdout or "").strip()
+        suffix = f" {details}" if details else ""
+        raise HeudiconvConvertError(
+            f"Failed to create temporary execution link: {execution_path} -> {source_path}.{suffix}"
+        )
+    return "junction"
+
+
+def _run_convert_command(
+    context: ProjectContext,
+    log_path: Path,
+    command: tuple[str, ...],
+    *,
+    label: str,
+) -> subprocess.CompletedProcess[str]:
+    try:
+        completed = subprocess.run(
+            list(command),
+            cwd=context.project_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        _append_log(log_path, f"[{label}] Failed to start launcher: {exc}")
+        raise HeudiconvConvertError(
+            f"Failed to start HeuDiConv launcher. See {log_path} for details."
+        ) from exc
+
+    combined_output = _combine_process_output(completed.stdout, completed.stderr)
+    _append_log(
+        log_path,
+        "\n".join(
+            (
+                f"[{label}] Command: {format_command(command)}",
+                combined_output.rstrip(),
+            )
+        ).rstrip(),
+    )
+    return completed
+
+
+def _cleanup_convert_execution_view(project_root: Path, execution_view_root: Path) -> bool:
+    if not execution_view_root.exists():
+        return True
+    try:
+        _remove_project_path(project_root, execution_view_root)
+    except ValueError:
+        return False
+    return not execution_view_root.exists()
+
+
+def _write_convert_record(
+    *,
+    context: ProjectContext,
+    plan: ConvertPlan,
+    status: str,
+    unit_results: tuple[ConvertUnitResult, ...],
+    execution_view_cleaned: bool,
+    error: str | None = None,
+) -> None:
+    payload = {
+        "step": "convert",
+        "status": status,
+        "recorded_at": datetime.now(UTC).isoformat(),
+        "config_path": str(context.config_path),
+        "project_root": str(context.project_root),
+        "manifest_path": str(plan.manifest_path),
+        "manifest_state_path": str(plan.manifest_state_path),
+        "launcher": list(plan.launcher),
+        "heuristic_path": str(plan.heuristic_path),
+        "raw_bids_root": str(plan.raw_bids_root),
+        "execution_view_root": str(plan.execution_view_root),
+        "execution_view_cleaned": execution_view_cleaned,
+        "artifacts": {
+            "raw_bids_dataset": str(plan.raw_bids_root),
+        },
+        "log_path": str(plan.log_path),
+        "status_summary": _summarize_manifest_entries(plan.entries),
+        "units": [
+            {
+                "index": result.index,
+                "source_name": result.source_name,
+                "source_path": str(result.source_path),
+                "subject_label": result.subject_label,
+                "session_label": result.session_label,
+                "execution_path": str(result.execution_path),
+                "execution_view_kind": result.execution_view_kind,
+                "command": list(result.command),
+            }
+            for result in unit_results
+        ],
+    }
+    if error is not None:
+        payload["error"] = error
+
+    plan.state_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
 
 
 def _build_skeleton_command(

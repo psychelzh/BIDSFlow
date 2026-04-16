@@ -82,25 +82,29 @@ Examples include:
 - a generated heuristic file
 - a manifest or descriptor file produced during preparation
 
-### 4.3 Run record
+### 4.3 State record
 
-A run record is the durable record of one execution attempt.
+A state record is the durable record of the current known status for one
+managed step.
 
 It should capture at least:
 
 - `workflow`
 - `step`
 - `status`
-- `attempt`
-- `command`
 - `inputs`
 - `outputs`
 - `started_at`
 - `finished_at`
-- `log_paths`
-- `exit_code`
+- `unit_log_dir`
+- `unit_table_path`
 
-This is the object that powers `status`, retry, and resumability.
+This is the object that powers `status`.
+
+Attempt history should live in `logs/`, not in the state record itself.
+For multi-unit steps, the state record points to the unit log directory
+while the unit table records each concrete per-unit log path. This keeps
+future parallel execution from interleaving unrelated tool output.
 
 ### 4.4 Managed workflow
 
@@ -164,28 +168,45 @@ owns the scientific command details.
 The initial runtime does not need an elaborate scheduler model, but it
 does need explicit run states.
 
-A first-pass run state model can stay small:
+A first-pass run state model can stay small while still leaving room for
+future scheduler transport:
 
 - `prepared`
+- `submitted`
 - `running`
 - `succeeded`
 - `failed`
-- `stale`
+- `cancelled`
 
 Suggested meanings:
 
-- `prepared`: inputs were resolved and command materialization succeeded
-- `running`: the process has been launched and not yet reached a final
+- `prepared`: inputs were resolved, command materialization succeeded,
+  and the run record was created
+- `submitted`: the run was handed off to a scheduler, but the worker has
+  not yet been observed as running
+- `running`: the worker process has started and not yet reached a final
   state
 - `succeeded`: the process exited successfully and declared outputs were
   registered
 - `failed`: the process exited unsuccessfully or did not produce the
   required outputs
-- `stale`: a previously successful run is no longer trusted because the
-  relevant inputs, template, or workflow definition changed
+- `cancelled`: the run was intentionally stopped before a successful
+  completion
 
-Reruns should create new attempts rather than mutating old records in
-place.
+Scheduler observation should stay separate from the durable run status.
+
+For example, a scheduler-facing field may report:
+
+- `queued`
+- `running`
+- `done`
+- `unknown`
+
+without overwriting a stronger run-level conclusion that BIDSFlow has
+already recorded locally.
+
+Reruns may write new unit log directories while mutating the current
+state files in place.
 
 ## 7. CLI implications
 
@@ -214,4 +235,3 @@ artifacts, not as opaque path passing between abstract stages.
 The next implementation should treat BIDSFlow as a logistics system with
 managed workflows, command templates, artifact records, and run records
 at its core.
-

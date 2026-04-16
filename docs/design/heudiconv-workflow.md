@@ -46,22 +46,29 @@ Current supported behavior:
   placeholder subject, and the generated session mapping is recorded in
   skeleton state
 - skeleton writes its HeuDiConv working output into an isolated
-  skeleton work root under `state/heudiconv/` instead of the real raw
+  skeleton work root under `work/heudiconv/` instead of the real raw
   BIDS output directory
 - skeleton copies the generated heuristic into `code/heudiconv/`
 - skeleton copies every generated `dicominfo*.tsv` into
   `code/heudiconv/dicominfo/`
-- skeleton records run metadata in `state/heudiconv/skeleton.json`
+- skeleton records current step metadata in `state/heudiconv/skeleton.json`
+- skeleton records per-unit final statuses in `state/heudiconv/skeleton.tsv`
+- skeleton writes each unit's tool output to
+  `logs/heudiconv/skeleton-<attempt>/<unit>.log`, with paths recorded
+  in `skeleton.tsv`
 - convert reads `code/heudiconv/manifest.tsv` and recomputes the
   current manifest status from table contents
 - convert requires every included manifest row to be `ready`
 - convert materializes a temporary execution view under
-  `state/heudiconv/convert-runs/<run-id>/links/`
+  `work/heudiconv/convert-<attempt>/`
 - convert currently runs one managed HeuDiConv invocation per ready
   manifest row
 - convert uses the configured heuristic path and launcher
-- convert records run metadata in
-  `state/heudiconv/convert-runs/<run-id>/convert.json`
+- convert records current step metadata in `state/heudiconv/convert.json`
+- convert records per-unit final statuses in `state/heudiconv/convert.tsv`
+- convert writes each unit's tool output to
+  `logs/heudiconv/convert-<attempt>/<source_name>.log`, with paths
+  recorded in `convert.tsv`
 - convert removes the temporary execution view after success or failure
 
 Current limit:
@@ -269,14 +276,13 @@ What BIDSFlow should record:
 - HeuDiConv version
 - the generated `.heudiconv` state path
 - the generated heuristic skeleton path
-- the generated `dicominfo` inventory directory and copied file paths
+- the generated `dicominfo` inventory directory
 - any temporary subject or session labels BIDSFlow had to generate
 
 What BIDSFlow should expose as artifacts:
 
 - `heuristic_template`
 - `dicom_inventory_dir`
-- `dicom_inventories`
 - `heudiconv_state`
 - `skeleton_report`
 
@@ -306,8 +312,9 @@ Suggested generated files:
 
 - `code/heudiconv/heuristic.py`
 - `code/heudiconv/dicominfo/`
-- `state/heudiconv/skeleton-work/`
+- `work/heudiconv/skeleton-work/`
 - `state/heudiconv/skeleton.json`
+- `state/heudiconv/skeleton.tsv`
 
 Ordering note:
 
@@ -450,7 +457,7 @@ Design implication:
 - when conversion needs a normalized input tree, it should materialize
   a temporary links view from the confirmed manifest rather than
   treating links as a second truth source
-- those temporary links should live under the run state area and should
+- those temporary links should live under the work area and should
   normally be removed after success or failure
 - if the heuristic defines `POPULATE_INTENDED_FOR_OPTS`, `IntendedFor`
   handling should be treated as part of `convert`, not as a mandatory

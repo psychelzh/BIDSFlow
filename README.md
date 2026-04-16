@@ -86,10 +86,15 @@ Current skeleton behavior:
   `source_root`
 - absolute `sample-path` arguments are only accepted when they still
   resolve under that same `source_root`
-- skeleton uses an isolated work root under `state/heudiconv/` instead
+- skeleton uses an isolated work root under `work/heudiconv/` instead
   of writing into the real raw BIDS output directory
 - skeleton writes the generated heuristic to `[heudiconv].heuristic`,
   which defaults to `code/heudiconv/heuristic.py`
+- skeleton writes current step metadata to `state/heudiconv/skeleton.json`
+- skeleton writes per-unit final status rows to `state/heudiconv/skeleton.tsv`
+- skeleton writes each unit's tool output to
+  `logs/heudiconv/skeleton-<attempt>/<unit>.log`, with paths recorded
+  in `skeleton.tsv`
 - skeleton and manifest are parallel preparation steps; neither is a
   strict prerequisite for the other
 - in many real projects, skeleton happens first because heuristic work
@@ -107,11 +112,14 @@ Current convert behavior:
   `source_root`
 - convert uses `[heudiconv].heuristic` and `[heudiconv].launcher`
 - convert materializes a temporary execution view under
-  `state/heudiconv/convert-runs/<run-id>/links/`
+  `work/heudiconv/convert-<attempt>/`
 - convert runs one managed HeuDiConv invocation per ready manifest row
-- convert writes run state to
-  `state/heudiconv/convert-runs/<run-id>/convert.json`
-- convert writes logs to `logs/heudiconv/convert-<run-id>.log`
+- convert writes current step metadata to `state/heudiconv/convert.json`
+- convert writes per-unit final status rows to
+  `state/heudiconv/convert.tsv`
+- convert writes each unit's tool output to
+  `logs/heudiconv/convert-<attempt>/<source_name>.log`, with paths
+  recorded in `convert.tsv`
 - convert removes the temporary execution view after success or failure
 
 Current convert limit:

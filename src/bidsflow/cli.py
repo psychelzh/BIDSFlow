@@ -182,7 +182,8 @@ def heudiconv_skeleton(
         typer.echo(f"Heuristic: {plan.heuristic_path}")
         typer.echo(f"DICOM inventories: {plan.dicominfo_root}")
         typer.echo(f"State: {plan.skeleton_state_path}")
-        typer.echo(f"Log: {plan.log_path}")
+        typer.echo(f"Units: {plan.skeleton_units_path}")
+        typer.echo(f"Unit logs: {plan.log_dir}")
         return
 
     try:
@@ -197,7 +198,8 @@ def heudiconv_skeleton(
     typer.echo(f"Heuristic: {result.heuristic_path}")
     typer.echo(f"DICOM inventories: {result.dicominfo_root} ({len(result.dicominfo_paths)} files)")
     typer.echo(f"State: {result.skeleton_state_path}")
-    typer.echo(f"Log: {result.log_path}")
+    typer.echo(f"Units: {result.skeleton_units_path}")
+    typer.echo(f"Unit logs: {result.log_dir}")
     typer.echo(
         "Next: review and edit the heuristic. Manifest can be prepared before or after "
         "skeleton, but convert will need both a confirmed manifest and a reviewed heuristic."
@@ -315,14 +317,22 @@ def heudiconv_convert(
         typer.echo(f"Raw BIDS root: {plan.raw_bids_root}")
         typer.echo(f"Execution view root: {plan.execution_view_root}")
         typer.echo(f"State: {plan.state_path}")
-        typer.echo(f"Log: {plan.log_path}")
+        typer.echo(f"Units: {plan.units_path}")
+        typer.echo(f"Unit logs: {plan.log_dir}")
         typer.echo(f"Conversion units: {len(plan.units)}")
-        for unit in plan.units:
+        if plan.units:
+            unit = plan.units[0]
+            typer.echo("Example unit:")
             typer.echo(
                 f"{unit.source_name}: subject={unit.subject_label} "
                 f"session={unit.session_label or '-'}"
             )
             typer.echo(format_command(unit.command))
+            if len(plan.units) > 1:
+                typer.echo(
+                    f"Additional units omitted: {len(plan.units) - 1}. "
+                    "Convert will apply the same manifest-driven pattern to each ready row."
+                )
         return
 
     try:
@@ -335,7 +345,8 @@ def heudiconv_convert(
     typer.echo(f"Conversion units: {len(result.unit_results)}")
     typer.echo(f"Raw BIDS root: {result.raw_bids_root}")
     typer.echo(f"State: {result.state_path}")
-    typer.echo(f"Log: {result.log_path}")
+    typer.echo(f"Units: {result.units_path}")
+    typer.echo(f"Unit logs: {result.log_dir}")
 
 
 if __name__ == "__main__":

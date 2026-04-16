@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
 import sys
@@ -41,7 +42,12 @@ def _write_minimal_heuristic(project_dir: Path) -> Path:
     return heuristic_path
 
 
-def test_heudiconv_convert_dry_run_shows_manifest_driven_commands(tmp_path: Path) -> None:
+def _read_tsv_rows(path: Path) -> list[dict[str, str]]:
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        return list(csv.DictReader(handle, delimiter="\t"))
+
+
+def test_heudiconv_convert_dry_run_shows_summary_and_one_example(tmp_path: Path) -> None:
     project_dir = tmp_path / "demo-project"
     init_result = runner.invoke(app, ["init", str(project_dir)])
     assert init_result.exit_code == 0, init_result.output
@@ -73,9 +79,13 @@ def test_heudiconv_convert_dry_run_shows_manifest_driven_commands(tmp_path: Path
     assert str(project_dir / "code" / "heudiconv" / "manifest.tsv") in result.output
     assert str(heuristic_path) in result.output
     assert str(project_dir / "sourcedata" / "raw") in result.output
+    assert str(project_dir / "state" / "heudiconv" / "convert.json") in result.output
+    assert str(project_dir / "state" / "heudiconv" / "convert.tsv") in result.output
     assert "Conversion units: 2" in result.output
+    assert "Example unit:" in result.output
+    assert "SUB001_SES01: subject=001 session=01" in result.output
     assert "-s 001 -ss 01" in result.output
-    assert "-s 001 -ss 02" in result.output
+    assert "Additional units omitted: 1." in result.output
 
 
 def test_heudiconv_convert_recomputes_manifest_status_from_manual_edits(tmp_path: Path) -> None:
@@ -139,7 +149,7 @@ def test_heudiconv_convert_recomputes_manifest_status_from_manual_edits(tmp_path
     assert (project_dir / "sourcedata" / "raw" / "sub-001" / "marker.txt").is_file()
 
 
-def test_heudiconv_convert_runs_launcher_and_cleans_execution_view(tmp_path: Path) -> None:
+def test_heudiconv_convert_writes_current_state_and_unit_table(tmp_path: Path) -> None:
     project_dir = tmp_path / "demo-project"
     init_result = runner.invoke(app, ["init", str(project_dir)])
     assert init_result.exit_code == 0, init_result.output
@@ -195,26 +205,37 @@ def test_heudiconv_convert_runs_launcher_and_cleans_execution_view(tmp_path: Pat
     assert (raw_root / "sub-001" / "ses-01" / "marker.txt").is_file()
     assert (raw_root / "sub-001" / "ses-02" / "marker.txt").is_file()
 
-    state_root = project_dir / "state" / "heudiconv" / "convert-runs"
-    run_dirs = sorted(path for path in state_root.iterdir() if path.is_dir())
-    assert len(run_dirs) == 1
-    run_root = run_dirs[0]
-    assert not (run_root / "links").exists()
+    state_path = project_dir / "state" / "heudiconv" / "convert.json"
+    units_path = project_dir / "state" / "heudiconv" / "convert.tsv"
+    assert state_path.is_file()
+    assert units_path.is_file()
 
-    state = json.loads((run_root / "convert.json").read_text(encoding="utf-8"))
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["workflow"] == "heudiconv"
     assert state["step"] == "convert"
+    assert state["backend"] == "local"
     assert state["status"] == "succeeded"
-    assert state["raw_bids_root"] == str(raw_root)
+    assert state["input_signature"].startswith("sha256:")
+    assert state["started_at"] is not None
+    assert state["finished_at"] is not None
+    assert state["artifacts"]["raw_bids_dataset"] == str(raw_root)
+    assert Path(state["unit_log_dir"]).is_dir()
+    assert state["unit_table_path"] == str(units_path)
     assert state["execution_view_cleaned"] is True
-    assert len(state["units"]) == 2
-    assert state["units"][0]["execution_view_kind"] in {"symlink", "junction"}
+    assert not Path(state["execution_view_root"]).exists()
+    assert "error" not in state
 
-    log_root = project_dir / "logs" / "heudiconv"
-    log_files = list(log_root.glob("convert-*.log"))
-    assert len(log_files) == 1
-    log_text = log_files[0].read_text(encoding="utf-8")
-    assert "convert ok" in log_text
-    assert "--files" in log_text
+    rows = _read_tsv_rows(units_path)
+    assert [row["source_name"] for row in rows] == ["SUB001_SES01", "SUB001_SES02"]
+    assert [row["status"] for row in rows] == ["succeeded", "succeeded"]
+    assert rows[0]["summary"] == "sub-001 ses-01"
+    assert rows[1]["summary"] == "sub-001 ses-02"
+    assert all(Path(row["log_path"]).is_file() for row in rows)
+    assert all(Path(row["log_path"]).parent == Path(state["unit_log_dir"]) for row in rows)
+
+    unit_log_text = Path(rows[0]["log_path"]).read_text(encoding="utf-8")
+    assert "convert ok" in unit_log_text
+    assert "--files" in unit_log_text
 
 
 def test_heudiconv_convert_rejects_manifest_that_still_needs_review(tmp_path: Path) -> None:
@@ -238,3 +259,78 @@ def test_heudiconv_convert_rejects_manifest_that_still_needs_review(tmp_path: Pa
 
     assert result.exit_code == 2
     assert "manifest still needs review" in result.output.lower()
+
+
+def test_heudiconv_convert_overwrites_current_state_and_keeps_unit_logs(tmp_path: Path) -> None:
+    project_dir = tmp_path / "demo-project"
+    init_result = runner.invoke(app, ["init", str(project_dir)])
+    assert init_result.exit_code == 0, init_result.output
+
+    config_path = project_dir / "bidsflow.toml"
+    _append_config(
+        config_path,
+        [
+            "[heudiconv.manifest]",
+            'template = "SUB{subject}_SES{session}"',
+        ],
+    )
+
+    (project_dir / "sourcedata" / "SUB001_SES01").mkdir(parents=True)
+    manifest_result = runner.invoke(app, ["heudiconv", "manifest", "--config", str(config_path)])
+    assert manifest_result.exit_code == 0, manifest_result.output
+    _write_minimal_heuristic(project_dir)
+
+    flaky_launcher = project_dir / "flaky_convert.py"
+    flaky_launcher.write_text(
+        "\n".join(
+            (
+                "from pathlib import Path",
+                "import sys",
+                "",
+                "argv = sys.argv[1:]",
+                "flag = Path(__file__).with_name('flaky_once.flag')",
+                "if not flag.exists():",
+                "    flag.write_text('1', encoding='utf-8')",
+                "    raise SystemExit(1)",
+                "files_path = Path(argv[argv.index('--files') + 1])",
+                "out_dir = Path(argv[argv.index('-o') + 1])",
+                "subject = argv[argv.index('-s') + 1]",
+                "assert files_path.exists()",
+                "target = out_dir / f'sub-{subject}'",
+                "target.mkdir(parents=True, exist_ok=True)",
+                "(target / 'marker.txt').write_text(str(files_path), encoding='utf-8')",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    _set_launcher(
+        config_path,
+        f'launcher = ["{sys.executable.replace("\\", "/")}", "{flaky_launcher.as_posix()}"]',
+    )
+
+    first_result = runner.invoke(app, ["heudiconv", "convert", "--config", str(config_path)])
+    assert first_result.exit_code == 2
+    state_path = project_dir / "state" / "heudiconv" / "convert.json"
+    units_path = project_dir / "state" / "heudiconv" / "convert.tsv"
+    first_state = json.loads(state_path.read_text(encoding="utf-8"))
+    first_rows = _read_tsv_rows(units_path)
+    assert first_state["status"] == "failed"
+    assert first_rows[0]["status"] == "failed"
+    first_log_dir = Path(first_state["unit_log_dir"])
+
+    second_result = runner.invoke(app, ["heudiconv", "convert", "--config", str(config_path)])
+    assert second_result.exit_code == 0, second_result.output
+
+    second_state = json.loads(state_path.read_text(encoding="utf-8"))
+    second_rows = _read_tsv_rows(units_path)
+    assert second_state["status"] == "succeeded"
+    assert second_rows[0]["status"] == "succeeded"
+    second_log_dir = Path(second_state["unit_log_dir"])
+
+    assert first_log_dir.is_dir()
+    assert second_log_dir.is_dir()
+    assert first_log_dir != second_log_dir
+    assert Path(first_rows[0]["log_path"]).is_file()
+    assert Path(second_rows[0]["log_path"]).is_file()

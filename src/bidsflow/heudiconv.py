@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import csv
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -23,6 +24,7 @@ class SkeletonUnitPlan:
     initial_command: tuple[str, ...]
     subject_label: str | None
     session_label: str | None
+    log_path: Path
 
 
 @dataclass(frozen=True)
@@ -36,7 +38,8 @@ class SkeletonPlan:
     skeleton_work_root: Path
     heudiconv_state_path: Path
     skeleton_state_path: Path
-    log_path: Path
+    skeleton_units_path: Path
+    log_dir: Path
 
 
 @dataclass(frozen=True)
@@ -51,6 +54,7 @@ class SkeletonUnitResult:
     generated_heuristic: Path
     generated_dicominfo_paths: tuple[Path, ...]
     copied_dicominfo_paths: tuple[Path, ...]
+    log_path: Path
 
 
 @dataclass(frozen=True)
@@ -59,7 +63,8 @@ class SkeletonResult:
     dicominfo_root: Path
     dicominfo_paths: tuple[Path, ...]
     skeleton_state_path: Path
-    log_path: Path
+    skeleton_units_path: Path
+    log_dir: Path
     unit_results: tuple[SkeletonUnitResult, ...]
 
 
@@ -107,6 +112,7 @@ class ConvertUnitPlan:
     session_label: str | None
     execution_path: Path
     command: tuple[str, ...]
+    log_path: Path
 
 
 @dataclass(frozen=True)
@@ -117,9 +123,9 @@ class ConvertPlan:
     heuristic_path: Path
     raw_bids_root: Path
     execution_view_root: Path
-    run_root: Path
     state_path: Path
-    log_path: Path
+    units_path: Path
+    log_dir: Path
     entries: tuple[ManifestEntry, ...]
     units: tuple[ConvertUnitPlan, ...]
 
@@ -134,13 +140,15 @@ class ConvertUnitResult:
     execution_path: Path
     command: tuple[str, ...]
     execution_view_kind: str
+    log_path: Path
 
 
 @dataclass(frozen=True)
 class ConvertResult:
     raw_bids_root: Path
     state_path: Path
-    log_path: Path
+    units_path: Path
+    log_dir: Path
     unit_results: tuple[ConvertUnitResult, ...]
 
 
@@ -177,7 +185,9 @@ def plan_skeleton(context: ProjectContext, sample_paths: list[Path]) -> Skeleton
     code_root = context.project_root / "code" / "heudiconv"
     state_root = context.paths.state_root / "heudiconv"
     log_root = context.paths.logs_root / "heudiconv"
-    skeleton_work_root = state_root / "skeleton-work"
+    attempt_label = _format_attempt_label()
+    skeleton_work_root = context.paths.work_root / "heudiconv" / "skeleton-work"
+    unit_log_root = log_root / f"skeleton-{attempt_label}"
 
     if len(resolved_samples) == 1:
         units = (
@@ -193,6 +203,7 @@ def plan_skeleton(context: ProjectContext, sample_paths: list[Path]) -> Skeleton
                 ),
                 subject_label="skeleton01",
                 session_label=None,
+                log_path=unit_log_root / "sample-01.log",
             ),
         )
     else:
@@ -211,6 +222,7 @@ def plan_skeleton(context: ProjectContext, sample_paths: list[Path]) -> Skeleton
                 ),
                 subject_label=generated_subject,
                 session_label=f"skeleton-ses{index:02d}",
+                log_path=unit_log_root / f"skeleton-ses{index:02d}.log",
             )
             for index, sample_path in enumerate(resolved_samples, start=1)
         )
@@ -225,7 +237,8 @@ def plan_skeleton(context: ProjectContext, sample_paths: list[Path]) -> Skeleton
         skeleton_work_root=skeleton_work_root,
         heudiconv_state_path=skeleton_work_root / ".heudiconv",
         skeleton_state_path=state_root / "skeleton.json",
-        log_path=log_root / "skeleton.log",
+        skeleton_units_path=state_root / "skeleton.tsv",
+        log_dir=unit_log_root,
     )
 
 
@@ -261,34 +274,57 @@ def run_skeleton(context: ProjectContext, plan: SkeletonPlan, reset: bool) -> Sk
         _reset_skeleton_state(context.project_root, plan)
         _prepare_skeleton_directories(plan)
 
-    plan.log_path.write_text("", encoding="utf-8", newline="\n")
+    _remove_state_file(plan.skeleton_units_path)
+
+    started_at = _utc_now()
+    _write_skeleton_state(
+        context=context,
+        plan=plan,
+        status="running",
+        started_at=started_at,
+    )
 
     unit_results: list[SkeletonUnitResult] = []
     copied_dicominfo_paths: list[Path] = []
+    current_unit: SkeletonUnitPlan | None = None
 
     try:
         for unit in plan.units:
+            current_unit = unit
             unit_result = _run_skeleton_unit(context, plan, unit)
             _merge_heuristic(plan.heuristic_path, unit_result.generated_heuristic)
             unit_results.append(unit_result)
             copied_dicominfo_paths.extend(unit_result.copied_dicominfo_paths)
+            current_unit = None
     except HeudiconvSkeletonError as exc:
-        _write_skeleton_record(
+        _write_skeleton_units_tsv(
+            plan.skeleton_units_path,
+            plan.units,
+            tuple(unit_results),
+            failed_unit=current_unit,
+            error=str(exc),
+        )
+        _write_skeleton_state(
             context=context,
             plan=plan,
             status="failed",
-            unit_results=tuple(unit_results),
-            copied_dicominfo_paths=tuple(copied_dicominfo_paths),
+            started_at=started_at,
+            finished_at=_utc_now(),
             error=str(exc),
         )
         raise
 
-    _write_skeleton_record(
+    _write_skeleton_units_tsv(
+        plan.skeleton_units_path,
+        plan.units,
+        tuple(unit_results),
+    )
+    _write_skeleton_state(
         context=context,
         plan=plan,
         status="succeeded",
-        unit_results=tuple(unit_results),
-        copied_dicominfo_paths=tuple(copied_dicominfo_paths),
+        started_at=started_at,
+        finished_at=_utc_now(),
     )
 
     return SkeletonResult(
@@ -296,7 +332,8 @@ def run_skeleton(context: ProjectContext, plan: SkeletonPlan, reset: bool) -> Sk
         dicominfo_root=plan.dicominfo_root,
         dicominfo_paths=tuple(copied_dicominfo_paths),
         skeleton_state_path=plan.skeleton_state_path,
-        log_path=plan.log_path,
+        skeleton_units_path=plan.skeleton_units_path,
+        log_dir=plan.log_dir,
         unit_results=tuple(unit_results),
     )
 
@@ -431,11 +468,13 @@ def plan_convert(context: ProjectContext) -> ConvertPlan:
             "HeuDiConv manifest does not contain any included ready rows to convert."
         )
 
-    run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    run_root = context.paths.state_root / "heudiconv" / "convert-runs" / run_id
-    execution_view_root = run_root / "links"
-    state_path = run_root / "convert.json"
-    log_path = context.paths.logs_root / "heudiconv" / f"convert-{run_id}.log"
+    state_root = context.paths.state_root / "heudiconv"
+    attempt_label = _format_attempt_label()
+    execution_view_root = context.paths.work_root / "heudiconv" / f"convert-{attempt_label}"
+    state_path = state_root / "convert.json"
+    units_path = state_root / "convert.tsv"
+    log_root = context.paths.logs_root / "heudiconv"
+    unit_log_root = log_root / f"convert-{attempt_label}"
 
     units: list[ConvertUnitPlan] = []
     for index, entry in enumerate(ready_entries, start=1):
@@ -464,6 +503,7 @@ def plan_convert(context: ProjectContext) -> ConvertPlan:
                     subject_label=entry.subject_label,
                     session_label=session_label,
                 ),
+                log_path=unit_log_root / f"{entry.source_name}.log",
             )
         )
 
@@ -474,35 +514,54 @@ def plan_convert(context: ProjectContext) -> ConvertPlan:
         heuristic_path=heuristic_path,
         raw_bids_root=context.paths.raw_bids_root,
         execution_view_root=execution_view_root,
-        run_root=run_root,
         state_path=state_path,
-        log_path=log_path,
+        units_path=units_path,
+        log_dir=unit_log_root,
         entries=entries,
         units=tuple(units),
     )
 
 
 def run_convert(context: ProjectContext, plan: ConvertPlan) -> ConvertResult:
+    execution_view_cleared = _cleanup_convert_execution_view(
+        context.project_root,
+        plan.execution_view_root,
+    )
+    if not execution_view_cleared:
+        raise HeudiconvConvertError(
+            f"Failed to clear prior convert execution view: {plan.execution_view_root}"
+        )
+
     _prepare_convert_directories(plan)
-    plan.log_path.write_text("", encoding="utf-8", newline="\n")
+    _remove_state_file(plan.units_path)
+
+    started_at = _utc_now()
+    _write_convert_state(
+        context=context,
+        plan=plan,
+        status="running",
+        started_at=started_at,
+    )
 
     unit_results: list[ConvertUnitResult] = []
+    current_unit: ConvertUnitPlan | None = None
     try:
         for unit in plan.units:
+            current_unit = unit
             execution_view_kind = _materialize_convert_execution_view(
                 unit.execution_path,
                 unit.source_path,
             )
             completed = _run_convert_command(
                 context,
-                plan.log_path,
+                unit.log_path,
                 unit.command,
                 label=unit.source_name,
             )
             if completed.returncode != 0:
                 raise HeudiconvConvertError(
                     "HeuDiConv conversion failed while processing "
-                    f"{unit.source_name}. See {plan.log_path} for details."
+                    f"{unit.source_name}. See {unit.log_path} for details."
                 )
 
             unit_results.append(
@@ -515,18 +574,29 @@ def run_convert(context: ProjectContext, plan: ConvertPlan) -> ConvertResult:
                     execution_path=unit.execution_path,
                     command=unit.command,
                     execution_view_kind=execution_view_kind,
+                    log_path=unit.log_path,
                 )
             )
+            current_unit = None
     except HeudiconvConvertError as exc:
-        _write_convert_record(
+        execution_view_cleaned = _cleanup_convert_execution_view(
+            context.project_root,
+            plan.execution_view_root,
+        )
+        _write_convert_units_tsv(
+            plan.units_path,
+            plan.units,
+            tuple(unit_results),
+            failed_unit=current_unit,
+            error=str(exc),
+        )
+        _write_convert_state(
             context=context,
             plan=plan,
             status="failed",
-            unit_results=tuple(unit_results),
-            execution_view_cleaned=_cleanup_convert_execution_view(
-                context.project_root,
-                plan.execution_view_root,
-            ),
+            started_at=started_at,
+            finished_at=_utc_now(),
+            execution_view_cleaned=execution_view_cleaned,
             error=str(exc),
         )
         raise
@@ -535,18 +605,25 @@ def run_convert(context: ProjectContext, plan: ConvertPlan) -> ConvertResult:
         context.project_root,
         plan.execution_view_root,
     )
-    _write_convert_record(
+    _write_convert_units_tsv(
+        plan.units_path,
+        plan.units,
+        tuple(unit_results),
+    )
+    _write_convert_state(
         context=context,
         plan=plan,
         status="succeeded",
-        unit_results=tuple(unit_results),
+        started_at=started_at,
+        finished_at=_utc_now(),
         execution_view_cleaned=execution_view_cleaned,
     )
 
     return ConvertResult(
         raw_bids_root=plan.raw_bids_root,
         state_path=plan.state_path,
-        log_path=plan.log_path,
+        units_path=plan.units_path,
+        log_dir=plan.log_dir,
         unit_results=tuple(unit_results),
     )
 
@@ -811,12 +888,321 @@ def _build_convert_command(
     return tuple(command)
 
 
+def _build_convert_input_signature(
+    *,
+    launcher: tuple[str, ...],
+    heuristic_path: Path,
+    raw_bids_root: Path,
+    source_root: Path,
+    ready_entries: tuple[ManifestEntry, ...],
+) -> str:
+    unit_payload = [
+        {
+            "source_name": entry.source_name,
+            "source_path": str(_resolve_manifest_source_path(source_root, entry.source_name)),
+            "subject_label": entry.subject_label,
+            "session_label": entry.session_label,
+        }
+        for entry in ready_entries
+    ]
+    return _compute_input_signature(
+        {
+            "launcher": json.dumps(list(launcher), separators=(",", ":"), sort_keys=True),
+            "heuristic_path": str(heuristic_path),
+            "heuristic_content": heuristic_path.read_bytes(),
+            "raw_bids_root": str(raw_bids_root),
+            "source_root": str(source_root),
+            "units": json.dumps(unit_payload, separators=(",", ":"), sort_keys=True),
+        }
+    )
+
+
+def _build_convert_unit_summary(subject_label: str, session_label: str | None) -> str:
+    if session_label is None:
+        return f"sub-{subject_label}"
+    return f"sub-{subject_label} ses-{session_label}"
+
+
 def _prepare_convert_directories(plan: ConvertPlan) -> None:
-    plan.run_root.mkdir(parents=True, exist_ok=True)
     plan.execution_view_root.mkdir(parents=True, exist_ok=True)
     plan.raw_bids_root.mkdir(parents=True, exist_ok=True)
     plan.state_path.parent.mkdir(parents=True, exist_ok=True)
-    plan.log_path.parent.mkdir(parents=True, exist_ok=True)
+    plan.units_path.parent.mkdir(parents=True, exist_ok=True)
+    plan.log_dir.mkdir(parents=True, exist_ok=True)
+
+
+def _compute_input_signature(parts: dict[str, str | bytes]) -> str:
+    digest = hashlib.sha256()
+    for key in sorted(parts):
+        digest.update(key.encode("utf-8"))
+        digest.update(b"\0")
+        value = parts[key]
+        digest.update(value.encode("utf-8") if isinstance(value, str) else value)
+        digest.update(b"\0")
+    return f"sha256:{digest.hexdigest()}"
+
+
+def _format_attempt_label() -> str:
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+
+
+def _utc_now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _write_json(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+def _remove_state_file(path: Path) -> None:
+    if path.exists():
+        path.unlink()
+
+
+def _build_skeleton_unit_rows(
+    planned_units: tuple[SkeletonUnitPlan, ...],
+    unit_results: tuple[SkeletonUnitResult, ...],
+    *,
+    failed_unit: SkeletonUnitPlan | None = None,
+    error: str | None = None,
+) -> tuple[dict[str, str], ...]:
+    completed_by_name = {result.unit_name: result for result in unit_results}
+    rows: list[dict[str, str]] = []
+
+    for unit in planned_units:
+        completed = completed_by_name.get(unit.unit_name)
+        if completed is not None:
+            status = "succeeded"
+            strategy = completed.strategy
+            notes = ""
+        elif failed_unit is not None and unit.unit_name == failed_unit.unit_name:
+            status = "failed"
+            strategy = "generated_subject" if unit.session_label is None else "generated_multi_session"
+            notes = error or ""
+        else:
+            status = "not_run"
+            strategy = "generated_subject" if unit.session_label is None else "generated_multi_session"
+            notes = ""
+
+        rows.append(
+            {
+                "unit_name": unit.unit_name,
+                "sample_path": str(unit.sample_path),
+                "subject_label": unit.subject_label or "",
+                "session_label": unit.session_label or "",
+                "strategy": strategy,
+                "status": status,
+                "log_path": str(unit.log_path),
+                "notes": notes,
+            }
+        )
+
+    return tuple(rows)
+
+
+def _write_skeleton_units_tsv(
+    path: Path,
+    planned_units: tuple[SkeletonUnitPlan, ...],
+    unit_results: tuple[SkeletonUnitResult, ...],
+    *,
+    failed_unit: SkeletonUnitPlan | None = None,
+    error: str | None = None,
+) -> None:
+    rows = _build_skeleton_unit_rows(
+        planned_units,
+        unit_results,
+        failed_unit=failed_unit,
+        error=error,
+    )
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+        writer.writerow(
+            (
+                "unit_name",
+                "sample_path",
+                "subject_label",
+                "session_label",
+                "strategy",
+                "status",
+                "log_path",
+                "notes",
+            )
+        )
+        for row in rows:
+            writer.writerow(
+                (
+                    row["unit_name"],
+                    row["sample_path"],
+                    row["subject_label"],
+                    row["session_label"],
+                    row["strategy"],
+                    row["status"],
+                    row["log_path"],
+                    row["notes"],
+                )
+            )
+
+
+def _write_skeleton_state(
+    *,
+    context: ProjectContext,
+    plan: SkeletonPlan,
+    status: str,
+    started_at: str,
+    finished_at: str | None = None,
+    error: str | None = None,
+) -> None:
+    payload: dict[str, object] = {
+        "step": "skeleton",
+        "status": status,
+        "updated_at": _utc_now(),
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "config_path": str(context.config_path),
+        "project_root": str(context.project_root),
+        "sample_paths": [str(path) for path in plan.sample_paths],
+        "launcher": list(plan.launcher),
+        "artifacts": {
+            "heuristic_template": str(plan.heuristic_path),
+            "dicom_inventory_dir": str(plan.dicominfo_root),
+            "skeleton_work_root": str(plan.skeleton_work_root),
+            "heudiconv_state": str(plan.heudiconv_state_path),
+        },
+        "unit_log_dir": str(plan.log_dir),
+        "unit_table_path": str(plan.skeleton_units_path),
+    }
+    if error is not None:
+        payload["error"] = error
+    _write_json(plan.skeleton_state_path, payload)
+
+
+def _build_convert_unit_rows(
+    planned_units: tuple[ConvertUnitPlan, ...],
+    unit_results: tuple[ConvertUnitResult, ...],
+    *,
+    failed_unit: ConvertUnitPlan | None = None,
+    error: str | None = None,
+) -> tuple[dict[str, str], ...]:
+    completed_by_source = {result.source_name: result for result in unit_results}
+    rows: list[dict[str, str]] = []
+
+    for unit in planned_units:
+        if unit.source_name in completed_by_source:
+            status = "succeeded"
+            notes = ""
+        elif failed_unit is not None and unit.source_name == failed_unit.source_name:
+            status = "failed"
+            notes = error or ""
+        else:
+            status = "not_run"
+            notes = ""
+
+        rows.append(
+            {
+                "source_name": unit.source_name,
+                "subject_label": unit.subject_label,
+                "session_label": unit.session_label or "",
+                "summary": _build_convert_unit_summary(unit.subject_label, unit.session_label),
+                "status": status,
+                "log_path": str(unit.log_path),
+                "notes": notes,
+            }
+        )
+
+    return tuple(rows)
+
+
+def _write_convert_units_tsv(
+    path: Path,
+    planned_units: tuple[ConvertUnitPlan, ...],
+    unit_results: tuple[ConvertUnitResult, ...],
+    *,
+    failed_unit: ConvertUnitPlan | None = None,
+    error: str | None = None,
+) -> None:
+    rows = _build_convert_unit_rows(
+        planned_units,
+        unit_results,
+        failed_unit=failed_unit,
+        error=error,
+    )
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+        writer.writerow(
+            (
+                "source_name",
+                "subject_label",
+                "session_label",
+                "summary",
+                "status",
+                "log_path",
+                "notes",
+            )
+        )
+        for row in rows:
+            writer.writerow(
+                (
+                    row["source_name"],
+                    row["subject_label"],
+                    row["session_label"],
+                    row["summary"],
+                    row["status"],
+                    row["log_path"],
+                    row["notes"],
+                )
+            )
+
+
+def _write_convert_state(
+    *,
+    context: ProjectContext,
+    plan: ConvertPlan,
+    status: str,
+    started_at: str,
+    finished_at: str | None = None,
+    execution_view_cleaned: bool | None = None,
+    error: str | None = None,
+) -> None:
+    payload: dict[str, object] = {
+        "workflow": "heudiconv",
+        "step": "convert",
+        "backend": "local",
+        "status": status,
+        "updated_at": _utc_now(),
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "input_signature": _build_convert_input_signature(
+            launcher=plan.launcher,
+            heuristic_path=plan.heuristic_path,
+            raw_bids_root=plan.raw_bids_root,
+            source_root=context.paths.source_root,
+            ready_entries=tuple(
+                entry for entry in plan.entries if entry.include and entry.status == "ready"
+            ),
+        ),
+        "config_path": str(context.config_path),
+        "project_root": str(context.project_root),
+        "manifest_path": str(plan.manifest_path),
+        "manifest_state_path": str(plan.manifest_state_path),
+        "heuristic_path": str(plan.heuristic_path),
+        "raw_bids_root": str(plan.raw_bids_root),
+        "execution_view_root": str(plan.execution_view_root),
+        "artifacts": {
+            "raw_bids_dataset": str(plan.raw_bids_root),
+        },
+        "unit_log_dir": str(plan.log_dir),
+        "unit_table_path": str(plan.units_path),
+    }
+    if execution_view_cleaned is not None:
+        payload["execution_view_cleaned"] = execution_view_cleaned
+    if error is not None:
+        payload["error"] = error
+    _write_json(plan.state_path, payload)
 
 
 def _materialize_convert_execution_view(execution_path: Path, source_path: Path) -> str:
@@ -889,57 +1275,6 @@ def _cleanup_convert_execution_view(project_root: Path, execution_view_root: Pat
     return not execution_view_root.exists()
 
 
-def _write_convert_record(
-    *,
-    context: ProjectContext,
-    plan: ConvertPlan,
-    status: str,
-    unit_results: tuple[ConvertUnitResult, ...],
-    execution_view_cleaned: bool,
-    error: str | None = None,
-) -> None:
-    payload = {
-        "step": "convert",
-        "status": status,
-        "recorded_at": datetime.now(UTC).isoformat(),
-        "config_path": str(context.config_path),
-        "project_root": str(context.project_root),
-        "manifest_path": str(plan.manifest_path),
-        "manifest_state_path": str(plan.manifest_state_path),
-        "launcher": list(plan.launcher),
-        "heuristic_path": str(plan.heuristic_path),
-        "raw_bids_root": str(plan.raw_bids_root),
-        "execution_view_root": str(plan.execution_view_root),
-        "execution_view_cleaned": execution_view_cleaned,
-        "artifacts": {
-            "raw_bids_dataset": str(plan.raw_bids_root),
-        },
-        "log_path": str(plan.log_path),
-        "status_summary": _summarize_manifest_entries(plan.entries),
-        "units": [
-            {
-                "index": result.index,
-                "source_name": result.source_name,
-                "source_path": str(result.source_path),
-                "subject_label": result.subject_label,
-                "session_label": result.session_label,
-                "execution_path": str(result.execution_path),
-                "execution_view_kind": result.execution_view_kind,
-                "command": list(result.command),
-            }
-            for result in unit_results
-        ],
-    }
-    if error is not None:
-        payload["error"] = error
-
-    plan.state_path.write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-        newline="\n",
-    )
-
-
 def _build_skeleton_command(
     launcher: tuple[str, ...],
     sample_path: Path,
@@ -991,7 +1326,11 @@ def _reset_manifest_state(project_root: Path, plan: ManifestPlan) -> None:
 def _guard_skeleton_reset_requirement(plan: SkeletonPlan, reset: bool) -> None:
     if reset:
         return
-    if plan.skeleton_state_path.exists() or plan.heudiconv_state_path.exists():
+    if (
+        plan.skeleton_state_path.exists()
+        or plan.skeleton_units_path.exists()
+        or plan.heudiconv_state_path.exists()
+    ):
         raise HeudiconvSkeletonError(
             "Existing HeuDiConv skeleton state was found. Use --reset to regenerate it."
         )
@@ -1003,7 +1342,7 @@ def _prepare_skeleton_directories(plan: SkeletonPlan) -> None:
     plan.heuristic_path.parent.mkdir(parents=True, exist_ok=True)
     plan.dicominfo_root.mkdir(parents=True, exist_ok=True)
     plan.skeleton_state_path.parent.mkdir(parents=True, exist_ok=True)
-    plan.log_path.parent.mkdir(parents=True, exist_ok=True)
+    plan.log_dir.mkdir(parents=True, exist_ok=True)
 
 
 def _reset_skeleton_state(project_root: Path, plan: SkeletonPlan) -> None:
@@ -1014,7 +1353,7 @@ def _reset_skeleton_state(project_root: Path, plan: SkeletonPlan) -> None:
             plan.heuristic_path,
             plan.dicominfo_root,
             plan.skeleton_state_path,
-            plan.log_path,
+            plan.skeleton_units_path,
         ):
             _remove_project_path(project_root, path)
     except ValueError as exc:
@@ -1041,7 +1380,7 @@ def _run_skeleton_unit(
 ) -> SkeletonUnitResult:
     completed, _, started_at_ns = _run_command(
         context,
-        plan.log_path,
+        unit.log_path,
         unit.initial_command,
         label=unit.unit_name,
     )
@@ -1051,13 +1390,13 @@ def _run_skeleton_unit(
                 "HeuDiConv skeleton generation failed for the provided sample path. "
                 "BIDSFlow already used a temporary subject id for this skeleton run; "
                 "the directory may not be a clean single-subject, single-session input. "
-                f"See {plan.log_path} for details."
+                f"See {unit.log_path} for details."
             )
         raise HeudiconvSkeletonError(
             "HeuDiConv skeleton generation failed while processing a representative session directory. "
             "BIDSFlow treats multiple input directories as separate single-directory skeleton units; "
             "check whether this directory mixes scans from multiple sessions or incompatible content. "
-            f"See {plan.log_path} for details."
+            f"See {unit.log_path} for details."
         )
 
     return _collect_unit_result(
@@ -1113,6 +1452,7 @@ def _combine_process_output(stdout: str | None, stderr: str | None) -> str:
 
 
 def _append_log(log_path: Path, message: str) -> None:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8", newline="\n") as log_handle:
         if log_handle.tell() > 0:
             log_handle.write("\n")
@@ -1156,6 +1496,7 @@ def _collect_unit_result(
         generated_heuristic=generated_heuristic,
         generated_dicominfo_paths=generated_dicominfo_paths,
         copied_dicominfo_paths=copied_dicominfo_paths,
+        log_path=unit.log_path,
     )
 
 
@@ -1322,58 +1663,4 @@ def _summarize_manifest_entries(entries: tuple[ManifestEntry, ...]) -> dict[str,
     for entry in entries:
         summary[entry.status] = summary.get(entry.status, 0) + 1
     return summary
-
-
-def _write_skeleton_record(
-    *,
-    context: ProjectContext,
-    plan: SkeletonPlan,
-    status: str,
-    unit_results: tuple[SkeletonUnitResult, ...],
-    copied_dicominfo_paths: tuple[Path, ...],
-    error: str | None = None,
-) -> None:
-    plan.skeleton_state_path.parent.mkdir(parents=True, exist_ok=True)
-
-    payload = {
-        "step": "skeleton",
-        "status": status,
-        "recorded_at": datetime.now(UTC).isoformat(),
-        "config_path": str(context.config_path),
-        "project_root": str(context.project_root),
-        "sample_paths": [str(path) for path in plan.sample_paths],
-        "launcher": list(plan.launcher),
-        "artifacts": {
-            "heuristic_template": str(plan.heuristic_path),
-            "dicom_inventory_dir": str(plan.dicominfo_root),
-            "dicom_inventories": [str(path) for path in copied_dicominfo_paths],
-            "skeleton_work_root": str(plan.skeleton_work_root),
-            "heudiconv_state": str(plan.heudiconv_state_path),
-        },
-        "log_path": str(plan.log_path),
-        "units": [
-            {
-                "index": result.index,
-                "sample_path": str(result.sample_path),
-                "unit_name": result.unit_name,
-                "subject_label": result.subject_label,
-                "session_label": result.session_label,
-                "strategy": result.strategy,
-                "attempted_commands": [list(command) for command in result.attempted_commands],
-                "generated_heuristic": str(result.generated_heuristic),
-                "generated_dicominfo": [str(path) for path in result.generated_dicominfo_paths],
-                "copied_dicominfo": [str(path) for path in result.copied_dicominfo_paths],
-            }
-            for result in unit_results
-        ],
-    }
-
-    if error is not None:
-        payload["error"] = error
-
-    plan.skeleton_state_path.write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-        newline="\n",
-    )
 

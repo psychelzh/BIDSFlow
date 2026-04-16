@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
 import sys
@@ -20,6 +21,11 @@ def _set_launcher(config_path: Path, launcher_line: str) -> None:
         encoding="utf-8",
         newline="\n",
     )
+
+
+def _read_tsv_rows(path: Path) -> list[dict[str, str]]:
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        return list(csv.DictReader(handle, delimiter="\t"))
 
 
 def test_heudiconv_skeleton_dry_run_single_path_uses_generated_subject(tmp_path: Path) -> None:
@@ -49,7 +55,8 @@ def test_heudiconv_skeleton_dry_run_single_path_uses_generated_subject(tmp_path:
     assert "heudiconv --files" in result.output
     assert str(sample_dir) in result.output
     assert "-s skeleton01" in result.output
-    assert str(project_dir / "state" / "heudiconv" / "skeleton-work") in result.output
+    assert str(project_dir / "work" / "heudiconv" / "skeleton-work") in result.output
+    assert str(project_dir / "state" / "heudiconv" / "skeleton.tsv") in result.output
 
 
 def test_heudiconv_skeleton_dry_run_multiple_paths_shows_session_split(tmp_path: Path) -> None:
@@ -82,7 +89,8 @@ def test_heudiconv_skeleton_dry_run_multiple_paths_shows_session_split(tmp_path:
     assert "skeleton-ses02" in result.output
     assert "-s skeleton01 -ss skeleton-ses01" in result.output
     assert "-s skeleton01 -ss skeleton-ses02" in result.output
-    assert str(project_dir / "state" / "heudiconv" / "skeleton-work") in result.output
+    assert str(project_dir / "work" / "heudiconv" / "skeleton-work") in result.output
+    assert str(project_dir / "state" / "heudiconv" / "skeleton.tsv") in result.output
 
 
 def test_heudiconv_skeleton_dry_run_uses_configured_heuristic_path(tmp_path: Path) -> None:
@@ -174,32 +182,40 @@ def test_heudiconv_skeleton_single_path_uses_generated_subject(tmp_path: Path) -
     heuristic_path = project_dir / "code" / "heudiconv" / "heuristic.py"
     dicominfo_path = project_dir / "code" / "heudiconv" / "dicominfo" / "sample-01" / "dicominfo.tsv"
     state_path = project_dir / "state" / "heudiconv" / "skeleton.json"
-    log_path = project_dir / "logs" / "heudiconv" / "skeleton.log"
-    skeleton_work_root = project_dir / "state" / "heudiconv" / "skeleton-work"
+    units_path = project_dir / "state" / "heudiconv" / "skeleton.tsv"
+    skeleton_work_root = project_dir / "work" / "heudiconv" / "skeleton-work"
 
     assert heuristic_path.is_file()
     assert dicominfo_path.is_file()
     assert state_path.is_file()
-    assert log_path.is_file()
+    assert units_path.is_file()
     assert skeleton_work_root.is_dir()
     assert not (project_dir / "sourcedata" / "raw").exists()
-    log_text = log_path.read_text(encoding="utf-8")
-    assert "-s skeleton01" in log_text
-    assert str(skeleton_work_root) in log_text
 
     state = json.loads(state_path.read_text(encoding="utf-8"))
     assert state["status"] == "succeeded"
     assert state["sample_paths"] == [str(sample_dir.resolve())]
     assert state["artifacts"]["heuristic_template"] == str(heuristic_path)
     assert state["artifacts"]["dicom_inventory_dir"] == str(project_dir / "code" / "heudiconv" / "dicominfo")
-    assert state["artifacts"]["dicom_inventories"] == [str(dicominfo_path)]
     assert state["artifacts"]["skeleton_work_root"] == str(skeleton_work_root)
     assert state["artifacts"]["heudiconv_state"] == str(skeleton_work_root / ".heudiconv")
-    assert len(state["units"]) == 1
-    assert state["units"][0]["strategy"] == "generated_subject"
-    assert state["units"][0]["subject_label"] == "skeleton01"
-    assert state["units"][0]["session_label"] is None
-    assert len(state["units"][0]["attempted_commands"]) == 1
+    assert state["unit_table_path"] == str(units_path)
+    assert Path(state["unit_log_dir"]).is_dir()
+    assert "units" not in state
+
+    rows = _read_tsv_rows(units_path)
+    assert len(rows) == 1
+    assert rows[0]["unit_name"] == "sample-01"
+    assert rows[0]["strategy"] == "generated_subject"
+    assert rows[0]["subject_label"] == "skeleton01"
+    assert rows[0]["session_label"] == ""
+    assert rows[0]["status"] == "succeeded"
+    assert Path(rows[0]["log_path"]).is_file()
+    assert Path(rows[0]["log_path"]).parent == Path(state["unit_log_dir"])
+
+    unit_log_text = Path(rows[0]["log_path"]).read_text(encoding="utf-8")
+    assert "-s skeleton01" in unit_log_text
+    assert str(skeleton_work_root) in unit_log_text
 
 
 def test_heudiconv_skeleton_multiple_paths_split_into_session_units(tmp_path: Path) -> None:
@@ -266,14 +282,14 @@ def test_heudiconv_skeleton_multiple_paths_split_into_session_units(tmp_path: Pa
     dicominfo_path_one = dicominfo_root / "skeleton-ses01" / "dicominfo.tsv"
     dicominfo_path_two = dicominfo_root / "skeleton-ses02" / "dicominfo.tsv"
     state_path = project_dir / "state" / "heudiconv" / "skeleton.json"
-    log_path = project_dir / "logs" / "heudiconv" / "skeleton.log"
-    skeleton_work_root = project_dir / "state" / "heudiconv" / "skeleton-work"
+    units_path = project_dir / "state" / "heudiconv" / "skeleton.tsv"
+    skeleton_work_root = project_dir / "work" / "heudiconv" / "skeleton-work"
 
     assert heuristic_path.is_file()
     assert dicominfo_path_one.is_file()
     assert dicominfo_path_two.is_file()
     assert state_path.is_file()
-    assert log_path.is_file()
+    assert units_path.is_file()
     assert skeleton_work_root.is_dir()
     assert not (project_dir / "sourcedata" / "raw").exists()
 
@@ -282,19 +298,20 @@ def test_heudiconv_skeleton_multiple_paths_split_into_session_units(tmp_path: Pa
     assert state["sample_paths"] == [str(sample_dir_one.resolve()), str(sample_dir_two.resolve())]
     assert state["artifacts"]["heuristic_template"] == str(heuristic_path)
     assert state["artifacts"]["dicom_inventory_dir"] == str(dicominfo_root)
-    assert state["artifacts"]["dicom_inventories"] == [
-        str(dicominfo_path_one),
-        str(dicominfo_path_two),
-    ]
     assert state["artifacts"]["skeleton_work_root"] == str(skeleton_work_root)
     assert state["artifacts"]["heudiconv_state"] == str(skeleton_work_root / ".heudiconv")
-    assert len(state["units"]) == 2
-    assert state["units"][0]["subject_label"] == "skeleton01"
-    assert state["units"][0]["session_label"] == "skeleton-ses01"
-    assert state["units"][0]["strategy"] == "generated_multi_session"
-    assert state["units"][1]["subject_label"] == "skeleton01"
-    assert state["units"][1]["session_label"] == "skeleton-ses02"
-    assert state["units"][1]["strategy"] == "generated_multi_session"
+    assert state["unit_table_path"] == str(units_path)
+    assert Path(state["unit_log_dir"]).is_dir()
+    assert "units" not in state
+
+    rows = _read_tsv_rows(units_path)
+    assert [row["unit_name"] for row in rows] == ["skeleton-ses01", "skeleton-ses02"]
+    assert [row["subject_label"] for row in rows] == ["skeleton01", "skeleton01"]
+    assert [row["session_label"] for row in rows] == ["skeleton-ses01", "skeleton-ses02"]
+    assert all(row["strategy"] == "generated_multi_session" for row in rows)
+    assert all(row["status"] == "succeeded" for row in rows)
+    assert all(Path(row["log_path"]).is_file() for row in rows)
+    assert all(Path(row["log_path"]).parent == Path(state["unit_log_dir"]) for row in rows)
 
 
 def test_heudiconv_skeleton_requires_reset_before_regenerating(tmp_path: Path) -> None:

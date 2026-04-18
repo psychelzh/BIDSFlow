@@ -42,9 +42,9 @@ for that value.
 # Review before first use:
 # - adjust [project].name if you want a clearer project label
 # - adjust [paths] if your project layout differs from this scaffold
-# - keep or adjust [heudiconv].heuristic before conversion
+# - keep or adjust [heudiconv].heuristic before running HeuDiConv
 # - uncomment [heudiconv].launcher if you need a wrapper or Singularity launcher
-# - optionally configure [heudiconv.manifest] when source directory
+# - optionally configure [sources] when source directory
 #   names map cleanly to final labels
 
 [project]
@@ -60,7 +60,7 @@ logs_root = "logs"
 state_root = "state"
 
 [heudiconv]
-# Expected project-owned heuristic path. The file may not exist until skeleton runs.
+# Expected project-owned heuristic path. The file may not exist until draft generation runs.
 heuristic = "code/heudiconv/heuristic.py"
 
 # Optional HeuDiConv launcher override.
@@ -69,13 +69,13 @@ heuristic = "code/heudiconv/heuristic.py"
 # launcher = ["heudiconv"]
 # launcher = ["singularity", "run", "/containers/heudiconv.sif"]
 
-# Optional manifest label generation. Configure one strategy when directory names
+# Optional source label generation. Configure one strategy when directory names
 # can be mapped automatically onto final subject/session labels.
-# [heudiconv.manifest]
+# [sources]
 # template = "SUB{subject}_SES{session}"
 # command receives source_name as its last argument, runs from project_root,
 # and must print one line (subject_label) or two lines (subject_label, session_label).
-# command = ["python", "code/heudiconv/derive_labels.py"]
+# command = ["python", "code/bidsflow/derive_labels.py"]
 ```
 
 ## 3. Section-by-section reference
@@ -145,7 +145,7 @@ Why this default:
 - `sourcedata` is the official BIDS name for source data
 - this keeps source inputs separate from curated raw BIDS data and from
   derivatives
-- the managed HeuDiConv `manifest` step should consume this configured
+- the managed `bidsflow sources` command should consume this configured
   location directly instead of asking for a second source-root path on
   the CLI
 
@@ -337,7 +337,7 @@ Candidate follow-up topics:
 
 The following concepts belong to the first managed HeuDiConv workflow.
 
-Some are already supported by the current skeleton implementation, even
+Some are already supported by the current draft implementation, even
 though `bidsflow init` does not scaffold them yet. Others remain planned
 design concepts.
 
@@ -368,15 +368,15 @@ Design note:
 
 Current status:
 
-- supported now by `bidsflow heudiconv skeleton`
+- supported now by `bidsflow heudiconv --draft`
 - shown as a commented example in the scaffold produced by `bidsflow init`
 
 ### 6.2 HeuDiConv heuristic
 
 Meaning:
 
-- the project-owned heuristic path BIDSFlow should use for managed
-  HeuDiConv conversion
+- the project-owned heuristic path BIDSFlow should use when executing
+  `bidsflow heudiconv`
 
 Current default:
 
@@ -384,20 +384,21 @@ Current default:
 
 Why this default:
 
-- it gives `skeleton` a stable place to write the starter heuristic
-- it gives future `convert` a stable project-level reference instead of
+- it gives draft generation a stable place to write the starter heuristic
+- it gives `bidsflow heudiconv` a stable project-level reference instead of
   requiring the user to repeat the heuristic path on every command
-- the file is allowed to be absent before `skeleton` runs or before the
-  user chooses a custom heuristic
+- the file is allowed to be absent before
+  `bidsflow heudiconv --draft` runs or before the user chooses a custom
+  heuristic
 
 Current status:
 
 - parsed into `ProjectContext.heudiconv.heuristic`
-- used by `bidsflow heudiconv skeleton` as the destination for the
+- used by `bidsflow heudiconv --draft` as the destination for the
   generated heuristic
-- validated and used by the managed `convert` step before conversion
+- validated and used by the managed `bidsflow heudiconv` run
 
-### 6.3 Manifest template
+### 6.3 Sources template
 
 Meaning:
 
@@ -406,18 +407,18 @@ Meaning:
 
 Likely config shape:
 
-- `[heudiconv.manifest].template = "SUB{subject}_SES{session}"`
+- `[sources].template = "SUB{subject}_SES{session}"`
 
 Why this may belong in config:
 
 - source directory naming is usually a project-wide convention
-- keeping it in config lets `manifest` generate final labels without
+- keeping it in config lets `sources` generate final labels without
   adding ad hoc command-line flags
 - the template can remain human-readable and versioned with the project
 
 Current status:
 
-- supported now by the managed `manifest` step
+- supported now by `bidsflow sources`
 - the template is applied to `source_name`, not to full source paths
 - `{subject}` is required and becomes `subject_label`
 - `{session}` is optional and becomes `session_label` when present
@@ -425,31 +426,31 @@ Current status:
 
 Source notes:
 
-- This is a BIDSFlow manifest design choice inspired by HeuDiConv-style
+- This is a BIDSFlow sources design choice inspired by HeuDiConv-style
   path templates, but applied to source directory names rather than
   direct DICOM discovery.
 
-### 6.4 Manifest label command
+### 6.4 Sources label command
 
 Meaning:
 
 - a project-owned helper command that receives one `source_name` and
-  returns final labels for `manifest.tsv`
+  returns final labels for `sources.tsv`
 
 Likely config shape:
 
-- `[heudiconv.manifest].command = ["python", "code/heudiconv/derive_labels.py"]`
+- `[sources].command = ["python", "code/bidsflow/derive_labels.py"]`
 
 Why this may belong in config:
 
 - complex site-specific naming rules often exceed what a single template
   can express
 - a project-owned command keeps those rules versioned and auditable
-- `manifest` can stay generic while still supporting custom label logic
+- `sources` can stay generic while still supporting custom label logic
 
 Current status:
 
-- supported now by the managed `manifest` step
+- supported now by `bidsflow sources`
 - the command receives `source_name` as its final argv item
 - the command runs with `cwd = project_root`
 - this allows project-local helper files such as CSV lookup tables to be
@@ -461,7 +462,7 @@ Current status:
 - minimal stdout examples:
   `001`
   `001` + newline + `01`
-- `[heudiconv.manifest].template` and `[heudiconv.manifest].command`
+- `[sources].template` and `[sources].command`
   are mutually exclusive
 
 Source notes:
@@ -483,7 +484,7 @@ Why this may belong in config:
 
 - the database path is a reusable project-level choice
 - BIDSFlow may want to rebuild it automatically after successful
-  HeuDiConv conversion
+  `bidsflow heudiconv` executions
 
 Suggested default direction:
 

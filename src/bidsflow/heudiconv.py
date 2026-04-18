@@ -17,7 +17,7 @@ from .project import ProjectContext
 
 
 @dataclass(frozen=True)
-class SkeletonUnitPlan:
+class DraftUnitPlan:
     index: int
     sample_path: Path
     unit_name: str
@@ -28,22 +28,21 @@ class SkeletonUnitPlan:
 
 
 @dataclass(frozen=True)
-class SkeletonPlan:
+class DraftPlan:
     sample_paths: tuple[Path, ...]
     launcher: tuple[str, ...]
-    units: tuple[SkeletonUnitPlan, ...]
+    units: tuple[DraftUnitPlan, ...]
     code_root: Path
     heuristic_path: Path
     dicominfo_root: Path
-    skeleton_work_root: Path
+    draft_work_root: Path
     heudiconv_state_path: Path
-    skeleton_state_path: Path
-    skeleton_units_path: Path
+    draft_state_path: Path
     log_dir: Path
 
 
 @dataclass(frozen=True)
-class SkeletonUnitResult:
+class DraftUnitResult:
     index: int
     sample_path: Path
     unit_name: str
@@ -58,22 +57,21 @@ class SkeletonUnitResult:
 
 
 @dataclass(frozen=True)
-class SkeletonResult:
+class DraftResult:
     heuristic_path: Path
     dicominfo_root: Path
     dicominfo_paths: tuple[Path, ...]
-    skeleton_state_path: Path
-    skeleton_units_path: Path
+    draft_state_path: Path
     log_dir: Path
-    unit_results: tuple[SkeletonUnitResult, ...]
+    unit_results: tuple[DraftUnitResult, ...]
 
 
-class HeudiconvSkeletonError(Exception):
+class HeudiconvDraftError(Exception):
     pass
 
 
 @dataclass(frozen=True)
-class ManifestEntry:
+class SourcesEntry:
     source_name: str
     subject_label: str
     session_label: str
@@ -83,28 +81,28 @@ class ManifestEntry:
 
 
 @dataclass(frozen=True)
-class ManifestPlan:
+class SourcesPlan:
     source_root: Path
-    manifest_path: Path
-    manifest_state_path: Path
+    sources_path: Path
+    sources_state_path: Path
     template: str | None
     command: tuple[str, ...] | None
-    entries: tuple[ManifestEntry, ...]
+    entries: tuple[SourcesEntry, ...]
 
 
 @dataclass(frozen=True)
-class ManifestResult:
-    manifest_path: Path
-    manifest_state_path: Path
-    entries: tuple[ManifestEntry, ...]
+class SourcesResult:
+    sources_path: Path
+    sources_state_path: Path
+    entries: tuple[SourcesEntry, ...]
 
 
-class HeudiconvManifestError(Exception):
+class SourcesError(Exception):
     pass
 
 
 @dataclass(frozen=True)
-class ConvertUnitPlan:
+class RunUnitPlan:
     index: int
     source_name: str
     source_path: Path
@@ -116,9 +114,9 @@ class ConvertUnitPlan:
 
 
 @dataclass(frozen=True)
-class ConvertPlan:
-    manifest_path: Path
-    manifest_state_path: Path
+class RunPlan:
+    sources_path: Path
+    sources_state_path: Path
     launcher: tuple[str, ...]
     heuristic_path: Path
     raw_bids_root: Path
@@ -126,12 +124,12 @@ class ConvertPlan:
     state_path: Path
     units_path: Path
     log_dir: Path
-    entries: tuple[ManifestEntry, ...]
-    units: tuple[ConvertUnitPlan, ...]
+    entries: tuple[SourcesEntry, ...]
+    units: tuple[RunUnitPlan, ...]
 
 
 @dataclass(frozen=True)
-class ConvertUnitResult:
+class RunUnitResult:
     index: int
     source_name: str
     source_path: Path
@@ -144,41 +142,41 @@ class ConvertUnitResult:
 
 
 @dataclass(frozen=True)
-class ConvertResult:
+class RunResult:
     raw_bids_root: Path
     state_path: Path
     units_path: Path
     log_dir: Path
-    unit_results: tuple[ConvertUnitResult, ...]
+    unit_results: tuple[RunUnitResult, ...]
 
 
-class HeudiconvConvertError(Exception):
+class HeudiconvRunError(Exception):
     pass
 
 
-def plan_skeleton(context: ProjectContext, sample_paths: list[Path]) -> SkeletonPlan:
+def plan_draft(context: ProjectContext, sample_paths: list[Path]) -> DraftPlan:
     if not sample_paths:
-        raise HeudiconvSkeletonError("At least one sample path is required for skeleton generation.")
+        raise HeudiconvDraftError("At least one sample path is required for draft generation.")
 
     source_root = context.paths.source_root.resolve()
     if not source_root.exists():
-        raise HeudiconvSkeletonError(
+        raise HeudiconvDraftError(
             f"Configured source root does not exist: {source_root}"
         )
     if not source_root.is_dir():
-        raise HeudiconvSkeletonError(
+        raise HeudiconvDraftError(
             f"Configured source root is not a directory: {source_root}"
         )
 
     resolved_samples: list[Path] = []
     for sample_path in sample_paths:
-        resolved_sample = _resolve_skeleton_sample_path(
+        resolved_sample = _resolve_draft_sample_path(
             source_root=source_root,
             project_root=context.project_root,
             sample_path=sample_path,
         )
         if not resolved_sample.exists():
-            raise HeudiconvSkeletonError(f"Sample path does not exist: {resolved_sample}")
+            raise HeudiconvDraftError(f"Sample path does not exist: {resolved_sample}")
         resolved_samples.append(resolved_sample)
 
     launcher = context.heudiconv.launcher
@@ -186,63 +184,62 @@ def plan_skeleton(context: ProjectContext, sample_paths: list[Path]) -> Skeleton
     state_root = context.paths.state_root / "heudiconv"
     log_root = context.paths.logs_root / "heudiconv"
     attempt_label = _format_attempt_label()
-    skeleton_work_root = context.paths.work_root / "heudiconv" / "skeleton-work"
-    unit_log_root = log_root / f"skeleton-{attempt_label}"
+    draft_work_root = context.paths.work_root / "heudiconv" / "draft-work"
+    unit_log_root = log_root / f"draft-{attempt_label}"
 
     if len(resolved_samples) == 1:
         units = (
-            SkeletonUnitPlan(
+            DraftUnitPlan(
                 index=1,
                 sample_path=resolved_samples[0],
                 unit_name="sample-01",
-                initial_command=_build_skeleton_command(
+                initial_command=_build_draft_command(
                     launcher,
                     resolved_samples[0],
-                    skeleton_work_root,
-                    subject_label="skeleton01",
+                    draft_work_root,
+                    subject_label="draft01",
                 ),
-                subject_label="skeleton01",
+                subject_label="draft01",
                 session_label=None,
                 log_path=unit_log_root / "sample-01.log",
             ),
         )
     else:
-        generated_subject = "skeleton01"
+        generated_subject = "draft01"
         units = tuple(
-            SkeletonUnitPlan(
+            DraftUnitPlan(
                 index=index,
                 sample_path=sample_path,
-                unit_name=f"skeleton-ses{index:02d}",
-                initial_command=_build_skeleton_command(
+                unit_name=f"draft-ses{index:02d}",
+                initial_command=_build_draft_command(
                     launcher,
                     sample_path,
-                    skeleton_work_root,
+                    draft_work_root,
                     subject_label=generated_subject,
-                    session_label=f"skeleton-ses{index:02d}",
+                    session_label=f"draft-ses{index:02d}",
                 ),
                 subject_label=generated_subject,
-                session_label=f"skeleton-ses{index:02d}",
-                log_path=unit_log_root / f"skeleton-ses{index:02d}.log",
+                session_label=f"draft-ses{index:02d}",
+                log_path=unit_log_root / f"draft-ses{index:02d}.log",
             )
             for index, sample_path in enumerate(resolved_samples, start=1)
         )
 
-    return SkeletonPlan(
+    return DraftPlan(
         sample_paths=tuple(resolved_samples),
         launcher=launcher,
         units=units,
         code_root=code_root,
         heuristic_path=context.heudiconv.heuristic,
         dicominfo_root=code_root / "dicominfo",
-        skeleton_work_root=skeleton_work_root,
-        heudiconv_state_path=skeleton_work_root / ".heudiconv",
-        skeleton_state_path=state_root / "skeleton.json",
-        skeleton_units_path=state_root / "skeleton.tsv",
+        draft_work_root=draft_work_root,
+        heudiconv_state_path=draft_work_root / ".heudiconv",
+        draft_state_path=state_root / "draft.json",
         log_dir=unit_log_root,
     )
 
 
-def _resolve_skeleton_sample_path(
+def _resolve_draft_sample_path(
     *,
     source_root: Path,
     project_root: Path,
@@ -259,67 +256,54 @@ def _resolve_skeleton_sample_path(
             resolved_sample = project_relative
 
     if not resolved_sample.is_relative_to(source_root):
-        raise HeudiconvSkeletonError(
+        raise HeudiconvDraftError(
             f"Sample path must resolve under the configured source root {source_root}: {sample_path}"
         )
 
     return resolved_sample
 
 
-def run_skeleton(context: ProjectContext, plan: SkeletonPlan, reset: bool) -> SkeletonResult:
-    _guard_skeleton_reset_requirement(plan, reset)
-    _prepare_skeleton_directories(plan)
+def run_draft(context: ProjectContext, plan: DraftPlan, reset: bool) -> DraftResult:
+    _guard_draft_reset_requirement(plan, reset)
+    _prepare_draft_directories(plan)
 
     if reset:
-        _reset_skeleton_state(context.project_root, plan)
-        _prepare_skeleton_directories(plan)
-
-    _remove_state_file(plan.skeleton_units_path)
+        _reset_draft_state(context.project_root, plan)
+        _prepare_draft_directories(plan)
 
     started_at = _utc_now()
-    _write_skeleton_state(
+    _write_draft_state(
         context=context,
         plan=plan,
         status="running",
         started_at=started_at,
     )
 
-    unit_results: list[SkeletonUnitResult] = []
+    unit_results: list[DraftUnitResult] = []
     copied_dicominfo_paths: list[Path] = []
-    current_unit: SkeletonUnitPlan | None = None
+    current_unit: DraftUnitPlan | None = None
 
     try:
         for unit in plan.units:
             current_unit = unit
-            unit_result = _run_skeleton_unit(context, plan, unit)
+            unit_result = _run_draft_unit(context, plan, unit)
             _merge_heuristic(plan.heuristic_path, unit_result.generated_heuristic)
             unit_results.append(unit_result)
             copied_dicominfo_paths.extend(unit_result.copied_dicominfo_paths)
             current_unit = None
-    except HeudiconvSkeletonError as exc:
-        _write_skeleton_units_tsv(
-            plan.skeleton_units_path,
-            plan.units,
-            tuple(unit_results),
-            failed_unit=current_unit,
-            error=str(exc),
-        )
-        _write_skeleton_state(
+    except HeudiconvDraftError as exc:
+        _write_draft_state(
             context=context,
             plan=plan,
             status="failed",
             started_at=started_at,
             finished_at=_utc_now(),
+            failed_unit=current_unit,
             error=str(exc),
         )
         raise
 
-    _write_skeleton_units_tsv(
-        plan.skeleton_units_path,
-        plan.units,
-        tuple(unit_results),
-    )
-    _write_skeleton_state(
+    _write_draft_state(
         context=context,
         plan=plan,
         status="succeeded",
@@ -327,27 +311,26 @@ def run_skeleton(context: ProjectContext, plan: SkeletonPlan, reset: bool) -> Sk
         finished_at=_utc_now(),
     )
 
-    return SkeletonResult(
+    return DraftResult(
         heuristic_path=plan.heuristic_path,
         dicominfo_root=plan.dicominfo_root,
         dicominfo_paths=tuple(copied_dicominfo_paths),
-        skeleton_state_path=plan.skeleton_state_path,
-        skeleton_units_path=plan.skeleton_units_path,
+        draft_state_path=plan.draft_state_path,
         log_dir=plan.log_dir,
         unit_results=tuple(unit_results),
     )
 
 
-def plan_manifest(
+def plan_sources(
     context: ProjectContext,
-) -> ManifestPlan:
+) -> SourcesPlan:
     resolved_source_root = context.paths.source_root.resolve()
     if not resolved_source_root.exists():
-        raise HeudiconvManifestError(
+        raise SourcesError(
             f"Configured source root does not exist: {resolved_source_root}"
         )
     if not resolved_source_root.is_dir():
-        raise HeudiconvManifestError(
+        raise SourcesError(
             f"Configured source root is not a directory: {resolved_source_root}"
         )
 
@@ -362,31 +345,31 @@ def plan_manifest(
         )
     )
 
-    manifest_config = context.heudiconv.manifest
+    sources_config = context.sources
     template_pattern: re.Pattern[str] | None
-    if manifest_config.template is not None:
-        template_pattern = _compile_manifest_template(manifest_config.template)
+    if sources_config.template is not None:
+        template_pattern = _compile_sources_template(sources_config.template)
     else:
         template_pattern = None
 
-    entries: list[ManifestEntry] = []
+    entries: list[SourcesEntry] = []
     for candidate in source_units:
         if template_pattern is not None:
-            subject_label, session_label, notes = _derive_manifest_labels_from_template(
+            subject_label, session_label, notes = _derive_sources_labels_from_template(
                 template_pattern,
                 candidate.name,
             )
-        elif manifest_config.command is not None:
-            subject_label, session_label, notes = _derive_manifest_labels_from_command(
+        elif sources_config.command is not None:
+            subject_label, session_label, notes = _derive_sources_labels_from_command(
                 context,
-                manifest_config.command,
+                sources_config.command,
                 candidate.name,
             )
         else:
             subject_label, session_label, notes = "", "", ""
 
         entries.append(
-            ManifestEntry(
+            SourcesEntry(
                 source_name=candidate.name,
                 subject_label=subject_label,
                 session_label=session_label,
@@ -396,56 +379,54 @@ def plan_manifest(
             )
         )
 
-    computed_entries = _compute_manifest_statuses(resolved_source_root, tuple(entries))
-    code_root = context.project_root / "code" / "heudiconv"
-    state_root = context.paths.state_root / "heudiconv"
+    computed_entries = _compute_sources_statuses(resolved_source_root, tuple(entries))
 
-    return ManifestPlan(
+    return SourcesPlan(
         source_root=resolved_source_root,
-        manifest_path=code_root / "manifest.tsv",
-        manifest_state_path=state_root / "manifest.json",
-        template=manifest_config.template,
-        command=manifest_config.command,
+        sources_path=context.paths.state_root / "sources.tsv",
+        sources_state_path=context.paths.state_root / "sources.json",
+        template=sources_config.template,
+        command=sources_config.command,
         entries=computed_entries,
     )
 
 
-def run_manifest(context: ProjectContext, plan: ManifestPlan, reset: bool) -> ManifestResult:
-    _guard_manifest_reset_requirement(plan, reset)
-    _prepare_manifest_directories(plan)
+def run_sources(context: ProjectContext, plan: SourcesPlan, reset: bool) -> SourcesResult:
+    _guard_sources_reset_requirement(plan, reset)
+    _prepare_sources_directories(plan)
 
     if reset:
-        _reset_manifest_state(context.project_root, plan)
-        _prepare_manifest_directories(plan)
+        _reset_sources_state(context.project_root, plan)
+        _prepare_sources_directories(plan)
 
-    _write_manifest_tsv(plan.manifest_path, plan.entries)
-    _write_manifest_state(context, plan)
+    _write_sources_tsv(plan.sources_path, plan.entries)
+    _write_sources_state(context, plan)
 
-    return ManifestResult(
-        manifest_path=plan.manifest_path,
-        manifest_state_path=plan.manifest_state_path,
+    return SourcesResult(
+        sources_path=plan.sources_path,
+        sources_state_path=plan.sources_state_path,
         entries=plan.entries,
     )
 
 
-def plan_convert(context: ProjectContext) -> ConvertPlan:
-    manifest_path = context.project_root / "code" / "heudiconv" / "manifest.tsv"
-    if not manifest_path.exists():
-        raise HeudiconvConvertError(
-            f"HeuDiConv manifest does not exist: {manifest_path}. Run `bidsflow heudiconv manifest` first."
+def plan_heudiconv_run(context: ProjectContext) -> RunPlan:
+    sources_path = context.paths.state_root / "sources.tsv"
+    if not sources_path.exists():
+        raise HeudiconvRunError(
+            f"BIDSFlow sources table does not exist: {sources_path}. Run `bidsflow sources` first."
         )
 
     heuristic_path = context.heudiconv.heuristic
     if not heuristic_path.exists():
-        raise HeudiconvConvertError(
-            f"HeuDiConv heuristic does not exist: {heuristic_path}. Run `bidsflow heudiconv skeleton` or create the heuristic first."
+        raise HeudiconvRunError(
+            f"HeuDiConv heuristic does not exist: {heuristic_path}. Run `bidsflow heudiconv --draft <sample-path>` or create the heuristic first."
         )
     if not heuristic_path.is_file():
-        raise HeudiconvConvertError(
+        raise HeudiconvRunError(
             f"HeuDiConv heuristic is not a file: {heuristic_path}"
         )
 
-    entries = _load_confirmed_manifest(context.paths.source_root, manifest_path)
+    entries = _load_confirmed_sources(context.paths.source_root, sources_path)
     ready_entries = tuple(
         entry
         for entry in entries
@@ -458,44 +439,44 @@ def plan_convert(context: ProjectContext) -> ConvertPlan:
     )
 
     if blocking_entries:
-        issue_summary = "; ".join(list_manifest_review_issues(entries))
+        issue_summary = "; ".join(list_sources_review_issues(entries))
         suffix = f" Issues: {issue_summary}" if issue_summary else ""
-        raise HeudiconvConvertError(
-            "HeuDiConv manifest still needs review before conversion." + suffix
+        raise HeudiconvRunError(
+            "BIDSFlow sources table still needs review before HeuDiConv can run." + suffix
         )
     if not ready_entries:
-        raise HeudiconvConvertError(
-            "HeuDiConv manifest does not contain any included ready rows to convert."
+        raise HeudiconvRunError(
+            "BIDSFlow sources table does not contain any included ready rows to run."
         )
 
     state_root = context.paths.state_root / "heudiconv"
     attempt_label = _format_attempt_label()
-    execution_view_root = context.paths.work_root / "heudiconv" / f"convert-{attempt_label}"
-    state_path = state_root / "convert.json"
-    units_path = state_root / "convert.tsv"
+    execution_view_root = context.paths.work_root / "heudiconv" / f"run-{attempt_label}"
+    state_path = state_root / "run.json"
+    units_path = state_root / "run.tsv"
     log_root = context.paths.logs_root / "heudiconv"
-    unit_log_root = log_root / f"convert-{attempt_label}"
+    unit_log_root = log_root / f"run-{attempt_label}"
 
-    units: list[ConvertUnitPlan] = []
+    units: list[RunUnitPlan] = []
     for index, entry in enumerate(ready_entries, start=1):
         session_label = entry.session_label or None
-        execution_path = _build_convert_execution_path(
+        execution_path = _build_run_execution_path(
             execution_view_root,
             entry.subject_label,
             session_label,
         )
         units.append(
-            ConvertUnitPlan(
+            RunUnitPlan(
                 index=index,
                 source_name=entry.source_name,
-                source_path=_resolve_manifest_source_path(
+                source_path=_resolve_sources_source_path(
                     context.paths.source_root,
                     entry.source_name,
                 ),
                 subject_label=entry.subject_label,
                 session_label=session_label,
                 execution_path=execution_path,
-                command=_build_convert_command(
+                command=_build_run_command(
                     launcher=context.heudiconv.launcher,
                     execution_path=execution_path,
                     raw_bids_root=context.paths.raw_bids_root,
@@ -507,9 +488,9 @@ def plan_convert(context: ProjectContext) -> ConvertPlan:
             )
         )
 
-    return ConvertPlan(
-        manifest_path=manifest_path,
-        manifest_state_path=context.paths.state_root / "heudiconv" / "manifest.json",
+    return RunPlan(
+        sources_path=sources_path,
+        sources_state_path=context.paths.state_root / "sources.json",
         launcher=context.heudiconv.launcher,
         heuristic_path=heuristic_path,
         raw_bids_root=context.paths.raw_bids_root,
@@ -522,50 +503,50 @@ def plan_convert(context: ProjectContext) -> ConvertPlan:
     )
 
 
-def run_convert(context: ProjectContext, plan: ConvertPlan) -> ConvertResult:
-    execution_view_cleared = _cleanup_convert_execution_view(
+def run_heudiconv(context: ProjectContext, plan: RunPlan) -> RunResult:
+    execution_view_cleared = _cleanup_run_execution_view(
         context.project_root,
         plan.execution_view_root,
     )
     if not execution_view_cleared:
-        raise HeudiconvConvertError(
-            f"Failed to clear prior convert execution view: {plan.execution_view_root}"
+        raise HeudiconvRunError(
+            f"Failed to clear prior run execution view: {plan.execution_view_root}"
         )
 
-    _prepare_convert_directories(plan)
+    _prepare_run_directories(plan)
     _remove_state_file(plan.units_path)
 
     started_at = _utc_now()
-    _write_convert_state(
+    _write_run_state(
         context=context,
         plan=plan,
         status="running",
         started_at=started_at,
     )
 
-    unit_results: list[ConvertUnitResult] = []
-    current_unit: ConvertUnitPlan | None = None
+    unit_results: list[RunUnitResult] = []
+    current_unit: RunUnitPlan | None = None
     try:
         for unit in plan.units:
             current_unit = unit
-            execution_view_kind = _materialize_convert_execution_view(
+            execution_view_kind = _materialize_run_execution_view(
                 unit.execution_path,
                 unit.source_path,
             )
-            completed = _run_convert_command(
+            completed = _run_heudiconv_command(
                 context,
                 unit.log_path,
                 unit.command,
                 label=unit.source_name,
             )
             if completed.returncode != 0:
-                raise HeudiconvConvertError(
-                    "HeuDiConv conversion failed while processing "
+                raise HeudiconvRunError(
+                    "HeuDiConv execution failed while processing "
                     f"{unit.source_name}. See {unit.log_path} for details."
                 )
 
             unit_results.append(
-                ConvertUnitResult(
+                RunUnitResult(
                     index=unit.index,
                     source_name=unit.source_name,
                     source_path=unit.source_path,
@@ -578,19 +559,19 @@ def run_convert(context: ProjectContext, plan: ConvertPlan) -> ConvertResult:
                 )
             )
             current_unit = None
-    except HeudiconvConvertError as exc:
-        execution_view_cleaned = _cleanup_convert_execution_view(
+    except HeudiconvRunError as exc:
+        execution_view_cleaned = _cleanup_run_execution_view(
             context.project_root,
             plan.execution_view_root,
         )
-        _write_convert_units_tsv(
+        _write_run_units_tsv(
             plan.units_path,
             plan.units,
             tuple(unit_results),
             failed_unit=current_unit,
             error=str(exc),
         )
-        _write_convert_state(
+        _write_run_state(
             context=context,
             plan=plan,
             status="failed",
@@ -601,16 +582,16 @@ def run_convert(context: ProjectContext, plan: ConvertPlan) -> ConvertResult:
         )
         raise
 
-    execution_view_cleaned = _cleanup_convert_execution_view(
+    execution_view_cleaned = _cleanup_run_execution_view(
         context.project_root,
         plan.execution_view_root,
     )
-    _write_convert_units_tsv(
+    _write_run_units_tsv(
         plan.units_path,
         plan.units,
         tuple(unit_results),
     )
-    _write_convert_state(
+    _write_run_state(
         context=context,
         plan=plan,
         status="succeeded",
@@ -619,7 +600,7 @@ def run_convert(context: ProjectContext, plan: ConvertPlan) -> ConvertResult:
         execution_view_cleaned=execution_view_cleaned,
     )
 
-    return ConvertResult(
+    return RunResult(
         raw_bids_root=plan.raw_bids_root,
         state_path=plan.state_path,
         units_path=plan.units_path,
@@ -632,7 +613,7 @@ def format_command(argv: tuple[str, ...]) -> str:
     return subprocess.list2cmdline(list(argv))
 
 
-def _compile_manifest_template(template: str) -> re.Pattern[str]:
+def _compile_sources_template(template: str) -> re.Pattern[str]:
     pattern_parts: list[str] = ["^"]
     fields: list[str] = []
 
@@ -641,46 +622,46 @@ def _compile_manifest_template(template: str) -> re.Pattern[str]:
         if field_name is None:
             continue
         if format_spec or conversion:
-            raise HeudiconvManifestError(
-                "HeuDiConv manifest template does not support format specs or conversions."
+            raise SourcesError(
+                "BIDSFlow sources table template does not support format specs or conversions."
             )
         if not field_name.isidentifier():
-            raise HeudiconvManifestError(
-                f"HeuDiConv manifest template field is not a valid identifier: {field_name!r}"
+            raise SourcesError(
+                f"BIDSFlow sources table template field is not a valid identifier: {field_name!r}"
             )
         if field_name not in {"subject", "session"}:
-            raise HeudiconvManifestError(
-                "HeuDiConv manifest template only supports {subject} and optional {session}."
+            raise SourcesError(
+                "BIDSFlow sources table template only supports {subject} and optional {session}."
             )
         fields.append(field_name)
         pattern_parts.append(f"(?P<{field_name}>.+?)")
 
     if "subject" not in fields:
-        raise HeudiconvManifestError(
-            "HeuDiConv manifest template must include a {subject} field."
+        raise SourcesError(
+            "BIDSFlow sources table template must include a {subject} field."
         )
 
     pattern_parts.append("$")
     try:
         return re.compile("".join(pattern_parts))
     except re.error as exc:
-        raise HeudiconvManifestError(f"Invalid HeuDiConv manifest template: {exc}") from exc
+        raise SourcesError(f"Invalid BIDSFlow sources table template: {exc}") from exc
 
 
-def _derive_manifest_labels_from_template(
+def _derive_sources_labels_from_template(
     template_pattern: re.Pattern[str],
     source_name: str,
 ) -> tuple[str, str, str]:
     match = template_pattern.fullmatch(source_name)
     if match is None:
-        return "", "", "manifest template did not match source_name"
+        return "", "", "sources template did not match source_name"
 
     subject_label = match.groupdict().get("subject", "") or ""
     session_label = match.groupdict().get("session", "") or ""
     return subject_label, session_label, ""
 
 
-def _derive_manifest_labels_from_command(
+def _derive_sources_labels_from_command(
     context: ProjectContext,
     command: tuple[str, ...],
     source_name: str,
@@ -695,27 +676,27 @@ def _derive_manifest_labels_from_command(
             check=False,
         )
     except FileNotFoundError as exc:
-        raise HeudiconvManifestError(
-            f"Failed to start manifest command while processing {source_name}: {exc}"
+        raise SourcesError(
+            f"Failed to start sources command while processing {source_name}: {exc}"
         ) from exc
 
     if completed.returncode != 0:
         stderr = (completed.stderr or completed.stdout or "").strip()
         details = f" {stderr}" if stderr else ""
-        raise HeudiconvManifestError(
-            f"Manifest command failed for {source_name} with exit code {completed.returncode}.{details}"
+        raise SourcesError(
+            f"sources command failed for {source_name} with exit code {completed.returncode}.{details}"
         )
 
     output = (completed.stdout or "").strip()
     if not output:
-        raise HeudiconvManifestError(
-            f"Manifest command returned empty output for {source_name}."
+        raise SourcesError(
+            f"sources command returned empty output for {source_name}."
         )
 
     lines = [line.strip() for line in output.splitlines() if line.strip()]
     if len(lines) > 2:
-        raise HeudiconvManifestError(
-            f"Manifest command returned more than two non-empty output lines for {source_name}."
+        raise SourcesError(
+            f"sources command returned more than two non-empty output lines for {source_name}."
         )
 
     subject_label = lines[0]
@@ -723,10 +704,10 @@ def _derive_manifest_labels_from_command(
     return subject_label, session_label, ""
 
 
-def _compute_manifest_statuses(
+def _compute_sources_statuses(
     source_root: Path,
-    entries: tuple[ManifestEntry, ...],
-) -> tuple[ManifestEntry, ...]:
+    entries: tuple[SourcesEntry, ...],
+) -> tuple[SourcesEntry, ...]:
     included_entries = [entry for entry in entries if entry.include]
     subject_counts: dict[str, int] = {}
     target_counts: dict[tuple[str, str], int] = {}
@@ -740,11 +721,11 @@ def _compute_manifest_statuses(
             key = (subject_label, session_label)
             target_counts[key] = target_counts.get(key, 0) + 1
 
-    updated_entries: list[ManifestEntry] = []
+    updated_entries: list[SourcesEntry] = []
     for entry in entries:
         try:
-            source_path = _resolve_manifest_source_path(source_root, entry.source_name)
-        except HeudiconvConvertError:
+            source_path = _resolve_sources_source_path(source_root, entry.source_name)
+        except HeudiconvRunError:
             source_path = source_root / "__invalid_source_name__"
         subject_label = entry.subject_label.strip()
         session_label = entry.session_label.strip()
@@ -763,7 +744,7 @@ def _compute_manifest_statuses(
             status = "ready"
 
         updated_entries.append(
-            ManifestEntry(
+            SourcesEntry(
                 source_name=entry.source_name,
                 subject_label=subject_label,
                 session_label=session_label,
@@ -776,15 +757,15 @@ def _compute_manifest_statuses(
     return tuple(updated_entries)
 
 
-def _load_confirmed_manifest(
+def _load_confirmed_sources(
     source_root: Path,
-    manifest_path: Path,
-) -> tuple[ManifestEntry, ...]:
-    with manifest_path.open("r", encoding="utf-8", newline="") as handle:
+    sources_path: Path,
+) -> tuple[SourcesEntry, ...]:
+    with sources_path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle, delimiter="\t")
         if reader.fieldnames is None:
-            raise HeudiconvConvertError(
-                f"HeuDiConv manifest is missing a header row: {manifest_path}"
+            raise HeudiconvRunError(
+                f"BIDSFlow sources table is missing a header row: {sources_path}"
             )
 
         required_columns = {
@@ -797,22 +778,22 @@ def _load_confirmed_manifest(
         }
         missing_columns = sorted(required_columns.difference(reader.fieldnames))
         if missing_columns:
-            raise HeudiconvConvertError(
-                "HeuDiConv manifest is missing required columns: "
+            raise HeudiconvRunError(
+                "BIDSFlow sources table is missing required columns: "
                 + ", ".join(missing_columns)
             )
 
-        entries: list[ManifestEntry] = []
+        entries: list[SourcesEntry] = []
         for row_number, row in enumerate(reader, start=2):
             source_name = (row.get("source_name") or "").strip()
             if not source_name:
-                raise HeudiconvConvertError(
-                    f"HeuDiConv manifest row {row_number} is missing source_name."
+                raise HeudiconvRunError(
+                    f"BIDSFlow sources table row {row_number} is missing source_name."
                 )
 
-            include = _parse_manifest_include(row.get("include"), row_number)
+            include = _parse_sources_include(row.get("include"), row_number)
             entries.append(
-                ManifestEntry(
+                SourcesEntry(
                     source_name=source_name,
                     subject_label=(row.get("subject_label") or "").strip(),
                     session_label=(row.get("session_label") or "").strip(),
@@ -822,35 +803,35 @@ def _load_confirmed_manifest(
                 )
             )
 
-    return _compute_manifest_statuses(source_root.resolve(), tuple(entries))
+    return _compute_sources_statuses(source_root.resolve(), tuple(entries))
 
 
-def _parse_manifest_include(value: str | None, row_number: int) -> bool:
+def _parse_sources_include(value: str | None, row_number: int) -> bool:
     normalized = (value or "").strip().lower()
     if normalized in {"true", "1", "yes"}:
         return True
     if normalized in {"false", "0", "no"}:
         return False
-    raise HeudiconvConvertError(
-        f"HeuDiConv manifest row {row_number} has invalid include value: {value!r}"
+    raise HeudiconvRunError(
+        f"BIDSFlow sources table row {row_number} has invalid include value: {value!r}"
     )
 
 
-def _resolve_manifest_source_path(source_root: Path, source_name: str) -> Path:
+def _resolve_sources_source_path(source_root: Path, source_name: str) -> Path:
     source_candidate = Path(source_name)
     if source_candidate.name != source_name or source_name in {"", ".", ".."}:
-        raise HeudiconvConvertError(
-            f"HeuDiConv manifest source_name must name an immediate child directory under source_root: {source_name!r}"
+        raise HeudiconvRunError(
+            f"BIDSFlow sources table source_name must name an immediate child directory under source_root: {source_name!r}"
         )
     resolved_source_path = (source_root / source_candidate).resolve()
     if not resolved_source_path.is_relative_to(source_root.resolve()):
-        raise HeudiconvConvertError(
-            f"HeuDiConv manifest source_name resolves outside source_root: {source_name!r}"
+        raise HeudiconvRunError(
+            f"BIDSFlow sources table source_name resolves outside source_root: {source_name!r}"
         )
     return resolved_source_path
 
 
-def _build_convert_execution_path(
+def _build_run_execution_path(
     execution_view_root: Path,
     subject_label: str,
     session_label: str | None,
@@ -860,7 +841,7 @@ def _build_convert_execution_path(
     return execution_view_root / f"sub-{subject_label}" / f"ses-{session_label}"
 
 
-def _build_convert_command(
+def _build_run_command(
     *,
     launcher: tuple[str, ...],
     execution_path: Path,
@@ -888,18 +869,18 @@ def _build_convert_command(
     return tuple(command)
 
 
-def _build_convert_input_signature(
+def _build_run_input_signature(
     *,
     launcher: tuple[str, ...],
     heuristic_path: Path,
     raw_bids_root: Path,
     source_root: Path,
-    ready_entries: tuple[ManifestEntry, ...],
+    ready_entries: tuple[SourcesEntry, ...],
 ) -> str:
     unit_payload = [
         {
             "source_name": entry.source_name,
-            "source_path": str(_resolve_manifest_source_path(source_root, entry.source_name)),
+            "source_path": str(_resolve_sources_source_path(source_root, entry.source_name)),
             "subject_label": entry.subject_label,
             "session_label": entry.session_label,
         }
@@ -917,13 +898,13 @@ def _build_convert_input_signature(
     )
 
 
-def _build_convert_unit_summary(subject_label: str, session_label: str | None) -> str:
+def _build_run_unit_summary(subject_label: str, session_label: str | None) -> str:
     if session_label is None:
         return f"sub-{subject_label}"
     return f"sub-{subject_label} ses-{session_label}"
 
 
-def _prepare_convert_directories(plan: ConvertPlan) -> None:
+def _prepare_run_directories(plan: RunPlan) -> None:
     plan.execution_view_root.mkdir(parents=True, exist_ok=True)
     plan.raw_bids_root.mkdir(parents=True, exist_ok=True)
     plan.state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -964,101 +945,19 @@ def _remove_state_file(path: Path) -> None:
         path.unlink()
 
 
-def _build_skeleton_unit_rows(
-    planned_units: tuple[SkeletonUnitPlan, ...],
-    unit_results: tuple[SkeletonUnitResult, ...],
-    *,
-    failed_unit: SkeletonUnitPlan | None = None,
-    error: str | None = None,
-) -> tuple[dict[str, str], ...]:
-    completed_by_name = {result.unit_name: result for result in unit_results}
-    rows: list[dict[str, str]] = []
-
-    for unit in planned_units:
-        completed = completed_by_name.get(unit.unit_name)
-        if completed is not None:
-            status = "succeeded"
-            strategy = completed.strategy
-            notes = ""
-        elif failed_unit is not None and unit.unit_name == failed_unit.unit_name:
-            status = "failed"
-            strategy = "generated_subject" if unit.session_label is None else "generated_multi_session"
-            notes = error or ""
-        else:
-            status = "not_run"
-            strategy = "generated_subject" if unit.session_label is None else "generated_multi_session"
-            notes = ""
-
-        rows.append(
-            {
-                "unit_name": unit.unit_name,
-                "sample_path": str(unit.sample_path),
-                "subject_label": unit.subject_label or "",
-                "session_label": unit.session_label or "",
-                "strategy": strategy,
-                "status": status,
-                "log_path": str(unit.log_path),
-                "notes": notes,
-            }
-        )
-
-    return tuple(rows)
-
-
-def _write_skeleton_units_tsv(
-    path: Path,
-    planned_units: tuple[SkeletonUnitPlan, ...],
-    unit_results: tuple[SkeletonUnitResult, ...],
-    *,
-    failed_unit: SkeletonUnitPlan | None = None,
-    error: str | None = None,
-) -> None:
-    rows = _build_skeleton_unit_rows(
-        planned_units,
-        unit_results,
-        failed_unit=failed_unit,
-        error=error,
-    )
-    with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
-        writer.writerow(
-            (
-                "unit_name",
-                "sample_path",
-                "subject_label",
-                "session_label",
-                "strategy",
-                "status",
-                "log_path",
-                "notes",
-            )
-        )
-        for row in rows:
-            writer.writerow(
-                (
-                    row["unit_name"],
-                    row["sample_path"],
-                    row["subject_label"],
-                    row["session_label"],
-                    row["strategy"],
-                    row["status"],
-                    row["log_path"],
-                    row["notes"],
-                )
-            )
-
-
-def _write_skeleton_state(
+def _write_draft_state(
     *,
     context: ProjectContext,
-    plan: SkeletonPlan,
+    plan: DraftPlan,
     status: str,
     started_at: str,
     finished_at: str | None = None,
+    failed_unit: DraftUnitPlan | None = None,
     error: str | None = None,
 ) -> None:
     payload: dict[str, object] = {
-        "step": "skeleton",
+        "workflow": "heudiconv",
+        "step": "draft",
         "status": status,
         "updated_at": _utc_now(),
         "started_at": started_at,
@@ -1070,22 +969,23 @@ def _write_skeleton_state(
         "artifacts": {
             "heuristic_template": str(plan.heuristic_path),
             "dicom_inventory_dir": str(plan.dicominfo_root),
-            "skeleton_work_root": str(plan.skeleton_work_root),
+            "draft_work_root": str(plan.draft_work_root),
             "heudiconv_state": str(plan.heudiconv_state_path),
         },
         "unit_log_dir": str(plan.log_dir),
-        "unit_table_path": str(plan.skeleton_units_path),
     }
+    if failed_unit is not None:
+        payload["failed_sample"] = str(failed_unit.sample_path)
     if error is not None:
         payload["error"] = error
-    _write_json(plan.skeleton_state_path, payload)
+    _write_json(plan.draft_state_path, payload)
 
 
-def _build_convert_unit_rows(
-    planned_units: tuple[ConvertUnitPlan, ...],
-    unit_results: tuple[ConvertUnitResult, ...],
+def _build_run_unit_rows(
+    planned_units: tuple[RunUnitPlan, ...],
+    unit_results: tuple[RunUnitResult, ...],
     *,
-    failed_unit: ConvertUnitPlan | None = None,
+    failed_unit: RunUnitPlan | None = None,
     error: str | None = None,
 ) -> tuple[dict[str, str], ...]:
     completed_by_source = {result.source_name: result for result in unit_results}
@@ -1107,7 +1007,7 @@ def _build_convert_unit_rows(
                 "source_name": unit.source_name,
                 "subject_label": unit.subject_label,
                 "session_label": unit.session_label or "",
-                "summary": _build_convert_unit_summary(unit.subject_label, unit.session_label),
+                "summary": _build_run_unit_summary(unit.subject_label, unit.session_label),
                 "status": status,
                 "log_path": str(unit.log_path),
                 "notes": notes,
@@ -1117,15 +1017,15 @@ def _build_convert_unit_rows(
     return tuple(rows)
 
 
-def _write_convert_units_tsv(
+def _write_run_units_tsv(
     path: Path,
-    planned_units: tuple[ConvertUnitPlan, ...],
-    unit_results: tuple[ConvertUnitResult, ...],
+    planned_units: tuple[RunUnitPlan, ...],
+    unit_results: tuple[RunUnitResult, ...],
     *,
-    failed_unit: ConvertUnitPlan | None = None,
+    failed_unit: RunUnitPlan | None = None,
     error: str | None = None,
 ) -> None:
-    rows = _build_convert_unit_rows(
+    rows = _build_run_unit_rows(
         planned_units,
         unit_results,
         failed_unit=failed_unit,
@@ -1158,10 +1058,10 @@ def _write_convert_units_tsv(
             )
 
 
-def _write_convert_state(
+def _write_run_state(
     *,
     context: ProjectContext,
-    plan: ConvertPlan,
+    plan: RunPlan,
     status: str,
     started_at: str,
     finished_at: str | None = None,
@@ -1170,13 +1070,13 @@ def _write_convert_state(
 ) -> None:
     payload: dict[str, object] = {
         "workflow": "heudiconv",
-        "step": "convert",
+        "step": "run",
         "backend": "local",
         "status": status,
         "updated_at": _utc_now(),
         "started_at": started_at,
         "finished_at": finished_at,
-        "input_signature": _build_convert_input_signature(
+        "input_signature": _build_run_input_signature(
             launcher=plan.launcher,
             heuristic_path=plan.heuristic_path,
             raw_bids_root=plan.raw_bids_root,
@@ -1187,8 +1087,8 @@ def _write_convert_state(
         ),
         "config_path": str(context.config_path),
         "project_root": str(context.project_root),
-        "manifest_path": str(plan.manifest_path),
-        "manifest_state_path": str(plan.manifest_state_path),
+        "sources_path": str(plan.sources_path),
+        "sources_state_path": str(plan.sources_state_path),
         "heuristic_path": str(plan.heuristic_path),
         "raw_bids_root": str(plan.raw_bids_root),
         "execution_view_root": str(plan.execution_view_root),
@@ -1205,14 +1105,14 @@ def _write_convert_state(
     _write_json(plan.state_path, payload)
 
 
-def _materialize_convert_execution_view(execution_path: Path, source_path: Path) -> str:
+def _materialize_run_execution_view(execution_path: Path, source_path: Path) -> str:
     execution_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         execution_path.symlink_to(source_path, target_is_directory=True)
         return "symlink"
     except OSError:
         if os.name != "nt":
-            raise HeudiconvConvertError(
+            raise HeudiconvRunError(
                 f"Failed to create temporary execution link: {execution_path} -> {source_path}"
             ) from None
 
@@ -1225,13 +1125,13 @@ def _materialize_convert_execution_view(execution_path: Path, source_path: Path)
     if completed.returncode != 0 or not execution_path.exists():
         details = (completed.stderr or completed.stdout or "").strip()
         suffix = f" {details}" if details else ""
-        raise HeudiconvConvertError(
+        raise HeudiconvRunError(
             f"Failed to create temporary execution link: {execution_path} -> {source_path}.{suffix}"
         )
     return "junction"
 
 
-def _run_convert_command(
+def _run_heudiconv_command(
     context: ProjectContext,
     log_path: Path,
     command: tuple[str, ...],
@@ -1248,7 +1148,7 @@ def _run_convert_command(
         )
     except FileNotFoundError as exc:
         _append_log(log_path, f"[{label}] Failed to start launcher: {exc}")
-        raise HeudiconvConvertError(
+        raise HeudiconvRunError(
             f"Failed to start HeuDiConv launcher. See {log_path} for details."
         ) from exc
 
@@ -1265,7 +1165,7 @@ def _run_convert_command(
     return completed
 
 
-def _cleanup_convert_execution_view(project_root: Path, execution_view_root: Path) -> bool:
+def _cleanup_run_execution_view(project_root: Path, execution_view_root: Path) -> bool:
     if not execution_view_root.exists():
         return True
     try:
@@ -1275,7 +1175,7 @@ def _cleanup_convert_execution_view(project_root: Path, execution_view_root: Pat
     return not execution_view_root.exists()
 
 
-def _build_skeleton_command(
+def _build_draft_command(
     launcher: tuple[str, ...],
     sample_path: Path,
     output_root: Path,
@@ -1301,63 +1201,58 @@ def _build_skeleton_command(
     return tuple(command)
 
 
-def _guard_manifest_reset_requirement(plan: ManifestPlan, reset: bool) -> None:
+def _guard_sources_reset_requirement(plan: SourcesPlan, reset: bool) -> None:
     if reset:
         return
-    if plan.manifest_path.exists() or plan.manifest_state_path.exists():
-        raise HeudiconvManifestError(
-            "Existing HeuDiConv manifest state was found. Use --reset to regenerate it."
+    if plan.sources_path.exists() or plan.sources_state_path.exists():
+        raise SourcesError(
+            "Existing BIDSFlow sources state was found. Use --reset to regenerate it."
         )
 
 
-def _prepare_manifest_directories(plan: ManifestPlan) -> None:
-    plan.manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    plan.manifest_state_path.parent.mkdir(parents=True, exist_ok=True)
+def _prepare_sources_directories(plan: SourcesPlan) -> None:
+    plan.sources_path.parent.mkdir(parents=True, exist_ok=True)
+    plan.sources_state_path.parent.mkdir(parents=True, exist_ok=True)
 
 
-def _reset_manifest_state(project_root: Path, plan: ManifestPlan) -> None:
+def _reset_sources_state(project_root: Path, plan: SourcesPlan) -> None:
     try:
-        for path in (plan.manifest_path, plan.manifest_state_path):
+        for path in (plan.sources_path, plan.sources_state_path):
             _remove_project_path(project_root, path)
     except ValueError as exc:
-        raise HeudiconvManifestError(str(exc)) from exc
+        raise SourcesError(str(exc)) from exc
 
 
-def _guard_skeleton_reset_requirement(plan: SkeletonPlan, reset: bool) -> None:
+def _guard_draft_reset_requirement(plan: DraftPlan, reset: bool) -> None:
     if reset:
         return
-    if (
-        plan.skeleton_state_path.exists()
-        or plan.skeleton_units_path.exists()
-        or plan.heudiconv_state_path.exists()
-    ):
-        raise HeudiconvSkeletonError(
-            "Existing HeuDiConv skeleton state was found. Use --reset to regenerate it."
+    if plan.draft_state_path.exists() or plan.heudiconv_state_path.exists():
+        raise HeudiconvDraftError(
+            "Existing HeuDiConv draft state was found. Use --reset to regenerate it."
         )
 
 
-def _prepare_skeleton_directories(plan: SkeletonPlan) -> None:
-    plan.skeleton_work_root.mkdir(parents=True, exist_ok=True)
+def _prepare_draft_directories(plan: DraftPlan) -> None:
+    plan.draft_work_root.mkdir(parents=True, exist_ok=True)
     plan.code_root.mkdir(parents=True, exist_ok=True)
     plan.heuristic_path.parent.mkdir(parents=True, exist_ok=True)
     plan.dicominfo_root.mkdir(parents=True, exist_ok=True)
-    plan.skeleton_state_path.parent.mkdir(parents=True, exist_ok=True)
+    plan.draft_state_path.parent.mkdir(parents=True, exist_ok=True)
     plan.log_dir.mkdir(parents=True, exist_ok=True)
 
 
-def _reset_skeleton_state(project_root: Path, plan: SkeletonPlan) -> None:
+def _reset_draft_state(project_root: Path, plan: DraftPlan) -> None:
     try:
         for path in (
-            plan.skeleton_work_root,
+            plan.draft_work_root,
             plan.heudiconv_state_path,
             plan.heuristic_path,
             plan.dicominfo_root,
-            plan.skeleton_state_path,
-            plan.skeleton_units_path,
+            plan.draft_state_path,
         ):
             _remove_project_path(project_root, path)
     except ValueError as exc:
-        raise HeudiconvSkeletonError(str(exc)) from exc
+        raise HeudiconvDraftError(str(exc)) from exc
 
 
 def _remove_project_path(project_root: Path, path: Path) -> None:
@@ -1373,11 +1268,11 @@ def _remove_project_path(project_root: Path, path: Path) -> None:
     resolved_path.unlink()
 
 
-def _run_skeleton_unit(
+def _run_draft_unit(
     context: ProjectContext,
-    plan: SkeletonPlan,
-    unit: SkeletonUnitPlan,
-) -> SkeletonUnitResult:
+    plan: DraftPlan,
+    unit: DraftUnitPlan,
+) -> DraftUnitResult:
     completed, _, started_at_ns = _run_command(
         context,
         unit.log_path,
@@ -1386,15 +1281,15 @@ def _run_skeleton_unit(
     )
     if completed.returncode != 0:
         if unit.session_label is None:
-            raise HeudiconvSkeletonError(
-                "HeuDiConv skeleton generation failed for the provided sample path. "
-                "BIDSFlow already used a temporary subject id for this skeleton run; "
+            raise HeudiconvDraftError(
+                "HeuDiConv draft generation failed for the provided sample path. "
+                "BIDSFlow already used a temporary subject id for this draft run; "
                 "the directory may not be a clean single-subject, single-session input. "
                 f"See {unit.log_path} for details."
             )
-        raise HeudiconvSkeletonError(
-            "HeuDiConv skeleton generation failed while processing a representative session directory. "
-            "BIDSFlow treats multiple input directories as separate single-directory skeleton units; "
+        raise HeudiconvDraftError(
+            "HeuDiConv draft generation failed while processing a representative session directory. "
+            "BIDSFlow treats multiple input directories as separate single-directory draft units; "
             "check whether this directory mixes scans from multiple sessions or incompatible content. "
             f"See {unit.log_path} for details."
         )
@@ -1429,7 +1324,7 @@ def _run_command(
         )
     except FileNotFoundError as exc:
         _append_log(log_path, f"[{label}] Failed to start launcher: {exc}")
-        raise HeudiconvSkeletonError(
+        raise HeudiconvDraftError(
             f"Failed to start HeuDiConv launcher. See {log_path} for details."
         ) from exc
 
@@ -1462,15 +1357,15 @@ def _append_log(log_path: Path, message: str) -> None:
 
 def _collect_unit_result(
     *,
-    plan: SkeletonPlan,
-    unit: SkeletonUnitPlan,
+    plan: DraftPlan,
+    unit: DraftUnitPlan,
     final_command: tuple[str, ...],
     attempted_commands: tuple[tuple[str, ...], ...],
     subject_label: str | None,
     session_label: str | None,
     strategy: str,
     started_at_ns: int,
-) -> SkeletonUnitResult:
+) -> DraftUnitResult:
     generated_heuristic = _find_latest_generated_file_since(
         plan.heudiconv_state_path,
         "heuristic.py",
@@ -1485,7 +1380,7 @@ def _collect_unit_result(
         generated_dicominfo_paths,
     )
 
-    return SkeletonUnitResult(
+    return DraftUnitResult(
         index=unit.index,
         sample_path=unit.sample_path,
         unit_name=unit.unit_name,
@@ -1507,8 +1402,8 @@ def _find_latest_generated_file_since(root: Path, filename: str, started_at_ns: 
         if candidate.is_file() and candidate.stat().st_mtime_ns >= started_at_ns
     ]
     if not candidates:
-        raise HeudiconvSkeletonError(
-            f"HeuDiConv skeleton generation did not produce {filename} under {root}."
+        raise HeudiconvDraftError(
+            f"HeuDiConv draft generation did not produce {filename} under {root}."
         )
     return max(candidates, key=lambda candidate: candidate.stat().st_mtime_ns)
 
@@ -1520,8 +1415,8 @@ def _find_generated_dicominfo_files_since(root: Path, started_at_ns: int) -> tup
         if candidate.is_file() and candidate.stat().st_mtime_ns >= started_at_ns
     ]
     if not candidates:
-        raise HeudiconvSkeletonError(
-            f"HeuDiConv skeleton generation did not produce dicominfo output under {root}."
+        raise HeudiconvDraftError(
+            f"HeuDiConv draft generation did not produce dicominfo output under {root}."
         )
     return tuple(
         sorted(
@@ -1542,9 +1437,9 @@ def _merge_heuristic(destination: Path, generated_heuristic: Path) -> None:
     existing_text = destination.read_text(encoding="utf-8")
     generated_text = generated_heuristic.read_text(encoding="utf-8")
     if existing_text != generated_text:
-        raise HeudiconvSkeletonError(
-            "Generated heuristic skeletons differed across skeleton units. "
-            "Review the sample directories and rerun skeleton with a narrower input set."
+        raise HeudiconvDraftError(
+            "Generated heuristic drafts differed across draft units. "
+            "Review the sample directories and rerun draft with a narrower input set."
         )
 
 
@@ -1562,8 +1457,8 @@ def _copy_dicominfo_files(destination_root: Path, generated_paths: tuple[Path, .
     return tuple(copied_paths)
 
 
-def _write_manifest_tsv(manifest_path: Path, entries: tuple[ManifestEntry, ...]) -> None:
-    with manifest_path.open("w", encoding="utf-8", newline="") as handle:
+def _write_sources_tsv(sources_path: Path, entries: tuple[SourcesEntry, ...]) -> None:
+    with sources_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
         writer.writerow(
             (
@@ -1588,22 +1483,22 @@ def _write_manifest_tsv(manifest_path: Path, entries: tuple[ManifestEntry, ...])
             )
 
 
-def _write_manifest_state(context: ProjectContext, plan: ManifestPlan) -> None:
+def _write_sources_state(context: ProjectContext, plan: SourcesPlan) -> None:
     payload = {
-        "step": "manifest",
+        "step": "sources",
         "status": "succeeded",
         "recorded_at": datetime.now(UTC).isoformat(),
         "config_path": str(context.config_path),
         "project_root": str(context.project_root),
         "source_root": str(plan.source_root),
         "artifacts": {
-            "manifest": str(plan.manifest_path),
+            "sources": str(plan.sources_path),
         },
         "handoff": {
             "role": "truth_source",
             "derived_execution_views": {
                 "links": {
-                    "managed_by": "convert",
+                    "managed_by": "heudiconv",
                     "lifecycle": "ephemeral",
                 }
             },
@@ -1613,21 +1508,21 @@ def _write_manifest_state(context: ProjectContext, plan: ManifestPlan) -> None:
             "command": list(plan.command) if plan.command is not None else None,
         },
         "entry_count": len(plan.entries),
-        "status_summary": _summarize_manifest_entries(plan.entries),
+        "status_summary": _summarize_sources_entries(plan.entries),
     }
 
-    plan.manifest_state_path.write_text(
+    plan.sources_state_path.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
         newline="\n",
     )
 
 
-def summarize_manifest_entries(entries: tuple[ManifestEntry, ...]) -> dict[str, int]:
-    return _summarize_manifest_entries(entries)
+def summarize_sources_entries(entries: tuple[SourcesEntry, ...]) -> dict[str, int]:
+    return _summarize_sources_entries(entries)
 
 
-def list_manifest_review_issues(entries: tuple[ManifestEntry, ...]) -> list[str]:
+def list_sources_review_issues(entries: tuple[SourcesEntry, ...]) -> list[str]:
     issues: list[str] = []
 
     missing_labels = [entry.source_name for entry in entries if entry.status == "needs_review"]
@@ -1651,7 +1546,7 @@ def list_manifest_review_issues(entries: tuple[ManifestEntry, ...]) -> list[str]
     return issues
 
 
-def _summarize_manifest_entries(entries: tuple[ManifestEntry, ...]) -> dict[str, int]:
+def _summarize_sources_entries(entries: tuple[SourcesEntry, ...]) -> dict[str, int]:
     summary = {
         "total": len(entries),
         "ready": 0,

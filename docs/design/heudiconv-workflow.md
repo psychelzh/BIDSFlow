@@ -2,580 +2,210 @@
 
 ## 1. Purpose
 
-HeuDiConv should be the first **managed workflow** rebuilt in BIDSFlow.
+HeuDiConv is the first **managed workflow** rebuilt in BIDSFlow because
+its official usage already has a real lifecycle:
 
-The reason is not that HeuDiConv deserves special branding in the public
-CLI. The reason is that its official usage already has a real
-multi-stage lifecycle that benefits from orchestration.
+1. generate starter heuristic material with `convertall`
+2. inspect `dicominfo` files and edit the heuristic manually
+3. run the actual DICOM-to-BIDS conversion with the reviewed heuristic
 
-## 1.1 Current implementation status
-
-The current codebase implements two early slices:
-
-```bash
-bidsflow heudiconv manifest [--config bidsflow.toml] [--reset] [--dry-run]
-bidsflow heudiconv skeleton <sample-path>... \
-  [--config bidsflow.toml] [--reset] [--dry-run]
-bidsflow heudiconv convert [--config bidsflow.toml] [--dry-run]
-```
-
-Current supported behavior:
-
-- manifest scans the immediate child directories under the configured
-  `source_root`
-- manifest does not call HeuDiConv
-- manifest writes a reviewable `manifest.tsv` plus `manifest.json`
-- by default manifest leaves final `subject_label/session_label` blank
-- if `[heudiconv.manifest].template` is configured, manifest derives
-  final labels directly from `source_name`
-- if `[heudiconv.manifest].command` is configured, manifest calls that
-  project-owned command with `source_name`
-- manifest is the project-owned truth source for later conversion
-  handoff
-- manifest does not create links or other execution views
-- default heuristic is `code/heudiconv/heuristic.py`, and it may be
-  absent until skeleton runs
-- default launcher is `["heudiconv"]`
-- projects may override that with `[heudiconv].launcher`
-- skeleton accepts one or more representative sample paths
-- a single sample path is processed as one skeleton unit with one
-  temporary subject label
-- multiple sample paths are split into separate single-directory
-  skeleton units
-- those multi-path units are treated as temporary sessions of one
-  placeholder subject, and the generated session mapping is recorded in
-  skeleton state
-- skeleton writes its HeuDiConv working output into an isolated
-  skeleton work root under `work/heudiconv/` instead of the real raw
-  BIDS output directory
-- skeleton copies the generated heuristic into `code/heudiconv/`
-- skeleton copies every generated `dicominfo*.tsv` into
-  `code/heudiconv/dicominfo/`
-- skeleton records current step metadata in `state/heudiconv/skeleton.json`
-- skeleton records per-unit final statuses in `state/heudiconv/skeleton.tsv`
-- skeleton writes each unit's tool output to
-  `logs/heudiconv/skeleton-<attempt>/<unit>.log`, with paths recorded
-  in `skeleton.tsv`
-- convert reads `code/heudiconv/manifest.tsv` and recomputes the
-  current manifest status from table contents
-- convert requires every included manifest row to be `ready`
-- convert materializes a temporary execution view under
-  `work/heudiconv/convert-<attempt>/`
-- convert currently runs one managed HeuDiConv invocation per ready
-  manifest row
-- convert uses the configured heuristic path and launcher
-- convert records current step metadata in `state/heudiconv/convert.json`
-- convert records per-unit final statuses in `state/heudiconv/convert.tsv`
-- convert writes each unit's tool output to
-  `logs/heudiconv/convert-<attempt>/<source_name>.log`, with paths
-  recorded in `convert.tsv`
-- convert removes the temporary execution view after success or failure
-
-Current limit:
-
-- automatic persisted `BIDSLayout` indexing is still not implemented
-
-## 2. What the official HeuDiConv workflow looks like
-
-The official custom-heuristic tutorial describes a retrospective flow
-with a clear sequence:
-
-1. generate a skeleton heuristic with `convertall`
-2. inspect the generated `dicominfo` files and edit the heuristic manually
-3. rerun HeuDiConv for the actual conversion
+BIDSFlow should manage the logistics around that lifecycle without
+turning itself into a flag-complete wrapper for every HeuDiConv option.
 
 Source notes:
 
 - HeuDiConv custom heuristic tutorial:
   [https://heudiconv.readthedocs.io/en/latest/custom-heuristic.html](https://heudiconv.readthedocs.io/en/latest/custom-heuristic.html)
-
-The CLI reference also exposes custom actions such as:
-
-- `heuristics`
-- `heuristic-info`
-- `ls`
-- `populate-templates`
-- `populate-intended-for`
-
-Source notes:
-
 - HeuDiConv CLI reference:
   [https://heudiconv.readthedocs.io/en/latest/commandline.html](https://heudiconv.readthedocs.io/en/latest/commandline.html)
 
-For prospective ReproIn-style data, the official docs show a more direct
-path that can skip skeleton and go straight to conversion with the
-`reproin` heuristic.
+## 2. Current implementation status
 
-Source notes:
+The current codebase implements three public actions:
 
-- HeuDiConv ReproIn tutorial:
-  [https://heudiconv.readthedocs.io/en/latest/reproin.html](https://heudiconv.readthedocs.io/en/latest/reproin.html)
+```bash
+bidsflow sources [--reset] [--dry-run]
+bidsflow heudiconv --draft <sample-path>... [--reset] [--dry-run]
+bidsflow heudiconv [--dry-run]
+```
 
-## 3. What BIDSFlow should manage
+### 2.1 `sources`
 
-BIDSFlow should treat HeuDiConv as a workflow with explicit step
-contracts rather than as one opaque command.
+`bidsflow sources` is a project source-table command, not a HeuDiConv
+tool action.
 
-The main managed concerns are:
+Current behavior:
 
-- freezing a reviewable manifest before conversion
-- preserving the skeleton outputs that the user must inspect
-- providing a clean human-edit step between skeleton and conversion
-- recording `.heudiconv` provenance and rerun behavior
-- recording the exact launcher and resulting HeuDiConv provenance used
-  for the run
-- making the raw BIDS dataset an explicit downstream artifact
-- separating one-time finalization from repeated conversion runs
+- scans the immediate child directories under `[paths].source_root`
+- does not call HeuDiConv
+- writes the reviewable truth table to `state/sources.tsv`
+- writes overall metadata to `state/sources.json`
+- leaves final `subject_label/session_label` blank by default
+- derives labels from `[sources].template` when configured
+- calls `[sources].command` with `source_name` when configured
+- recomputes and reports `ready`, `needs_review`, `collision`,
+  `missing_source`, and `excluded` status counts
 
-Relationship between early preparation steps:
+`sources.tsv` is the durable table that users review and edit. The JSON
+state file only records metadata such as the command result, paths, and
+summary counts.
 
-- `manifest` and `skeleton` solve different preparation problems
-- `manifest` standardizes dataset-wide naming and handoff
-- `skeleton` produces sample-level heuristic starter material
-- neither step should be treated as a strict prerequisite for the other
-- many projects will run `skeleton` first because heuristic work often
-  starts before final subject/session naming is frozen
-- `convert` is the first step that should rely on both a confirmed
-  manifest and a reviewed heuristic
+### 2.2 `heudiconv --draft`
 
-Source notes:
+`bidsflow heudiconv --draft` prepares heuristic starter material from
+one or more representative sample directories.
 
-- HeuDiConv installation guide, explicit versions are preferred for
-  provenance:
-  [https://heudiconv.readthedocs.io/en/stable/installation.html](https://heudiconv.readthedocs.io/en/stable/installation.html)
+Current behavior:
 
-### 3.1 Launcher model
+- interprets relative sample paths under `[paths].source_root`
+- accepts absolute sample paths only when they still resolve under
+  `[paths].source_root`
+- processes one sample path as one draft unit with a temporary subject
+  label
+- processes multiple sample paths as separate draft units with
+  temporary session labels such as `draft-ses01`
+- runs HeuDiConv with `-f convertall -c none`
+- writes working output under `work/heudiconv/draft-work/`
+- copies the generated heuristic to `[heudiconv].heuristic`
+- copies generated `dicominfo*.tsv` files to
+  `code/heudiconv/dicominfo/`
+- writes overall metadata to `state/heudiconv/draft.json`
+- writes each unit's raw tool output to
+  `logs/heudiconv/draft-<attempt>/<unit>.log`
 
-BIDSFlow should not ask the user to maintain the full HeuDiConv command
-line.
+There is intentionally no `draft.tsv`. Draft generation is a heuristic
+authoring aid, not the final per-source run-status table.
 
-Instead, the project should define a `launcher` that tells BIDSFlow how
-to invoke HeuDiConv, and BIDSFlow should append the managed step
-arguments.
+### 2.3 `heudiconv`
+
+`bidsflow heudiconv` runs the managed HeuDiConv path using the reviewed
+source table and the chosen heuristic.
+
+Current behavior:
+
+- reads `state/sources.tsv`
+- recomputes each row's current status from the table contents
+- requires every included source row to be `ready`
+- resolves each `source_name` under `[paths].source_root`
+- validates `[heudiconv].heuristic`
+- uses `[heudiconv].launcher`, defaulting to `["heudiconv"]`
+- materializes a temporary execution view under
+  `work/heudiconv/run-<attempt>/`
+- runs one managed HeuDiConv invocation per ready source row
+- writes overall metadata to `state/heudiconv/run.json`
+- writes unit final statuses to `state/heudiconv/run.tsv`
+- writes each unit's raw tool output to
+  `logs/heudiconv/run-<attempt>/<source_name>.log`
+- removes the temporary execution view after success or failure
+
+`run.tsv` is the per-unit final-status table for `bidsflow heudiconv`.
+`run.json` is the current step metadata record and should not duplicate
+the unit table.
+
+Current limit:
+
+- automatic persisted `BIDSLayout` indexing is still not implemented
+
+## 3. Managed concerns
+
+BIDSFlow should own the workflow logistics around HeuDiConv:
+
+- locating source inputs from project config
+- preserving a reviewable source table
+- generating starter heuristic material in an isolated work area
+- making heuristic editing an explicit human handoff
+- running HeuDiConv with the selected heuristic and launcher
+- keeping raw tool output in per-unit log files
+- keeping current state metadata separate from attempt history
+- exposing the raw BIDS dataset as a downstream artifact
+
+BIDSFlow should not own the scientific content of the heuristic, infer
+final BIDS labels from too little information, or hide native HeuDiConv
+behavior that users may need to inspect.
+
+## 4. Relationship between preparation actions
+
+`sources` and `heudiconv --draft` solve different preparation problems.
+
+`sources` standardizes dataset-wide source identity and final label
+handoff. It is useful even if a project already has a working heuristic.
+
+`heudiconv --draft` produces sample-level heuristic starter material. It
+is useful even before final subject/session naming is frozen.
+
+Neither action is a strict prerequisite for the other. The managed
+`heudiconv` run is the point where both a reviewed `sources.tsv` and a
+reviewed heuristic are required.
+
+## 5. State and log model
+
+State files describe the current known result of a workflow action.
+Attempt history belongs in `logs/`.
+
+Current files:
+
+- `state/sources.json`: overall metadata for the latest source scan
+- `state/sources.tsv`: reviewed source table and handoff truth
+- `state/heudiconv/draft.json`: overall metadata for the latest draft
+  generation
+- `logs/heudiconv/draft-<attempt>/<unit>.log`: per-unit draft tool
+  output
+- `state/heudiconv/run.json`: overall metadata for the latest
+  `bidsflow heudiconv` execution
+- `state/heudiconv/run.tsv`: final status of each execution unit
+- `logs/heudiconv/run-<attempt>/<source_name>.log`: per-unit run tool
+  output
+
+This layout is intentionally friendly to future parallel execution:
+different units can write different log files without interleaving tool
+stdout and stderr in one shared stream.
+
+## 6. Launcher model
+
+Projects should define how HeuDiConv is invoked, while BIDSFlow appends
+managed arguments.
 
 Examples:
 
 - `["heudiconv"]`
 - `["singularity", "run", "/containers/heudiconv.sif"]`
 
-This keeps the workflow managed while still letting users choose local
-execution, wrappers, or container launchers.
-
-It also avoids introducing a large backend abstraction too early.
-
-## 4. Proposed managed steps
-
-### 4.1 `manifest`
-
-Goal:
-
-- enumerate candidate source directories into a reviewable handoff table
-- avoid guessing subject or session labels unless the user provides an
-  explicit extraction rule
-- provide a project-owned manifest that later conversion can consume
-
-Design choice for the first BIDSFlow version:
-
-- manifest should be a filesystem-only step and should not call
-  HeuDiConv
-- manifest should use the configured project `source_root` instead of a
-  separate command-line input root
-- manifest should scan the immediate child directories under that source
-  root
-- manifest should default to empty final `subject_label/session_label`
-- manifest may derive final labels either from a configured template or
-  from a configured project-owned command
-- manifest should leave final naming decisions visible and editable in
-  the output table
-- manifest should be the durable truth source for later conversion
-  inputs
-- manifest should not create symlink trees or other execution views on
-  its own
-- if conversion later needs a normalized input tree, `convert` should
-  materialize it temporarily from the confirmed manifest and remove it
-  when the run finishes
-
-Suggested first public shape:
-
-```bash
-bidsflow heudiconv manifest [--reset] [--dry-run]
-```
-
-Suggested generated files:
-
-- `code/heudiconv/manifest.tsv`
-- `state/heudiconv/manifest.json`
-
-Suggested generated table:
-
-```tsv
-source_name subject_label session_label include status notes
-```
-
-Ordering note:
-
-- `manifest` does not need to happen before `skeleton`
-- it is one of two preparation tracks that eventually hand off into
-  `convert`
-
-### 4.2 `skeleton`
-
-Goal:
-
-- generate a starter heuristic and descriptor files without performing
-  conversion
-- do so from a representative sample path without forcing the user to
-  commit to final BIDS subject or session labels yet
-
-Official basis:
-
-- the custom heuristic tutorial uses `-f convertall` together with
-  `-c none` to create the starter material
-
-Typical HeuDiConv shape:
-
-```bash
-heudiconv --files <dicom-files> -o <output-dir> -f convertall -c none
-```
-
-Design choice for the first BIDSFlow version:
-
-- skeleton should use `--files`-style input selection first
-- skeleton should not require final `subject` or `session` labels
-- skeleton should treat multiple input directories as multiple
-  single-directory units, not as one implicit HeuDiConv multi-directory
-  grouping
-- template-style dataset expansion with `--dicom_dir_template` can wait
-  until the workflow contract is stable
-
-Why this matters:
-
-- retrospective projects often start from one sample folder whose
-  directory name is not yet the final BIDS subject or session label
-- some projects need more than one representative sample path because
-  different sessions may expose different sequence sets
-- users may still need to decide how source identifiers map onto BIDS
-  identifiers
-- HeuDiConv can require a subject id even during skeleton, so BIDSFlow
-  should provide a temporary subject without pretending it is the final
-  BIDS identity
-- multiple input directories are often "same subject, different
-  sessions" in practice, but HeuDiConv does not reliably treat arbitrary
-  directory lists that way on its own
-- forcing placeholder `subject` and `session` values too early would
-  turn a HeuDiConv CLI constraint into a BIDSFlow usability problem
-
-What BIDSFlow should record:
-
-- the input selection method
-- the sample paths used for skeleton
-- whether skeleton ran as a single-directory attempt or as a
-  multi-session split
-- the configured launcher
-- skeleton work directory
-- HeuDiConv version
-- the generated `.heudiconv` state path
-- the generated heuristic skeleton path
-- the generated `dicominfo` inventory directory
-- any temporary subject or session labels BIDSFlow had to generate
-
-What BIDSFlow should expose as artifacts:
-
-- `heuristic_template`
-- `dicom_inventory_dir`
-- `heudiconv_state`
-- `skeleton_report`
-
-Suggested first public shape:
-
-```bash
-bidsflow heudiconv skeleton <sample-path>... [--reset] [--dry-run]
-```
-
-Suggested first API behavior:
-
-- `<sample-path>...` identifies one or more representative sample paths
-  under the configured `source_root`
-- relative sample paths should be interpreted relative to `source_root`
-- absolute sample paths should still be required to resolve under that
-  same `source_root`
-- when one sample path is provided, BIDSFlow runs one skeleton unit
-  with a generated temporary subject label
-- when multiple sample paths are provided, BIDSFlow treats them as
-  separate single-directory skeleton units and assigns temporary
-  session labels such as `skeleton-ses01`
-- `--reset` is required before regenerating skeleton outputs for the
-  same project skeleton state
-- `--dry-run` shows the planned command, output files, and state paths
-
-Suggested generated files:
-
-- `code/heudiconv/heuristic.py`
-- `code/heudiconv/dicominfo/`
-- `work/heudiconv/skeleton-work/`
-- `state/heudiconv/skeleton.json`
-- `state/heudiconv/skeleton.tsv`
-
-Ordering note:
-
-- `skeleton` does not need to wait for `manifest`
-- in practice it often happens earlier because heuristic editing starts
-  from representative sample data rather than from finalized dataset
-  naming
-
-Important rerun rule:
-
-- the official tutorial says skeleton should normally be done once per
-  project and repeated only after removing `.heudiconv`
-
-Design implication:
-
-- BIDSFlow should never silently reuse a stale skeleton run when the
-  user is asking to regenerate the starter material
-- a repeated skeleton should either require an explicit reset or write
-  to a new state location
-
-Source notes:
-
-- HeuDiConv custom heuristic tutorial:
-  [https://heudiconv.readthedocs.io/en/latest/custom-heuristic.html](https://heudiconv.readthedocs.io/en/latest/custom-heuristic.html)
-- HeuDiConv CLI reference, `--files` and `-s/--subjects` behavior:
-  [https://heudiconv.readthedocs.io/en/latest/commandline.html](https://heudiconv.readthedocs.io/en/latest/commandline.html)
-
-### 4.3 `edit-heuristic`
-
-Goal:
-
-- let the user revise the generated heuristic based on the discovered
-  sequence information
-
-This is not a scientific step BIDSFlow should automate away.
-
-BIDSFlow should instead make the handoff explicit:
-
-- tell the user which generated files matter
-- store the chosen project-owned heuristic path
-- mark the workflow as waiting for a human edit before conversion can
-  proceed
-- tell the user whether the later convert step still depends on
-  project-specific identity mapping or anonymization helpers
-
-Design implication:
-
-- BIDSFlow should treat heuristic editing as a first-class pause point,
-  not as an invisible side effect
-
-### 4.4 `convert`
-
-Goal:
-
-- run the actual DICOM-to-BIDS conversion with the chosen heuristic
-- resolve final subject and session labels using a project-defined
-  mapping strategy
-- register the resulting raw BIDS dataset for downstream work
-- build a persisted `BIDSLayout` database for later analysis steps
-
-Typical HeuDiConv shape:
-
-```bash
-heudiconv --files <dicom-files> -o <output-dir> \
-  -f <heuristic.py> -s <subject> -c dcm2niix -b
-```
-
-Identity concern:
-
-- the source folder name, DICOM metadata, or project naming scheme may
-  not map directly onto the final BIDS subject and session labels
-- BIDSFlow should treat this as an explicit resolver problem, not as an
-  ad hoc string hack inside the command line
-
-Suggested resolver kinds:
-
-- `heuristic`: defer to HeuDiConv heuristic logic such as `infotoids`
-- `regex`: extract source identifiers from paths and rewrite them with
-  templates
-- `script`: call a project-owned script that returns the desired labels
-- `literal`: use fixed labels for debugging or one-off recovery only
-
-Suggested manifest automation support:
-
-- BIDSFlow should allow either a project-owned manifest template or a
-  project-owned manifest command
-- both mechanisms should generate final labels directly in
-  `manifest.tsv`
-- `source_name` should be the common input because `source_path` is
-  already implied by `source_root`
-- when a manifest command is used, it should run with `cwd = project_root`
-  so project-local mapping tables can be loaded by relative path
-- the manifest command should print one stdout line for `subject_label`
-- it may print a second stdout line for `session_label`
-- more than two non-empty stdout lines should be treated as an error
-
-Suggested first public shape:
-
-```bash
-bidsflow heudiconv convert [--dry-run]
-```
-
-Suggested first API behavior:
-
-- `convert` should use the project-owned heuristic generated or chosen
-  after skeleton
-- `convert` should use the configured launcher to invoke HeuDiConv
-- identity mapping and anonymization behavior should initially come from
-  the heuristic or project config rather than from many public flags
-- the current implementation already consumes final labels directly from
-  `manifest.tsv`
-- the current implementation materializes a temporary execution view and
-  runs one HeuDiConv command per ready manifest row with `--files`
-- the current implementation does not yet build a persisted
-  `BIDSLayout` database after conversion
-
-What BIDSFlow should record:
-
-- the selected heuristic path and a content fingerprint
-- the configured launcher
-- any configured identity-mapping or anonymization helper
-- the converter mode, typically `dcm2niix`
-- whether BIDS mode was enabled
-- the `IntendedFor` strategy implied by the heuristic, when present
-- overwrite behavior
-- the raw BIDS dataset root
-- produced logs and exit status
-
-What BIDSFlow should expose as artifacts:
-
-- `raw_bids_dataset`
-- `heudiconv_provenance`
-- `raw_bids_layout_db`
-
-Design implication:
-
-- a successful convert run should register the raw BIDS root as a named
-  artifact for downstream tools instead of leaving later steps to guess
-  the path
-- when conversion needs a normalized input tree, it should materialize
-  a temporary links view from the confirmed manifest rather than
-  treating links as a second truth source
-- those temporary links should live under the work area and should
-  normally be removed after success or failure
-- if the heuristic defines `POPULATE_INTENDED_FOR_OPTS`, `IntendedFor`
-  handling should be treated as part of `convert`, not as a mandatory
-  extra step
-- a successful convert run should immediately build or rebuild a
-  persisted `BIDSLayout` database for the raw BIDS artifact
-
-Suggested first layout behavior:
-
-- store the database under `state/layouts/raw_bids`
-- rebuild it when the raw BIDS artifact is newly produced or marked
-  stale
-- treat the resulting database path as another registered artifact that
-  later jobs may reuse
-
-Source notes:
-
-- HeuDiConv CLI reference:
-  [https://heudiconv.readthedocs.io/en/latest/commandline.html](https://heudiconv.readthedocs.io/en/latest/commandline.html)
-- HeuDiConv heuristics file, `infotoids` support:
-  [https://heudiconv.readthedocs.io/en/stable/heuristics.html](https://heudiconv.readthedocs.io/en/stable/heuristics.html)
-- HeuDiConv quickstart example:
-  [https://heudiconv.readthedocs.io/en/v1.2.0/quickstart.html](https://heudiconv.readthedocs.io/en/v1.2.0/quickstart.html)
-- PyBIDS `BIDSLayout`, persistent database support:
-  [https://bids-standard.github.io/pybids/generated/bids.layout.BIDSLayout.html](https://bids-standard.github.io/pybids/generated/bids.layout.BIDSLayout.html)
-
-### 4.5 Optional maintenance actions
-
-Goal:
-
-- support the smaller set of post-conversion repair actions that are
-  sometimes needed after `convert`
-
-The official CLI exposes at least:
-
-- `populate-templates`
-- `populate-intended-for`
-
-Design implication:
-
-- these actions should not define the main HeuDiConv lifecycle
-- `populate-intended-for` is usually unnecessary as a separate managed
-  step if `IntendedFor` is handled during `convert`
-- `populate-templates` is still useful as an explicit maintenance action
-  for recovery or batch-style workflows
-- this becomes especially useful if future parallel conversion modes use
-  BIDS `notop` and generate top-level files only after all worker runs
-  finish
-
-Important limit:
-
-- the HeuDiConv batch usage notes say `populate_templates.sh` can create
-  top-level BIDS files later, except `participants.tsv`, which still
-  must be created manually
-
-So BIDSFlow should not promise a magically complete post-processing step
-in the first version.
-
-Source notes:
-
-- HeuDiConv usage guide:
-  [https://heudiconv.readthedocs.io/en/v1.0.0/usage.html](https://heudiconv.readthedocs.io/en/v1.0.0/usage.html)
-- HeuDiConv CLI reference:
-  [https://heudiconv.readthedocs.io/en/latest/commandline.html](https://heudiconv.readthedocs.io/en/latest/commandline.html)
-
-## 5. First implementation boundary
-
-The first rebuilt HeuDiConv integration should stay small.
-
-It should include:
-
-- a manifest run model
-- a skeleton run model
-- explicit heuristic-edit handoff metadata
-- a convert run model
-- launcher support for local or wrapped HeuDiConv execution
-- identity-mapping and anonymization planning for convert
-- automatic `BIDSLayout` database construction after successful convert
-- run records and artifact registration for those steps
-
-Implemented now:
-
-- manifest planning and generation
-- skeleton planning and execution
-- convert planning and execution
-- optional `[heudiconv].launcher` support
-- `[heudiconv].heuristic` parsing and skeleton destination support
-- `[heudiconv].heuristic` validation and convert usage
-- skeleton artifact copying and run-record writing
-- convert run-record writing and temporary execution-view cleanup
+This keeps the public workflow stable across local execution, wrappers,
+and containers.
+
+## 7. Config concepts
+
+Current config concepts:
+
+- `[paths].source_root`: source directories to scan and run
+- `[paths].raw_bids_root`: curated raw BIDS output root
+- `[paths].work_root`: transient execution views and work files
+- `[paths].logs_root`: BIDSFlow orchestration logs
+- `[paths].state_root`: BIDSFlow state metadata
+- `[sources].template`: optional source-name-to-label template
+- `[sources].command`: optional project command that returns final
+  labels
+- `[heudiconv].heuristic`: project-owned heuristic path
+- `[heudiconv].launcher`: optional launcher prefix
+
+`[sources].template` and `[sources].command` are mutually exclusive.
+Both operate on `source_name`, not on full filesystem paths.
+
+## 8. Future work
 
 Not implemented yet:
 
-- additional convert-time identity-mapping helpers beyond the current
-  manifest-derived final labels
-- automatic `BIDSLayout` indexing
-
-It should defer:
-
-- standalone maintenance actions unless they solve a concrete gap
-- cluster submission
+- persisted `BIDSLayout` database construction after successful runs
+- additional identity-mapping helpers beyond `sources.tsv`
+- optional HeuDiConv maintenance actions such as `populate-templates`
+- cluster submission and scheduler observation
 - automatic participants bookkeeping beyond what HeuDiConv already
   handles
-- automatic heuristic authoring
-- advanced HeuDiConv custom actions unrelated to the core workflow
 
-## 6. Recommended implementation order
+Recommended next order:
 
-1. Define the HeuDiConv run record and artifact shapes.
-2. Implement `manifest` and `skeleton` as independent preparation
-   tracks.
-3. Keep their user-facing order flexible, even if the codebase happens
-   to land one before the other.
-4. Implement the explicit handoff into human heuristic editing.
-5. Define launcher, identity-mapping, and anonymization configuration
-   for `convert`.
-6. Implement `convert` together with raw BIDS `BIDSLayout` indexing.
-7. Add optional maintenance actions only if a real workflow gap remains.
-
-This keeps the first slice aligned with the official workflow rather
-than with an overgeneralized app abstraction.
+1. Keep the current source, draft, and run state model stable.
+2. Add raw BIDS artifact registration after successful runs.
+3. Add persistent raw BIDS `BIDSLayout` indexing.
+4. Add optional maintenance actions only if a real workflow gap remains.
+5. Add scheduler integration behind the same state and log boundaries.

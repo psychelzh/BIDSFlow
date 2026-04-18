@@ -46,7 +46,6 @@ Suggested optional layout created by `--make-dirs`:
 The first option set should stay small:
 
 - `--name`
-- `--config-name`
 - `--force`
 - `--make-dirs`
 
@@ -77,9 +76,9 @@ The initial generated config should stay minimal:
 # Review before first use:
 # - adjust [project].name if you want a clearer project label
 # - adjust [paths] if your project layout differs from this scaffold
-# - keep or adjust [heudiconv].heuristic before conversion
+# - keep or adjust [heudiconv].heuristic before running HeuDiConv
 # - uncomment [heudiconv].launcher if you need a wrapper or Singularity launcher
-# - optionally configure [heudiconv.manifest] when source directory names map cleanly to final labels
+# - optionally configure [sources] when source directory names map cleanly to final labels
 
 [project]
 name = "Example BIDSFlow project"
@@ -94,7 +93,7 @@ logs_root = "logs"
 state_root = "state"
 
 [heudiconv]
-# Expected project-owned heuristic path. The file may not exist until skeleton runs.
+# Expected project-owned heuristic path. The file may not exist until draft generation runs.
 heuristic = "code/heudiconv/heuristic.py"
 
 # Optional HeuDiConv launcher override.
@@ -102,13 +101,13 @@ heuristic = "code/heudiconv/heuristic.py"
 # launcher = ["heudiconv"]
 # launcher = ["singularity", "run", "/containers/heudiconv.sif"]
 
-# Optional manifest label generation. Configure one strategy when directory names
+# Optional source label generation. Configure one strategy when directory names
 # can be mapped automatically onto final subject/session labels.
-# [heudiconv.manifest]
+# [sources]
 # template = "SUB{subject}_SES{session}"
 # command receives source_name as its last argument, runs from project_root,
 # and must print one line (subject_label) or two lines (subject_label, session_label).
-# command = ["python", "code/heudiconv/derive_labels.py"]
+# command = ["python", "code/bidsflow/derive_labels.py"]
 ```
 
 This is enough to anchor project layout without prematurely encoding
@@ -126,7 +125,7 @@ future default changes remain auditable.
 bidsflow init .
 bidsflow init /data/project --name "TJNU camp project"
 bidsflow init /data/project --make-dirs
-bidsflow init /data/project --config-name bidsflow.toml --force
+bidsflow init /data/project --force
 ```
 
 ## 8. Summary

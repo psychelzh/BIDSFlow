@@ -80,7 +80,7 @@ Examples include:
 - a persisted `BIDSLayout` database for that dataset
 - a derivatives root produced by a specific tool
 - a generated heuristic file
-- a manifest or descriptor file produced during preparation
+- a reviewed source table or descriptor file produced during preparation
 
 ### 4.3 State record
 
@@ -124,7 +124,7 @@ durable artifact but is not itself the source of truth.
 
 Examples include:
 
-- a normalized symlink tree materialized from a confirmed manifest
+- a normalized symlink tree materialized from a reviewed source table
 - a per-run working directory assembled from recorded inputs
 
 These views should be:
@@ -133,7 +133,7 @@ These views should be:
 - reproducible on demand
 - safe to delete after the run ends
 
-This keeps long-lived truth in artifacts such as `manifest.tsv` while
+This keeps long-lived truth in artifacts such as `sources.tsv` while
 letting execution steps materialize short-lived helper structures only
 when they are actually needed.
 
@@ -147,9 +147,9 @@ BIDSFlow knows the step sequence and the step-specific artifacts.
 
 This is appropriate for HeuDiConv, where BIDSFlow can help with:
 
-- skeleton generation
+- draft heuristic generation
 - heuristic editing handoff
-- conversion runs
+- `bidsflow heudiconv` executions
 - finalization steps
 - rerun safety around `.heudiconv` state
 

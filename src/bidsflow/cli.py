@@ -6,18 +6,18 @@ from pathlib import Path
 import typer
 
 from .heudiconv import (
-    HeudiconvConvertError,
-    HeudiconvManifestError,
-    HeudiconvSkeletonError,
+    HeudiconvDraftError,
+    HeudiconvRunError,
+    SourcesError,
     format_command,
-    list_manifest_review_issues,
-    plan_convert,
-    plan_manifest,
-    plan_skeleton,
-    run_convert,
-    run_manifest,
-    run_skeleton,
-    summarize_manifest_entries,
+    list_sources_review_issues,
+    plan_draft,
+    plan_heudiconv_run,
+    plan_sources,
+    run_draft,
+    run_heudiconv,
+    run_sources,
+    summarize_sources_entries,
 )
 from .project import find_project_config, load_project_context
 
@@ -25,9 +25,6 @@ app = typer.Typer(
     help="BIDSFlow: a task-first CLI for BIDS workflow logistics.",
     no_args_is_help=True,
 )
-heudiconv_app = typer.Typer(help="Managed HeuDiConv workflow commands.")
-app.add_typer(heudiconv_app, name="heudiconv")
-
 DEFAULT_LAYOUT_DIRECTORIES = (
     Path("sourcedata"),
     Path("sourcedata") / "raw",
@@ -56,13 +53,6 @@ def _default_project_name(directory: Path) -> str:
     return directory.resolve().name or "BIDSFlow project"
 
 
-def _validate_config_name(config_name: str) -> str:
-    candidate = Path(config_name)
-    if config_name in {"", ".", ".."} or candidate.name != config_name:
-        raise typer.BadParameter("Config name must be a filename, not a path.")
-    return config_name
-
-
 @app.callback()
 def main() -> None:
     """BIDSFlow: task-first CLI for BIDS workflow logistics."""
@@ -80,11 +70,6 @@ def init(
         "--name",
         help="Project name to write into the generated config.",
     ),
-    config_name: str = typer.Option(
-        "bidsflow.toml",
-        "--config-name",
-        help="Filename for the generated config.",
-    ),
     force: bool = typer.Option(
         False,
         "--force",
@@ -97,14 +82,13 @@ def init(
     ),
 ) -> None:
     """Initialize a minimal BIDSFlow project scaffold."""
-    config_name = _validate_config_name(config_name)
     target_directory = directory.resolve()
 
     if target_directory.exists() and not target_directory.is_dir():
         typer.echo(f"Target path is not a directory: {target_directory}", err=True)
         raise typer.Exit(code=2)
 
-    config_path = target_directory / config_name
+    config_path = target_directory / "bidsflow.toml"
     if config_path.exists() and not force:
         typer.echo(
             f"Refusing to overwrite existing config: {config_path}. Use --force to overwrite it.",
@@ -125,122 +109,36 @@ def init(
     typer.echo(f"Config: {config_path}")
 
 
-@heudiconv_app.command("skeleton")
-def heudiconv_skeleton(
-    sample_paths: list[Path] = typer.Argument(
-        ...,
-        exists=False,
-        help="One or more representative sample paths under the configured source_root used to generate starter HeuDiConv outputs.",
-    ),
-    config: Path | None = typer.Option(
-        None,
-        "--config",
-        help="Path to bidsflow.toml. Defaults to the nearest project config.",
-    ),
+@app.command("sources")
+def sources(
     reset: bool = typer.Option(
         False,
         "--reset",
-        help="Regenerate skeleton outputs after clearing prior HeuDiConv state.",
+        help="Regenerate the sources table after clearing prior sources state.",
     ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
-        help="Show the managed command and planned output locations without running it.",
+        help="Show the planned sources outputs without writing files.",
     ),
 ) -> None:
-    """Generate a HeuDiConv skeleton from representative sample paths under source_root."""
+    """Enumerate source_root into a reviewable sources table."""
     try:
-        config_path = find_project_config(config, Path.cwd())
+        config_path = find_project_config(Path.cwd())
         context = load_project_context(config_path)
-        plan = plan_skeleton(context, sample_paths)
-    except (HeudiconvSkeletonError, ValueError) as exc:
+        plan = plan_sources(context)
+    except (SourcesError, ValueError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
 
     if dry_run:
-        if len(plan.units) == 1 and plan.units[0].session_label is None:
-            unit = plan.units[0]
-            typer.echo("Planned HeuDiConv skeleton strategy: single-directory skeleton")
-            typer.echo(
-                f"Temporary subject for skeleton: {unit.subject_label}"
-            )
-            typer.echo(format_command(unit.initial_command))
-        else:
-            typer.echo(
-                f"Planned HeuDiConv skeleton strategy: split {len(plan.units)} directories into "
-                "single-directory session units"
-            )
-            for unit in plan.units:
-                typer.echo(
-                    f"{unit.unit_name}: sample={unit.sample_path} "
-                    f"subject={unit.subject_label} session={unit.session_label}"
-                )
-                typer.echo(format_command(unit.initial_command))
-        typer.echo(f"Config: {config_path}")
-        typer.echo(f"Sample paths: {len(plan.sample_paths)}")
-        typer.echo(f"Skeleton work root: {plan.skeleton_work_root}")
-        typer.echo(f"Heuristic: {plan.heuristic_path}")
-        typer.echo(f"DICOM inventories: {plan.dicominfo_root}")
-        typer.echo(f"State: {plan.skeleton_state_path}")
-        typer.echo(f"Units: {plan.skeleton_units_path}")
-        typer.echo(f"Unit logs: {plan.log_dir}")
-        return
-
-    try:
-        result = run_skeleton(context, plan, reset=reset)
-    except HeudiconvSkeletonError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=2) from exc
-
-    typer.echo("Prepared HeuDiConv skeleton outputs.")
-    typer.echo(f"Skeleton units: {len(result.unit_results)}")
-    typer.echo(f"Skeleton work root: {plan.skeleton_work_root}")
-    typer.echo(f"Heuristic: {result.heuristic_path}")
-    typer.echo(f"DICOM inventories: {result.dicominfo_root} ({len(result.dicominfo_paths)} files)")
-    typer.echo(f"State: {result.skeleton_state_path}")
-    typer.echo(f"Units: {result.skeleton_units_path}")
-    typer.echo(f"Unit logs: {result.log_dir}")
-    typer.echo(
-        "Next: review and edit the heuristic. Manifest can be prepared before or after "
-        "skeleton, but convert will need both a confirmed manifest and a reviewed heuristic."
-    )
-
-
-@heudiconv_app.command("manifest")
-def heudiconv_manifest(
-    config: Path | None = typer.Option(
-        None,
-        "--config",
-        help="Path to bidsflow.toml. Defaults to the nearest project config.",
-    ),
-    reset: bool = typer.Option(
-        False,
-        "--reset",
-        help="Regenerate the manifest after clearing prior manifest state.",
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help="Show the planned manifest outputs without writing files.",
-    ),
-) -> None:
-    """Enumerate source_root into a reviewable manifest; configured commands receive source_name and must print one or two lines: subject_label, then optional session_label."""
-    try:
-        config_path = find_project_config(config, Path.cwd())
-        context = load_project_context(config_path)
-        plan = plan_manifest(context)
-    except (HeudiconvManifestError, ValueError) as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=2) from exc
-
-    if dry_run:
-        typer.echo("Planned HeuDiConv manifest generation.")
+        typer.echo("Planned BIDSFlow sources scan.")
         typer.echo(f"Config: {config_path}")
         typer.echo(f"Source root: {plan.source_root}")
         typer.echo(f"Entries discovered: {len(plan.entries)}")
-        typer.echo(f"Manifest: {plan.manifest_path}")
-        typer.echo(f"State: {plan.manifest_state_path}")
-        typer.echo("Links: not created by manifest; convert will materialize temporary links if needed.")
+        typer.echo(f"Sources: {plan.sources_path}")
+        typer.echo(f"State: {plan.sources_state_path}")
+        typer.echo("Links: not created by sources; heudiconv will materialize temporary links if needed.")
         if plan.template is not None:
             typer.echo(f"Label generation: template={plan.template!r}")
         elif plan.command is not None:
@@ -255,15 +153,15 @@ def heudiconv_manifest(
         return
 
     try:
-        result = run_manifest(context, plan, reset=reset)
-    except HeudiconvManifestError as exc:
+        result = run_sources(context, plan, reset=reset)
+    except SourcesError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
 
-    typer.echo("Wrote HeuDiConv manifest.")
+    typer.echo("Wrote BIDSFlow sources table.")
     typer.echo(f"Entries: {len(result.entries)}")
-    typer.echo(f"Manifest: {result.manifest_path}")
-    typer.echo(f"State: {result.manifest_state_path}")
+    typer.echo(f"Sources: {result.sources_path}")
+    typer.echo(f"State: {result.sources_state_path}")
     if plan.command is not None:
         typer.echo(f"Label generation used command: {format_command(plan.command)}")
         typer.echo(
@@ -272,54 +170,142 @@ def heudiconv_manifest(
             "stdout line 2 is optional session_label."
         )
     typer.echo("Summary:")
-    summary = summarize_manifest_entries(result.entries)
+    summary = summarize_sources_entries(result.entries)
     for key in ("total", "ready", "needs_review", "collision", "missing_source", "excluded"):
         typer.echo(f"- {key}: {summary[key]}")
-    issues = list_manifest_review_issues(result.entries)
+    issues = list_sources_review_issues(result.entries)
     if issues:
         typer.echo("Review needed:")
         for issue in issues:
             typer.echo(f"- {issue}")
     typer.echo(
-        "Next: review manifest.tsv, then decide whether to keep the generated labels or "
-        "edit them manually. Skeleton may happen before or after manifest, but "
-        "convert will materialize any temporary links it needs from the confirmed manifest."
+        "Next: review sources.tsv, optionally generate a heuristic draft with "
+        "`bidsflow heudiconv --draft <sample-path>`, then run `bidsflow heudiconv`."
     )
 
 
-@heudiconv_app.command("convert")
-def heudiconv_convert(
-    config: Path | None = typer.Option(
+@app.command("heudiconv")
+def heudiconv(
+    sample_paths: list[Path] = typer.Argument(
         None,
-        "--config",
-        help="Path to bidsflow.toml. Defaults to the nearest project config.",
+        exists=False,
+        help="Representative sample paths used with --draft.",
+    ),
+    draft: bool = typer.Option(
+        False,
+        "--draft",
+        help="Generate a draft heuristic from representative sample paths instead of executing HeuDiConv.",
+    ),
+    reset: bool = typer.Option(
+        False,
+        "--reset",
+        help="Regenerate draft outputs after clearing prior draft state. Only valid with --draft.",
     ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
-        help="Show the managed conversion commands and planned outputs without running them.",
+        help="Show planned commands and outputs without running them.",
     ),
 ) -> None:
-    """Run the managed HeuDiConv conversion step."""
+    """Run managed HeuDiConv, or generate a draft heuristic with --draft."""
+    sample_paths = sample_paths or []
+    if draft:
+        _run_heudiconv_draft(sample_paths, reset=reset, dry_run=dry_run)
+        return
+    if sample_paths:
+        typer.echo("Sample paths are only valid with --draft.", err=True)
+        raise typer.Exit(code=2)
+    if reset:
+        typer.echo("--reset is only valid with --draft.", err=True)
+        raise typer.Exit(code=2)
+    _run_heudiconv_default(dry_run=dry_run)
+
+
+def _run_heudiconv_draft(
+    sample_paths: list[Path],
+    *,
+    reset: bool,
+    dry_run: bool,
+) -> None:
+    if not sample_paths:
+        typer.echo("--draft requires at least one sample path.", err=True)
+        raise typer.Exit(code=2)
+
     try:
-        config_path = find_project_config(config, Path.cwd())
+        config_path = find_project_config(Path.cwd())
         context = load_project_context(config_path)
-        plan = plan_convert(context)
-    except (HeudiconvConvertError, ValueError) as exc:
+        plan = plan_draft(context, sample_paths)
+    except (HeudiconvDraftError, ValueError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
 
     if dry_run:
-        typer.echo("Planned HeuDiConv convert run.")
+        if len(plan.units) == 1 and plan.units[0].session_label is None:
+            unit = plan.units[0]
+            typer.echo("Planned HeuDiConv draft strategy: single-directory draft")
+            typer.echo(f"Temporary subject for draft: {unit.subject_label}")
+            typer.echo(format_command(unit.initial_command))
+        else:
+            typer.echo(
+                f"Planned HeuDiConv draft strategy: split {len(plan.units)} directories into "
+                "single-directory sample units"
+            )
+            for unit in plan.units:
+                typer.echo(
+                    f"{unit.unit_name}: sample={unit.sample_path} "
+                    f"subject={unit.subject_label} session={unit.session_label}"
+                )
+                typer.echo(format_command(unit.initial_command))
         typer.echo(f"Config: {config_path}")
-        typer.echo(f"Manifest: {plan.manifest_path}")
+        typer.echo(f"Sample paths: {len(plan.sample_paths)}")
+        typer.echo(f"Draft work root: {plan.draft_work_root}")
+        typer.echo(f"Heuristic: {plan.heuristic_path}")
+        typer.echo(f"DICOM inventories: {plan.dicominfo_root}")
+        typer.echo(f"State: {plan.draft_state_path}")
+        typer.echo(f"Unit logs: {plan.log_dir}")
+        return
+
+    try:
+        result = run_draft(context, plan, reset=reset)
+    except HeudiconvDraftError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+    typer.echo("Prepared HeuDiConv draft outputs.")
+    typer.echo(f"Draft samples: {len(result.unit_results)}")
+    typer.echo(f"Draft work root: {plan.draft_work_root}")
+    typer.echo(f"Heuristic: {result.heuristic_path}")
+    typer.echo(f"DICOM inventories: {result.dicominfo_root} ({len(result.dicominfo_paths)} files)")
+    typer.echo(f"State: {result.draft_state_path}")
+    typer.echo(f"Unit logs: {result.log_dir}")
+    typer.echo(
+        "Next: review and edit the heuristic, review sources.tsv, then run `bidsflow heudiconv`."
+    )
+
+
+def _run_heudiconv_default(
+    *,
+    dry_run: bool,
+) -> None:
+    try:
+        config_path = find_project_config(Path.cwd())
+        context = load_project_context(config_path)
+        plan = plan_heudiconv_run(context)
+    except (HeudiconvRunError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+    if dry_run:
+        typer.echo("Planned `bidsflow heudiconv` execution.")
+        typer.echo(f"Config: {config_path}")
+        typer.echo(f"Sources: {plan.sources_path}")
         typer.echo(f"Heuristic: {plan.heuristic_path}")
         typer.echo(f"Raw BIDS root: {plan.raw_bids_root}")
         typer.echo(f"Execution view root: {plan.execution_view_root}")
         typer.echo(f"State: {plan.state_path}")
         typer.echo(f"Units: {plan.units_path}")
         typer.echo(f"Unit logs: {plan.log_dir}")
-        typer.echo(f"Conversion units: {len(plan.units)}")
+        typer.echo(f"Run units: {len(plan.units)}")
         if plan.units:
             unit = plan.units[0]
             typer.echo("Example unit:")
@@ -331,18 +317,18 @@ def heudiconv_convert(
             if len(plan.units) > 1:
                 typer.echo(
                     f"Additional units omitted: {len(plan.units) - 1}. "
-                    "Convert will apply the same manifest-driven pattern to each ready row."
+                    "HeuDiConv will apply the same sources-driven pattern to each ready row."
                 )
         return
 
     try:
-        result = run_convert(context, plan)
-    except HeudiconvConvertError as exc:
+        result = run_heudiconv(context, plan)
+    except HeudiconvRunError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
 
-    typer.echo("Completed managed HeuDiConv conversion.")
-    typer.echo(f"Conversion units: {len(result.unit_results)}")
+    typer.echo("Completed `bidsflow heudiconv` execution.")
+    typer.echo(f"Run units: {len(result.unit_results)}")
     typer.echo(f"Raw BIDS root: {result.raw_bids_root}")
     typer.echo(f"State: {result.state_path}")
     typer.echo(f"Units: {result.units_path}")

@@ -85,12 +85,12 @@ Public parameters should remain logistics-oriented.
 
 Good public parameters:
 
-- `--config`
 - `--subject-label`
 - `--session-label`
 - `--all`
 - `--dry-run`
-- input paths, manifest paths, and output roots when a target needs them
+- input paths, source-table paths, and output roots when a target needs
+  them
 
 Avoid exposing raw native tool flags directly in the public surface.
 

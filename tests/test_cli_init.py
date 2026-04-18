@@ -29,11 +29,11 @@ def test_init_writes_config_without_materializing_layout_by_default(tmp_path: Pa
     assert "# Optional HeuDiConv launcher override." in config_text
     assert 'heuristic = "code/heudiconv/heuristic.py"' in config_text
     assert '# launcher = ["singularity", "run", "/containers/heudiconv.sif"]' in config_text
-    assert "# [heudiconv.manifest]" in config_text
+    assert "# [sources]" in config_text
     assert '# template = "SUB{subject}_SES{session}"' in config_text
     assert "# command receives source_name as its last argument, runs from project_root," in config_text
     assert "# and must print one line (subject_label) or two lines (subject_label, session_label)." in config_text
-    assert '# command = ["python", "code/heudiconv/derive_labels.py"]' in config_text
+    assert '# command = ["python", "code/bidsflow/derive_labels.py"]' in config_text
     assert 'name = "demo-project"' in config_text
     assert 'root = "."' in config_text
     assert 'raw_bids_root = "sourcedata/raw"' in config_text
@@ -65,7 +65,7 @@ def test_init_defaults_to_current_directory(tmp_path: Path, monkeypatch) -> None
     assert f'name = "{tmp_path.resolve().name}"' in config_text
 
 
-def test_init_respects_custom_name_and_config_name(tmp_path: Path) -> None:
+def test_init_respects_custom_name(tmp_path: Path) -> None:
     project_dir = tmp_path / "custom-project"
 
     result = runner.invoke(
@@ -75,8 +75,6 @@ def test_init_respects_custom_name_and_config_name(tmp_path: Path) -> None:
             str(project_dir),
             "--name",
             "TJNU camp project",
-            "--config-name",
-            "bidsflow.toml",
         ],
     )
 

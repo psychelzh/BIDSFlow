@@ -10,11 +10,10 @@ import tomllib
 class HeudiconvConfig:
     launcher: tuple[str, ...]
     heuristic: Path
-    manifest: "HeudiconvManifestConfig"
 
 
 @dataclass(frozen=True)
-class HeudiconvManifestConfig:
+class SourcesConfig:
     template: str | None
     command: tuple[str, ...] | None
 
@@ -34,16 +33,11 @@ class ProjectContext:
     config_path: Path
     project_root: Path
     paths: ProjectPaths
+    sources: SourcesConfig
     heudiconv: HeudiconvConfig
 
 
-def find_project_config(explicit_config: Path | None, start_dir: Path) -> Path:
-    if explicit_config is not None:
-        config_path = explicit_config.resolve()
-        if not config_path.is_file():
-            raise ValueError(f"Config file does not exist: {config_path}")
-        return config_path
-
+def find_project_config(start_dir: Path) -> Path:
     current = start_dir.resolve()
     for directory in (current, *current.parents):
         candidate = directory / "bidsflow.toml"
@@ -52,7 +46,7 @@ def find_project_config(explicit_config: Path | None, start_dir: Path) -> Path:
 
     raise ValueError(
         "Could not find bidsflow.toml in the current directory or its parents. "
-        "Use --config to point at a project config."
+        "Run the command from a BIDSFlow project directory or one of its descendants."
     )
 
 
@@ -68,12 +62,14 @@ def load_project_context(config_path: Path) -> ProjectContext:
 
     project_root = _resolve_from_config_dir(config_path, Path(project_root_value))
     paths = _load_project_paths(project_root, paths_section)
+    sources = _load_sources_config(_require_table(raw_config, "sources"))
     heudiconv = _load_heudiconv_config(project_root, _require_table(raw_config, "heudiconv"))
 
     return ProjectContext(
         config_path=config_path,
         project_root=project_root,
         paths=paths,
+        sources=sources,
         heudiconv=heudiconv,
     )
 
@@ -136,34 +132,32 @@ def _load_heudiconv_config(project_root: Path, heudiconv_section: dict[str, Any]
     else:
         launcher_value = tuple(launcher)
 
-    manifest = _load_heudiconv_manifest_config(_require_table(heudiconv_section, "manifest"))
     return HeudiconvConfig(
         launcher=launcher_value,
         heuristic=heuristic,
-        manifest=manifest,
     )
 
 
-def _load_heudiconv_manifest_config(
-    manifest_section: dict[str, Any],
-) -> HeudiconvManifestConfig:
-    template = manifest_section.get("template")
-    command = manifest_section.get("command")
+def _load_sources_config(
+    sources_section: dict[str, Any],
+) -> SourcesConfig:
+    template = sources_section.get("template")
+    command = sources_section.get("command")
 
     if template is not None and not isinstance(template, str):
-        raise ValueError("[heudiconv.manifest].template must be a string.")
+        raise ValueError("[sources].template must be a string.")
     if command is not None and (
         not isinstance(command, list)
         or not command
         or not all(isinstance(item, str) for item in command)
     ):
-        raise ValueError("[heudiconv.manifest].command must be a non-empty list of strings.")
+        raise ValueError("[sources].command must be a non-empty list of strings.")
     if template is not None and command is not None:
         raise ValueError(
-            "[heudiconv.manifest] may define template or command, but not both."
+            "[sources] may define template or command, but not both."
         )
 
-    return HeudiconvManifestConfig(
+    return SourcesConfig(
         template=template,
         command=tuple(command) if command is not None else None,
     )

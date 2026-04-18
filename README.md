@@ -32,7 +32,7 @@ bidsflow status [<target>]
 
 Representative managed work:
 
-- HeuDiConv skeleton and convert steps
+- HeuDiConv source review, draft heuristic generation, and managed runs
 - validation and app-backed runs that consume recorded artifacts
 - template-backed jobs such as `fmriprep`, `mriqc`, and `xcpd`
 
@@ -48,81 +48,74 @@ deferred from the first rebuilt CLI.
 
 ```bash
 bidsflow init [DIRECTORY]
-bidsflow heudiconv manifest [--config bidsflow.toml] [--reset] [--dry-run]
-bidsflow heudiconv skeleton <sample-path>... \
-  [--config bidsflow.toml] [--reset] [--dry-run]
-bidsflow heudiconv convert [--config bidsflow.toml] [--dry-run]
+bidsflow sources [--reset] [--dry-run]
+bidsflow heudiconv --draft <sample-path>... [--reset] [--dry-run]
+bidsflow heudiconv [--dry-run]
 ```
 
-Current manifest behavior:
+Current `sources` behavior:
 
-- manifest scans the immediate child directories under the configured
+- `sources` scans the immediate child directories under the configured
   `source_root`
-- manifest does not call HeuDiConv
+- `sources` does not call HeuDiConv
 - by default it writes a review table with empty final label columns
-- if `[heudiconv.manifest].template` is configured, it derives final
+- if `[sources].template` is configured, it derives final
   `subject_label/session_label` directly from `source_name`
-- if `[heudiconv.manifest].command` is configured, it calls that
+- if `[sources].command` is configured, it calls that
   project-owned command with `source_name` and expects one stdout line
   for `subject_label`, plus an optional second line for `session_label`
-- manifest is the project-owned truth source for later HeuDiConv
-  conversion handoff
-- manifest does not create normalized links or other execution views
-- future `convert` runs may materialize temporary links from the
-  confirmed manifest when needed and clean them up afterward
-- manifest writes `code/heudiconv/manifest.tsv` and
-  `state/heudiconv/manifest.json`
-- manifest stdout includes a summary of `ready`, `needs_review`,
-  `collision`, `missing_source`, and `excluded` rows
+- `state/sources.tsv` is the project-owned truth source for later
+  `bidsflow heudiconv` execution
+- `state/sources.json` records only overall metadata and artifact paths
+- stdout includes a summary of `ready`, `needs_review`, `collision`,
+  `missing_source`, and `excluded` rows
 
-Current skeleton behavior:
+Current `heudiconv --draft` behavior:
 
-- a single sample directory is processed as one skeleton unit with one
+- a single sample directory is processed as one draft unit with one
   temporary subject label
 - multiple sample directories are split into separate single-directory
-  skeleton units and treated as temporary sessions of one placeholder
+  draft units and treated as temporary sessions of one placeholder
   subject
 - relative `sample-path` arguments are interpreted under the configured
   `source_root`
 - absolute `sample-path` arguments are only accepted when they still
   resolve under that same `source_root`
-- skeleton uses an isolated work root under `work/heudiconv/` instead
-  of writing into the real raw BIDS output directory
-- skeleton writes the generated heuristic to `[heudiconv].heuristic`,
-  which defaults to `code/heudiconv/heuristic.py`
-- skeleton writes current step metadata to `state/heudiconv/skeleton.json`
-- skeleton writes per-unit final status rows to `state/heudiconv/skeleton.tsv`
-- skeleton writes each unit's tool output to
-  `logs/heudiconv/skeleton-<attempt>/<unit>.log`, with paths recorded
-  in `skeleton.tsv`
-- skeleton and manifest are parallel preparation steps; neither is a
-  strict prerequisite for the other
-- in many real projects, skeleton happens first because heuristic work
-  must start before final naming is frozen
-- convert is the first step that should assume both a confirmed
-  manifest and a reviewed heuristic
+- draft generation uses an isolated work root under
+  `work/heudiconv/draft-work/` instead of writing into the real raw BIDS
+  output directory
+- draft generation writes the generated heuristic to
+  `[heudiconv].heuristic`, which defaults to
+  `code/heudiconv/heuristic.py`
+- `state/heudiconv/draft.json` records only overall metadata and
+  artifact paths
+- each draft unit's tool output is written to
+  `logs/heudiconv/draft-<attempt>/<unit>.log`
+- `heudiconv --draft` and `sources` are parallel preparation steps;
+  neither is a strict prerequisite for the other
+- in many real projects, draft generation happens first because
+  heuristic work must start before final naming is frozen
 
-Current convert behavior:
+Current `bidsflow heudiconv` behavior:
 
-- convert reads `code/heudiconv/manifest.tsv` and recomputes row status
-  from the current table contents instead of trusting a stale `status`
-  column
-- convert requires every included row to be `ready`
-- convert resolves each `source_name` back under the configured
-  `source_root`
-- convert uses `[heudiconv].heuristic` and `[heudiconv].launcher`
-- convert materializes a temporary execution view under
-  `work/heudiconv/convert-<attempt>/`
-- convert runs one managed HeuDiConv invocation per ready manifest row
-- convert writes current step metadata to `state/heudiconv/convert.json`
-- convert writes per-unit final status rows to
-  `state/heudiconv/convert.tsv`
-- convert writes each unit's tool output to
-  `logs/heudiconv/convert-<attempt>/<source_name>.log`, with paths
-  recorded in `convert.tsv`
-- convert removes the temporary execution view after success or failure
+- `heudiconv` reads `state/sources.tsv` and recomputes row
+  status from the current table contents instead of trusting a stale
+  `status` column
+- it requires every included row to be `ready`
+- it resolves each `source_name` back under the configured `source_root`
+- it uses `[heudiconv].heuristic` and `[heudiconv].launcher`
+- it materializes a temporary execution view under
+  `work/heudiconv/run-<attempt>/`
+- it runs one managed HeuDiConv invocation per ready source row
+- `state/heudiconv/run.json` records only overall metadata and artifact
+  paths
+- `state/heudiconv/run.tsv` records the final status of each unit
+- each unit's tool output is written to
+  `logs/heudiconv/run-<attempt>/<source_name>.log`, with paths
+  recorded in `run.tsv`
+- the temporary execution view is removed after success or failure
 
-Current convert limit:
+Current run limit:
 
 - automatic persisted `BIDSLayout` indexing is still not implemented
 
@@ -144,14 +137,14 @@ It should not:
 - generate tool-specific configuration
 - perform source scanning or execution
 
-The initial option set should stay narrow: `--name`, `--config-name`,
-`--force`, and `--make-dirs` are enough for the first pass.
+The initial option set should stay narrow: `--name`, `--force`, and
+`--make-dirs` are enough for the first pass.
 
 ## Repository State
 
 - `docs/` contains the active design.
-- `src/` and `tests/` now contain `bidsflow init` and the first managed
-  `bidsflow heudiconv skeleton` slice.
+- `src/` and `tests/` now contain `bidsflow init`, `bidsflow sources`,
+  and the first managed `bidsflow heudiconv` slices.
 - The rest of the historical implementation remains intentionally
   removed until the execution model is rebuilt cleanly.
 
@@ -167,7 +160,8 @@ The initial option set should stay narrow: `--name`, `--config-name`,
 ## Next Implementation Milestones
 
 1. Define artifact records, run records, and managed workflow state.
-2. Rebuild HeuDiConv around explicit skeleton and convert steps.
+2. Rebuild HeuDiConv around explicit source review, draft generation,
+   and managed run steps.
 3. Rebuild `check`, `run`, and `status` around the execution model.
 4. Add template-backed app runs after the core runtime stabilizes.
 5. Add adapters, backends, and schedulers only after the public model

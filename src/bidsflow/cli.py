@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from importlib import resources
 from pathlib import Path
 
@@ -33,6 +34,7 @@ DEFAULT_LAYOUT_DIRECTORIES = (
     Path("logs"),
     Path("state"),
 )
+INIT_SCHEDULERS = ("auto", "none", "sge")
 
 
 def _toml_string(value: str) -> str:
@@ -40,13 +42,59 @@ def _toml_string(value: str) -> str:
     return f'"{escaped}"'
 
 
-def _render_project_config(project_name: str) -> str:
+def _render_execution_section(scheduler: str) -> str:
+    if scheduler == "sge":
+        return """[execution]
+scheduler = "sge"
+scheduler_template = "code/bidsflow/{{ scheduler }}/{{ target }}.sh"
+submit_command = ["qsub", "-terse"]
+"""
+    return """[execution]
+scheduler = "none"
+
+# Uncomment and configure these when you want scheduled execution.
+# scheduler_template = "code/bidsflow/{{ scheduler }}/{{ target }}.sh"
+# submit_command = ["qsub", "-terse"]
+"""
+
+
+def _render_project_config(project_name: str, scheduler: str) -> str:
     template = (
         resources.files("bidsflow")
         .joinpath("templates", "bidsflow.toml.template")
         .read_text(encoding="utf-8")
     )
-    return template.replace('__PROJECT_NAME__', _toml_string(project_name))
+    return (
+        template.replace("__PROJECT_NAME__", _toml_string(project_name))
+        .replace("__EXECUTION_SECTION__", _render_execution_section(scheduler))
+    )
+
+
+def _select_init_scheduler(requested_scheduler: str) -> tuple[str, str, str | None]:
+    requested_scheduler = requested_scheduler.lower()
+    if requested_scheduler not in INIT_SCHEDULERS:
+        joined = ", ".join(INIT_SCHEDULERS)
+        raise typer.BadParameter(f"Scheduler must be one of: {joined}.")
+
+    if requested_scheduler == "none":
+        return "none", "Scheduler: none", None
+
+    qsub_path = shutil.which("qsub")
+    if requested_scheduler == "auto":
+        if qsub_path is not None:
+            return "sge", "Scheduler: sge (detected qsub)", None
+        return "none", "Scheduler: none (no supported scheduler detected)", None
+
+    if requested_scheduler == "sge":
+        if qsub_path is None:
+            return (
+                "sge",
+                "Scheduler: sge",
+                "Warning: qsub was not found on PATH; the scaffold still records SGE for this project.",
+            )
+        return "sge", "Scheduler: sge (detected qsub)", None
+
+    raise AssertionError(f"Unhandled scheduler: {requested_scheduler}")
 
 
 def _default_project_name(directory: Path) -> str:
@@ -80,6 +128,11 @@ def init(
         "--make-dirs",
         help="Create the default project directories described by the generated config.",
     ),
+    scheduler: str = typer.Option(
+        "auto",
+        "--scheduler",
+        help="Scheduler scaffold to write: auto, none, or sge.",
+    ),
 ) -> None:
     """Initialize a minimal BIDSFlow project scaffold."""
     target_directory = directory.resolve()
@@ -96,10 +149,16 @@ def init(
         )
         raise typer.Exit(code=2)
 
+    project_name = name or _default_project_name(target_directory)
+    selected_scheduler, scheduler_message, scheduler_warning = _select_init_scheduler(scheduler)
+
     target_directory.mkdir(parents=True, exist_ok=True)
 
-    project_name = name or _default_project_name(target_directory)
-    config_path.write_text(_render_project_config(project_name), encoding="utf-8", newline="\n")
+    config_path.write_text(
+        _render_project_config(project_name, selected_scheduler),
+        encoding="utf-8",
+        newline="\n",
+    )
 
     if make_dirs:
         for relative_path in DEFAULT_LAYOUT_DIRECTORIES:
@@ -107,6 +166,9 @@ def init(
 
     typer.echo(f"Initialized BIDSFlow project at {target_directory}")
     typer.echo(f"Config: {config_path}")
+    typer.echo(scheduler_message)
+    if scheduler_warning is not None:
+        typer.echo(scheduler_warning)
 
 
 @app.command("sources")
@@ -337,4 +399,3 @@ def _run_heudiconv_default(
 
 if __name__ == "__main__":
     app()
-

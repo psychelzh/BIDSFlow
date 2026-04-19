@@ -2,6 +2,7 @@
 # Review before first use:
 # - adjust [project].name if you want a clearer project label
 # - adjust [paths] if your project layout differs from this scaffold
+# - review [execution] if you use a scheduler such as SGE
 # - optionally configure [sources] when source directory names map cleanly to final labels
 # - keep or adjust [heudiconv].heuristic before running HeuDiConv
 # - uncomment [heudiconv].launcher if you need a wrapper or Singularity launcher
@@ -18,6 +19,7 @@ work_root = "work"
 logs_root = "logs"
 state_root = "state"
 
+__EXECUTION_SECTION__
 [heudiconv]
 # Expected project-owned heuristic path. The file may not exist until draft generation runs.
 heuristic = "code/heudiconv/heuristic.py"

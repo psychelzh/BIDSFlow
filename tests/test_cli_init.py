@@ -2,11 +2,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
+import bidsflow.cli as cli
 from bidsflow.cli import app
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _no_scheduler_on_path(monkeypatch) -> None:
+    monkeypatch.setattr(cli.shutil, "which", lambda executable: None)
 
 
 def test_init_writes_config_without_materializing_layout_by_default(tmp_path: Path) -> None:
@@ -26,6 +33,12 @@ def test_init_writes_config_without_materializing_layout_by_default(tmp_path: Pa
     config_text = (project_dir / "bidsflow.toml").read_text(encoding="utf-8")
     assert "# Review before first use:" in config_text
     assert "# - adjust [project].name if you want a clearer project label" in config_text
+    assert "# - review [execution] if you use a scheduler such as SGE" in config_text
+    assert 'scheduler = "none"' in config_text
+    assert '# scheduler_template = "code/bidsflow/{{ scheduler }}/{{ target }}.sh"' in config_text
+    assert '# submit_command = ["qsub", "-terse"]' in config_text
+    assert '\nscheduler_template = "code/bidsflow/{{ scheduler }}/{{ target }}.sh"' not in config_text
+    assert '\nsubmit_command = ["qsub", "-terse"]' not in config_text
     assert "# Optional HeuDiConv launcher override." in config_text
     assert 'heuristic = "code/heudiconv/heuristic.py"' in config_text
     assert '# launcher = ["singularity", "run", "/containers/heudiconv.sif"]' in config_text
@@ -37,6 +50,49 @@ def test_init_writes_config_without_materializing_layout_by_default(tmp_path: Pa
     assert 'name = "demo-project"' in config_text
     assert 'root = "."' in config_text
     assert 'raw_bids_root = "sourcedata/raw"' in config_text
+    assert "Scheduler: none (no supported scheduler detected)" in result.output
+
+
+def test_init_scheduler_auto_detects_sge(tmp_path: Path, monkeypatch) -> None:
+    project_dir = tmp_path / "sge-project"
+    monkeypatch.setattr(
+        cli.shutil,
+        "which",
+        lambda executable: "C:/sge/bin/qsub.exe" if executable == "qsub" else None,
+    )
+
+    result = runner.invoke(app, ["init", str(project_dir)])
+
+    assert result.exit_code == 0, result.output
+    config_text = (project_dir / "bidsflow.toml").read_text(encoding="utf-8")
+    assert 'scheduler = "sge"' in config_text
+    assert 'scheduler_template = "code/bidsflow/{{ scheduler }}/{{ target }}.sh"' in config_text
+    assert 'submit_command = ["qsub", "-terse"]' in config_text
+    assert "Scheduler: sge (detected qsub)" in result.output
+
+
+def test_init_scheduler_sge_writes_config_even_when_qsub_is_missing(tmp_path: Path) -> None:
+    project_dir = tmp_path / "sge-project"
+
+    result = runner.invoke(app, ["init", str(project_dir), "--scheduler", "sge"])
+
+    assert result.exit_code == 0, result.output
+    config_text = (project_dir / "bidsflow.toml").read_text(encoding="utf-8")
+    assert 'scheduler = "sge"' in config_text
+    assert 'scheduler_template = "code/bidsflow/{{ scheduler }}/{{ target }}.sh"' in config_text
+    assert 'submit_command = ["qsub", "-terse"]' in config_text
+    assert "Scheduler: sge" in result.output
+    assert "Warning: qsub was not found on PATH" in result.output
+
+
+def test_init_rejects_unknown_scheduler(tmp_path: Path) -> None:
+    project_dir = tmp_path / "bad-scheduler-project"
+
+    result = runner.invoke(app, ["init", str(project_dir), "--scheduler", "slurm"])
+
+    assert result.exit_code == 2
+    assert "Scheduler must be one of: auto, none, sge." in result.output
+    assert not project_dir.exists()
 
 
 def test_init_make_dirs_materializes_default_layout(tmp_path: Path) -> None:

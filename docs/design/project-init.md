@@ -13,10 +13,12 @@ an execution command.
 The command should look like:
 
 ```bash
-bidsflow init [DIRECTORY]
+bidsflow init [DIRECTORY] [--scheduler auto|none|sge]
 ```
 
 The directory argument should be positional and default to `.`.
+`--scheduler auto` is the default and is resolved during initialization;
+`auto` itself is not written into `bidsflow.toml`.
 
 ## 3. Initial Responsibilities
 
@@ -25,6 +27,8 @@ The first implementation of `init` should:
 - create the target directory if needed
 - write a minimal editable config file with short review comments that
   point the user to the most likely fields to adjust
+- scaffold an explicit `[execution]` scheduler choice without generating
+  scheduler scripts
 - optionally materialize the default directory layout when the user
   explicitly requests it
 
@@ -48,16 +52,19 @@ The first option set should stay small:
 - `--name`
 - `--force`
 - `--make-dirs`
+- `--scheduler auto|none|sge`
 
 These cover the main scaffold customizations without forcing early
-decisions about execution internals.
+decisions about execution internals. The scheduler option only records
+coarse project intent; it does not submit jobs or create scheduler
+templates.
 
 ## 5. What `init` Should Not Do
 
 `init` should not:
 
 - choose backend defaults
-- choose scheduler defaults
+- generate scheduler script templates
 - generate tool-specific configuration
 - generate heuristic code
 - eagerly materialize layout directories unless the user asked for it
@@ -76,6 +83,7 @@ The initial generated config should stay minimal:
 # Review before first use:
 # - adjust [project].name if you want a clearer project label
 # - adjust [paths] if your project layout differs from this scaffold
+# - review [execution] if you use a scheduler such as SGE
 # - keep or adjust [heudiconv].heuristic before running HeuDiConv
 # - uncomment [heudiconv].launcher if you need a wrapper or Singularity launcher
 # - optionally configure [sources] when source directory names map cleanly to final labels
@@ -91,6 +99,13 @@ derivatives_root = "derivatives"
 work_root = "work"
 logs_root = "logs"
 state_root = "state"
+
+[execution]
+scheduler = "none"
+
+# Uncomment and configure these when you want scheduled execution.
+# scheduler_template = "code/bidsflow/{{ scheduler }}/{{ target }}.sh"
+# submit_command = ["qsub", "-terse"]
 
 [heudiconv]
 # Expected project-owned heuristic path. The file may not exist until draft generation runs.
@@ -110,8 +125,21 @@ heuristic = "code/heudiconv/heuristic.py"
 # command = ["python", "code/bidsflow/derive_labels.py"]
 ```
 
-This is enough to anchor project layout without prematurely encoding
-execution or adapter defaults.
+When `--scheduler auto` detects `qsub`, or when `--scheduler sge` is
+selected explicitly, the same scaffold writes active SGE settings:
+
+```toml
+[execution]
+scheduler = "sge"
+scheduler_template = "code/bidsflow/{{ scheduler }}/{{ target }}.sh"
+submit_command = ["qsub", "-terse"]
+```
+
+For now, `auto` only detects SGE through `qsub`. Extending auto-detection
+to other schedulers is a planned future task.
+
+This is enough to anchor project layout and scheduler intent without
+prematurely encoding execution, scheduler templates, or adapter defaults.
 
 For the full config reference, including parameter meanings and default
 value rationale, see [config.md](config.md).
@@ -126,6 +154,8 @@ bidsflow init .
 bidsflow init /data/project --name "TJNU camp project"
 bidsflow init /data/project --make-dirs
 bidsflow init /data/project --force
+bidsflow init /data/project --scheduler none
+bidsflow init /data/project --scheduler sge
 ```
 
 ## 8. Summary

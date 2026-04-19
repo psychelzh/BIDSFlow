@@ -47,7 +47,7 @@ deferred from the first rebuilt CLI.
 ## Current Implemented Slice
 
 ```bash
-bidsflow init [DIRECTORY]
+bidsflow init [DIRECTORY] [--scheduler auto|none|sge]
 bidsflow sources [--reset] [--dry-run]
 bidsflow heudiconv --draft <sample-path>... [--reset] [--dry-run]
 bidsflow heudiconv [--dry-run]
@@ -127,18 +127,24 @@ It should:
 
 - accept a positional target directory with `.` as the default
 - write a minimal editable config file with short review comments
+- scaffold an explicit `[execution]` scheduler choice
 - optionally materialize the default layout directories when
   `--make-dirs` is requested
+
+`--scheduler auto` is the default and currently only checks whether
+`qsub` is available. If SGE is detected, `init` writes active SGE
+settings; otherwise it writes `scheduler = "none"` and leaves scheduler
+template settings commented.
 
 It should not:
 
 - choose backend defaults
-- choose scheduler defaults
+- generate scheduler script templates
 - generate tool-specific configuration
 - perform source scanning or execution
 
-The initial option set should stay narrow: `--name`, `--force`, and
-`--make-dirs` are enough for the first pass.
+The initial option set stays narrow: `--name`, `--force`,
+`--make-dirs`, and `--scheduler`.
 
 ## Repository State
 

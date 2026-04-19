@@ -122,7 +122,7 @@ heuristic = "code/heudiconv/heuristic.py"
 # pattern = "SUB{subject}_SES{session}"
 # command receives source_name as its last argument, runs from project_root,
 # and must print one line (subject_label) or two lines (subject_label, session_label).
-# command = ["python", "code/bidsflow/derive_labels.py"]
+# command = ["python", "code/heudiconv/derive_labels.py"]
 ```
 
 When `--scheduler auto` detects `qsub`, or when `--scheduler sge` is

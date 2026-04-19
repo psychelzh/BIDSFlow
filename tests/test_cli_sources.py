@@ -175,7 +175,7 @@ def test_sources_applies_configured_command(tmp_path: Path) -> None:
     init_result = runner.invoke(app, ["init", str(project_dir)])
     assert init_result.exit_code == 0, init_result.output
 
-    command_script = project_dir / "code" / "bidsflow" / "derive_labels.py"
+    command_script = project_dir / "code" / "heudiconv" / "derive_labels.py"
     command_script.parent.mkdir(parents=True, exist_ok=True)
     command_script.write_text(
         "\n".join(
@@ -202,7 +202,7 @@ def test_sources_applies_configured_command(tmp_path: Path) -> None:
         config_path,
         [
             "[sources]",
-            f'command = ["{python_executable}", "code/bidsflow/derive_labels.py"]',
+            f'command = ["{python_executable}", "code/heudiconv/derive_labels.py"]',
         ],
     )
 
@@ -233,7 +233,7 @@ def test_sources_reports_collisions(tmp_path: Path) -> None:
     assert init_result.exit_code == 0, init_result.output
 
     config_path = project_dir / "bidsflow.toml"
-    command_script = project_dir / "code" / "bidsflow" / "derive_collision_labels.py"
+    command_script = project_dir / "code" / "heudiconv" / "derive_collision_labels.py"
     command_script.parent.mkdir(parents=True, exist_ok=True)
     command_script.write_text(
         "\n".join(
@@ -252,7 +252,7 @@ def test_sources_reports_collisions(tmp_path: Path) -> None:
         config_path,
         [
             "[sources]",
-            f'command = ["{python_executable}", "code/bidsflow/derive_collision_labels.py"]',
+            f'command = ["{python_executable}", "code/heudiconv/derive_collision_labels.py"]',
         ],
     )
 
@@ -278,7 +278,7 @@ def test_sources_rejects_command_with_more_than_two_lines(tmp_path: Path) -> Non
     assert init_result.exit_code == 0, init_result.output
 
     config_path = project_dir / "bidsflow.toml"
-    command_script = project_dir / "code" / "bidsflow" / "derive_too_many_lines.py"
+    command_script = project_dir / "code" / "heudiconv" / "derive_too_many_lines.py"
     command_script.parent.mkdir(parents=True, exist_ok=True)
     command_script.write_text(
         "\n".join(
@@ -298,7 +298,7 @@ def test_sources_rejects_command_with_more_than_two_lines(tmp_path: Path) -> Non
         config_path,
         [
             "[sources]",
-            f'command = ["{python_executable}", "code/bidsflow/derive_too_many_lines.py"]',
+            f'command = ["{python_executable}", "code/heudiconv/derive_too_many_lines.py"]',
         ],
     )
 
@@ -376,7 +376,7 @@ def test_sources_rejects_mutually_exclusive_generation_config(tmp_path: Path) ->
         [
             "[sources]",
             'pattern = "SUB{subject}"',
-            'command = ["python", "code/bidsflow/derive_labels.py"]',
+            'command = ["python", "code/heudiconv/derive_labels.py"]',
         ],
     )
 

@@ -88,7 +88,7 @@ heuristic = "code/heudiconv/heuristic.py"
 # pattern = "SUB{subject}_SES{session}"
 # command receives source_name as its last argument, runs from project_root,
 # and must print one line (subject_label) or two lines (subject_label, session_label).
-# command = ["python", "code/bidsflow/derive_labels.py"]
+# command = ["python", "code/heudiconv/derive_labels.py"]
 ```
 
 ## 3. Section-by-section reference
@@ -539,7 +539,7 @@ Meaning:
 
 Likely config shape:
 
-- `[sources].command = ["python", "code/bidsflow/derive_labels.py"]`
+- `[sources].command = ["python", "code/heudiconv/derive_labels.py"]`
 
 Why this may belong in config:
 

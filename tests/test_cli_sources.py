@@ -153,7 +153,13 @@ def test_heudiconv_init_writes_sge_scheduler_script(tmp_path: Path) -> None:
     assert scheduler_script.is_file()
     script_text = scheduler_script.read_text(encoding="utf-8")
     assert "#$ -N {{ job_name }}" in script_text
+    assert "#$ -j y" in script_text
+    assert "#$ -o {{ unit_log_path }}" in script_text
+    assert "# #$ -q all.q" in script_text
+    assert script_text.index("# #$ -q all.q") < script_text.index("set -uo pipefail")
     assert "Site-specific environment setup goes here." in script_text
+    assert "stdout_path" not in script_text
+    assert "stderr_path" not in script_text
     assert "{{ command }}" in script_text
     assert f"Scheduler script: {scheduler_script} (created)" in result.output
 

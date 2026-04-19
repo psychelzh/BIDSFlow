@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
+# BIDSFlow renders {{ ... }} placeholders once per HeuDiConv unit.
+# Scheduler stdout/stderr is merged into {{ unit_log_path }},
+# which is also recorded in state/heudiconv/run.tsv.
+
 #$ -S /bin/bash
 #$ -cwd
 #$ -N {{ job_name }}
-#$ -o {{ stdout_path }}
-#$ -e {{ stderr_path }}
-
-set -uo pipefail
+#$ -j y
+#$ -o {{ unit_log_path }}
 
 # Site-specific scheduler settings can be enabled here.
-# Examples:
+# Uncomment and edit these for your cluster if needed.
 # #$ -q all.q
 # #$ -pe smp 1
 # #$ -l h_rt=04:00:00
+
+set -uo pipefail
 
 # Site-specific environment setup goes here.
 # Examples:

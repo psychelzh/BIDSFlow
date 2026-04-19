@@ -1,4 +1,0 @@
-interface:
-  display_name: "SGE Cluster Runner"
-  short_description: "Design future SGE submission and state tracking"
-  default_prompt: "Use $cluster-runner-sge to design or reintroduce SGE submission, resources, and job tracking below the task and target model."

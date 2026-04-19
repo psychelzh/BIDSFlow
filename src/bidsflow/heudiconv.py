@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 import csv
 import hashlib
+from importlib import resources
 import json
 import os
 from pathlib import Path
@@ -98,6 +99,33 @@ class SourcesResult:
 
 
 class SourcesError(Exception):
+    pass
+
+
+@dataclass(frozen=True)
+class InitPlan:
+    sources_plan: SourcesPlan
+    code_root: Path
+    heuristic_parent: Path
+    scheduler: str
+    scheduler_script_path: Path | None
+    scheduler_script_content: str | None
+
+
+@dataclass(frozen=True)
+class InitResult:
+    sources_path: Path
+    sources_state_path: Path
+    entries: tuple[SourcesEntry, ...]
+    sources_action: str
+    code_root: Path
+    heuristic_parent: Path
+    scheduler: str
+    scheduler_script_path: Path | None
+    scheduler_script_action: str
+
+
+class HeudiconvInitError(Exception):
     pass
 
 
@@ -409,17 +437,78 @@ def run_sources(context: ProjectContext, plan: SourcesPlan, reset: bool) -> Sour
     )
 
 
+def plan_heudiconv_init(context: ProjectContext) -> InitPlan:
+    sources_plan = plan_sources(context)
+    scheduler = context.execution.scheduler
+    scheduler_script_path: Path | None = None
+    scheduler_script_content: str | None = None
+
+    if scheduler == "sge":
+        scheduler_script_path = _resolve_scheduler_script_path(context, target="heudiconv")
+        scheduler_script_content = _render_sge_heudiconv_script()
+    elif scheduler != "none":
+        raise HeudiconvInitError(f"Unsupported scheduler for HeuDiConv init: {scheduler}")
+
+    return InitPlan(
+        sources_plan=sources_plan,
+        code_root=context.project_root / "code" / "heudiconv",
+        heuristic_parent=context.heudiconv.heuristic.parent,
+        scheduler=scheduler,
+        scheduler_script_path=scheduler_script_path,
+        scheduler_script_content=scheduler_script_content,
+    )
+
+
+def run_heudiconv_init(context: ProjectContext, plan: InitPlan, force: bool) -> InitResult:
+    sources_exist = plan.sources_plan.sources_path.exists() or plan.sources_plan.sources_state_path.exists()
+    if sources_exist and not force:
+        sources_action = "kept"
+    else:
+        run_sources(context, plan.sources_plan, reset=force)
+        sources_action = "overwritten" if sources_exist else "created"
+
+    plan.code_root.mkdir(parents=True, exist_ok=True)
+    plan.heuristic_parent.mkdir(parents=True, exist_ok=True)
+
+    scheduler_script_action = "not configured"
+    if plan.scheduler_script_path is not None and plan.scheduler_script_content is not None:
+        _ensure_project_owned_path(context.project_root, plan.scheduler_script_path)
+        scheduler_script_exists = plan.scheduler_script_path.exists()
+        if scheduler_script_exists and not force:
+            scheduler_script_action = "kept"
+        else:
+            plan.scheduler_script_path.parent.mkdir(parents=True, exist_ok=True)
+            plan.scheduler_script_path.write_text(
+                plan.scheduler_script_content,
+                encoding="utf-8",
+                newline="\n",
+            )
+            scheduler_script_action = "overwritten" if scheduler_script_exists else "created"
+
+    return InitResult(
+        sources_path=plan.sources_plan.sources_path,
+        sources_state_path=plan.sources_plan.sources_state_path,
+        entries=plan.sources_plan.entries,
+        sources_action=sources_action,
+        code_root=plan.code_root,
+        heuristic_parent=plan.heuristic_parent,
+        scheduler=plan.scheduler,
+        scheduler_script_path=plan.scheduler_script_path,
+        scheduler_script_action=scheduler_script_action,
+    )
+
+
 def plan_heudiconv_run(context: ProjectContext) -> RunPlan:
     sources_path = context.paths.state_root / "sources.tsv"
     if not sources_path.exists():
         raise HeudiconvRunError(
-            f"BIDSFlow sources table does not exist: {sources_path}. Run `bidsflow sources` first."
+            f"BIDSFlow sources table does not exist: {sources_path}. Run `bidsflow heudiconv init` first."
         )
 
     heuristic_path = context.heudiconv.heuristic
     if not heuristic_path.exists():
         raise HeudiconvRunError(
-            f"HeuDiConv heuristic does not exist: {heuristic_path}. Run `bidsflow heudiconv --draft <sample-path>` or create the heuristic first."
+            f"HeuDiConv heuristic does not exist: {heuristic_path}. Run `bidsflow heudiconv draft <sample-path>` or create the heuristic first."
         )
     if not heuristic_path.is_file():
         raise HeudiconvRunError(
@@ -611,6 +700,46 @@ def run_heudiconv(context: ProjectContext, plan: RunPlan) -> RunResult:
 
 def format_command(argv: tuple[str, ...]) -> str:
     return subprocess.list2cmdline(list(argv))
+
+
+def _resolve_scheduler_script_path(context: ProjectContext, target: str) -> Path:
+    scheduler_template = context.execution.scheduler_template
+    if scheduler_template is None:
+        raise HeudiconvInitError(
+            f"[execution].scheduler_template is required when scheduler is {context.execution.scheduler!r}."
+        )
+
+    rendered = (
+        scheduler_template.replace("{{ scheduler }}", context.execution.scheduler)
+        .replace("{{ target }}", target)
+    )
+    if "{{" in rendered or "}}" in rendered:
+        raise HeudiconvInitError(
+            "[execution].scheduler_template currently supports only "
+            "{{ scheduler }} and {{ target }} placeholders."
+        )
+
+    candidate = Path(rendered)
+    if candidate.is_absolute():
+        return candidate.resolve()
+    return (context.project_root / candidate).resolve()
+
+
+def _render_sge_heudiconv_script() -> str:
+    return (
+        resources.files("bidsflow")
+        .joinpath("templates", "sge", "heudiconv.sh.template")
+        .read_text(encoding="utf-8")
+    )
+
+
+def _ensure_project_owned_path(project_root: Path, path: Path) -> None:
+    resolved_root = project_root.resolve()
+    resolved_path = path.resolve()
+    if not resolved_path.is_relative_to(resolved_root):
+        raise HeudiconvInitError(
+            f"Refusing to write HeuDiConv init file outside the project root: {resolved_path}"
+        )
 
 
 def _compile_sources_pattern(pattern: str) -> re.Pattern[str]:
@@ -1206,7 +1335,7 @@ def _guard_sources_reset_requirement(plan: SourcesPlan, reset: bool) -> None:
         return
     if plan.sources_path.exists() or plan.sources_state_path.exists():
         raise SourcesError(
-            "Existing BIDSFlow sources state was found. Use --reset to regenerate it."
+            "Existing BIDSFlow sources state was found. Use --force to regenerate it."
         )
 
 
@@ -1228,7 +1357,7 @@ def _guard_draft_reset_requirement(plan: DraftPlan, reset: bool) -> None:
         return
     if plan.draft_state_path.exists() or plan.heudiconv_state_path.exists():
         raise HeudiconvDraftError(
-            "Existing HeuDiConv draft state was found. Use --reset to regenerate it."
+            "Existing HeuDiConv draft state was found. Use --force to regenerate it."
         )
 
 

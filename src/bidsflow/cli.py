@@ -8,16 +8,17 @@ import typer
 
 from .heudiconv import (
     HeudiconvDraftError,
+    HeudiconvInitError,
     HeudiconvRunError,
     SourcesError,
     format_command,
     list_sources_review_issues,
     plan_draft,
+    plan_heudiconv_init,
     plan_heudiconv_run,
-    plan_sources,
     run_draft,
     run_heudiconv,
-    run_sources,
+    run_heudiconv_init,
     summarize_sources_entries,
 )
 from .project import find_project_config, load_project_context
@@ -26,6 +27,11 @@ app = typer.Typer(
     help="BIDSFlow: a task-first CLI for BIDS workflow logistics.",
     no_args_is_help=True,
 )
+heudiconv_app = typer.Typer(
+    help="Manage HeuDiConv preparation and conversion.",
+    invoke_without_command=True,
+)
+app.add_typer(heudiconv_app, name="heudiconv")
 DEFAULT_LAYOUT_DIRECTORIES = (
     Path("sourcedata"),
     Path("sourcedata") / "raw",
@@ -171,66 +177,96 @@ def init(
         typer.echo(scheduler_warning)
 
 
-@app.command("sources")
-def sources(
-    reset: bool = typer.Option(
+@heudiconv_app.callback(invoke_without_command=True)
+def heudiconv(
+    ctx: typer.Context,
+    dry_run: bool = typer.Option(
         False,
-        "--reset",
-        help="Regenerate the sources table after clearing prior sources state.",
+        "--dry-run",
+        help="Show planned conversion commands and outputs without running HeuDiConv.",
+    ),
+) -> None:
+    """Run managed HeuDiConv conversion when no subcommand is provided."""
+    if ctx.invoked_subcommand is not None:
+        return
+    _run_heudiconv_default(dry_run=dry_run)
+
+
+@heudiconv_app.command("init")
+def heudiconv_init(
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Overwrite HeuDiConv init files such as sources.tsv and scheduler script.",
+    ),
+) -> None:
+    """Initialize HeuDiConv support files."""
+    _run_heudiconv_init(force=force)
+
+
+@heudiconv_app.command("draft")
+def heudiconv_draft(
+    sample_paths: list[Path] = typer.Argument(
+        ...,
+        exists=False,
+        help="Representative sample paths used to generate a draft heuristic.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Overwrite existing HeuDiConv draft outputs.",
     ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
-        help="Show the planned sources outputs without writing files.",
+        help="Show planned draft commands and outputs without running HeuDiConv.",
     ),
 ) -> None:
-    """Enumerate source_root into a reviewable sources table."""
+    """Generate a draft HeuDiConv heuristic from representative sample paths."""
+    _run_heudiconv_draft(sample_paths, force=force, dry_run=dry_run)
+
+
+def _run_heudiconv_init(
+    *,
+    force: bool,
+) -> None:
     try:
         config_path = find_project_config(Path.cwd())
         context = load_project_context(config_path)
-        plan = plan_sources(context)
-    except (SourcesError, ValueError) as exc:
+        plan = plan_heudiconv_init(context)
+        result = run_heudiconv_init(context, plan, force=force)
+    except (HeudiconvInitError, SourcesError, ValueError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
 
-    if dry_run:
-        typer.echo("Planned BIDSFlow sources scan.")
-        typer.echo(f"Config: {config_path}")
-        typer.echo(f"Source root: {plan.source_root}")
-        typer.echo(f"Entries discovered: {len(plan.entries)}")
-        typer.echo(f"Sources: {plan.sources_path}")
-        typer.echo(f"State: {plan.sources_state_path}")
-        typer.echo("Links: not created by sources; heudiconv will materialize temporary links if needed.")
-        if plan.pattern is not None:
-            typer.echo(f"Label generation: pattern={plan.pattern!r}")
-        elif plan.command is not None:
-            typer.echo(f"Label generation: command={format_command(plan.command)}")
-            typer.echo(
-                "Command contract: source_name is passed as the last argv item; "
-                "cwd is project_root; stdout line 1 is subject_label; "
-                "stdout line 2 is optional session_label."
-            )
-        else:
-            typer.echo("Label generation: no pattern or command configured; labels will be left blank.")
-        return
+    typer.echo("Initialized HeuDiConv support files.")
+    typer.echo(f"Config: {config_path}")
+    typer.echo(f"Sources discovered: {len(result.entries)}")
+    typer.echo(f"Sources table: {result.sources_path} ({result.sources_action})")
+    typer.echo(f"Sources metadata: {result.sources_state_path} ({result.sources_action})")
+    typer.echo(f"HeuDiConv code root: {result.code_root}")
+    if result.heuristic_parent != result.code_root:
+        typer.echo(f"Heuristic directory: {result.heuristic_parent}")
+    typer.echo(f"Scheduler: {result.scheduler}")
+    if result.scheduler_script_path is None:
+        typer.echo("Scheduler script: not generated")
+    else:
+        typer.echo(
+            f"Scheduler script: {result.scheduler_script_path} ({result.scheduler_script_action})"
+        )
 
-    try:
-        result = run_sources(context, plan, reset=reset)
-    except SourcesError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=2) from exc
-
-    typer.echo("Wrote BIDSFlow sources table.")
-    typer.echo(f"Entries: {len(result.entries)}")
-    typer.echo(f"Sources: {result.sources_path}")
-    typer.echo(f"State: {result.sources_state_path}")
-    if plan.command is not None:
-        typer.echo(f"Label generation used command: {format_command(plan.command)}")
+    if plan.sources_plan.pattern is not None:
+        typer.echo(f"Label generation: pattern={plan.sources_plan.pattern!r}")
+    elif plan.sources_plan.command is not None:
+        typer.echo(f"Label generation used command: {format_command(plan.sources_plan.command)}")
         typer.echo(
             "Command contract: source_name is passed as the last argv item; "
             "cwd is project_root; stdout line 1 is subject_label; "
             "stdout line 2 is optional session_label."
         )
+    else:
+        typer.echo("Label generation: no pattern or command configured; labels will be left blank.")
+
     typer.echo("Summary:")
     summary = summarize_sources_entries(result.entries)
     for key in ("total", "ready", "needs_review", "collision", "missing_source", "excluded"):
@@ -240,57 +276,21 @@ def sources(
         typer.echo("Review needed:")
         for issue in issues:
             typer.echo(f"- {issue}")
+
     typer.echo(
-        "Next: review sources.tsv, optionally generate a heuristic draft with "
-        "`bidsflow heudiconv --draft <sample-path>`, then run `bidsflow heudiconv`."
+        "Next: review sources.tsv, generate a heuristic with "
+        "`bidsflow heudiconv draft <sample-path>`, then run `bidsflow heudiconv`."
     )
-
-
-@app.command("heudiconv")
-def heudiconv(
-    sample_paths: list[Path] = typer.Argument(
-        None,
-        exists=False,
-        help="Representative sample paths used with --draft.",
-    ),
-    draft: bool = typer.Option(
-        False,
-        "--draft",
-        help="Generate a draft heuristic from representative sample paths instead of executing HeuDiConv.",
-    ),
-    reset: bool = typer.Option(
-        False,
-        "--reset",
-        help="Regenerate draft outputs after clearing prior draft state. Only valid with --draft.",
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help="Show planned commands and outputs without running them.",
-    ),
-) -> None:
-    """Run managed HeuDiConv, or generate a draft heuristic with --draft."""
-    sample_paths = sample_paths or []
-    if draft:
-        _run_heudiconv_draft(sample_paths, reset=reset, dry_run=dry_run)
-        return
-    if sample_paths:
-        typer.echo("Sample paths are only valid with --draft.", err=True)
-        raise typer.Exit(code=2)
-    if reset:
-        typer.echo("--reset is only valid with --draft.", err=True)
-        raise typer.Exit(code=2)
-    _run_heudiconv_default(dry_run=dry_run)
 
 
 def _run_heudiconv_draft(
     sample_paths: list[Path],
     *,
-    reset: bool,
+    force: bool,
     dry_run: bool,
 ) -> None:
     if not sample_paths:
-        typer.echo("--draft requires at least one sample path.", err=True)
+        typer.echo("`bidsflow heudiconv draft` requires at least one sample path.", err=True)
         raise typer.Exit(code=2)
 
     try:
@@ -328,7 +328,7 @@ def _run_heudiconv_draft(
         return
 
     try:
-        result = run_draft(context, plan, reset=reset)
+        result = run_draft(context, plan, reset=force)
     except HeudiconvDraftError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc

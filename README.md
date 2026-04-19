@@ -48,16 +48,16 @@ deferred from the first rebuilt CLI.
 
 ```bash
 bidsflow init [DIRECTORY] [--scheduler auto|none|sge]
-bidsflow sources [--reset] [--dry-run]
-bidsflow heudiconv --draft <sample-path>... [--reset] [--dry-run]
+bidsflow heudiconv init [--force]
+bidsflow heudiconv draft <sample-path>... [--force] [--dry-run]
 bidsflow heudiconv [--dry-run]
 ```
 
-Current `sources` behavior:
+Current `heudiconv init` behavior:
 
-- `sources` scans the immediate child directories under the configured
-  `source_root`
-- `sources` does not call HeuDiConv
+- `heudiconv init` scans the immediate child directories under the
+  configured `source_root`
+- it does not call HeuDiConv
 - by default it writes a review table with empty final label columns
 - if `[sources].pattern` is configured, it derives final
   `subject_label/session_label` directly from `source_name`
@@ -69,8 +69,12 @@ Current `sources` behavior:
 - `state/sources.json` records only overall metadata and artifact paths
 - stdout includes a summary of `ready`, `needs_review`, `collision`,
   `missing_source`, and `excluded` rows
+- it creates HeuDiConv support directories
+- if `[execution].scheduler = "sge"`, it writes
+  `code/bidsflow/sge/heudiconv.sh`
+- existing init-managed files are kept unless `--force` is used
 
-Current `heudiconv --draft` behavior:
+Current `heudiconv draft` behavior:
 
 - a single sample directory is processed as one draft unit with one
   temporary subject label
@@ -91,8 +95,8 @@ Current `heudiconv --draft` behavior:
   artifact paths
 - each draft unit's tool output is written to
   `logs/heudiconv/draft-<attempt>/<unit>.log`
-- `heudiconv --draft` and `sources` are parallel preparation steps;
-  neither is a strict prerequisite for the other
+- `heudiconv draft` and `heudiconv init` solve separate preparation
+  problems; neither is a strict prerequisite for the other
 - in many real projects, draft generation happens first because
   heuristic work must start before final naming is frozen
 
@@ -149,8 +153,8 @@ The initial option set stays narrow: `--name`, `--force`,
 ## Repository State
 
 - `docs/` contains the active design.
-- `src/` and `tests/` now contain `bidsflow init`, `bidsflow sources`,
-  and the first managed `bidsflow heudiconv` slices.
+- `src/` and `tests/` now contain `bidsflow init` and the first managed
+  `bidsflow heudiconv` slices.
 - The rest of the historical implementation remains intentionally
   removed until the execution model is rebuilt cleanly.
 

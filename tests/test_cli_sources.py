@@ -36,7 +36,7 @@ def _append_sources_config(config_path: Path, lines: list[str]) -> None:
     )
 
 
-def test_sources_dry_run_shows_blank_label_behavior(tmp_path: Path) -> None:
+def test_heudiconv_init_shows_blank_label_behavior(tmp_path: Path) -> None:
     project_dir = tmp_path / "demo-project"
 
     init_result = runner.invoke(app, ["init", str(project_dir)])
@@ -46,13 +46,12 @@ def test_sources_dry_run_shows_blank_label_behavior(tmp_path: Path) -> None:
     (source_root / "SUB001_SES01").mkdir(parents=True)
     (source_root / "SUB001_SES02").mkdir(parents=True)
 
-    result = _invoke_from(project_dir, ["sources", "--dry-run"])
+    result = _invoke_from(project_dir, ["heudiconv", "init"])
 
     assert result.exit_code == 0, result.output
-    assert "Planned BIDSFlow sources scan." in result.output
-    assert "Entries discovered: 2" in result.output
+    assert "Initialized HeuDiConv support files." in result.output
+    assert "Sources discovered: 2" in result.output
     assert "Label generation: no pattern or command configured" in result.output
-    assert "Links: not created by sources" in result.output
     assert str(project_dir / "state" / "sources.tsv") in result.output
     assert str(project_dir / "state" / "sources.json") in result.output
 
@@ -67,10 +66,12 @@ def test_sources_writes_blank_review_table_by_default(tmp_path: Path) -> None:
     (source_root / "SUB001_SES01").mkdir(parents=True)
     (source_root / "SUB002_SES03").mkdir(parents=True)
 
-    result = _invoke_from(project_dir, ["sources"])
+    result = _invoke_from(project_dir, ["heudiconv", "init"])
 
     assert result.exit_code == 0, result.output
-    assert "Wrote BIDSFlow sources table." in result.output
+    assert "Initialized HeuDiConv support files." in result.output
+    assert "Sources table:" in result.output
+    assert "(created)" in result.output
     assert "- total: 2" in result.output
     assert "- needs_review: 2" in result.output
     assert "Review needed:" in result.output
@@ -120,7 +121,7 @@ def test_sources_applies_configured_pattern(tmp_path: Path) -> None:
     (source_root / "CAMP_SUB041_VISIT01").mkdir(parents=True)
     (source_root / "CAMP_SUB041_VISIT02").mkdir(parents=True)
 
-    result = _invoke_from(project_dir, ["sources"])
+    result = _invoke_from(project_dir, ["heudiconv", "init"])
 
     assert result.exit_code == 0, result.output
     assert "- ready: 2" in result.output
@@ -134,6 +135,38 @@ def test_sources_applies_configured_pattern(tmp_path: Path) -> None:
     state = json.loads((project_dir / "state" / "sources.json").read_text(encoding="utf-8"))
     assert state["label_generation"]["pattern"] == "CAMP_SUB{subject}_VISIT{session}"
     assert state["label_generation"]["command"] is None
+
+
+def test_heudiconv_init_writes_sge_scheduler_script(tmp_path: Path) -> None:
+    project_dir = tmp_path / "demo-project"
+
+    init_result = runner.invoke(app, ["init", str(project_dir), "--scheduler", "sge"])
+    assert init_result.exit_code == 0, init_result.output
+
+    source_root = project_dir / "sourcedata"
+    (source_root / "SUB001").mkdir(parents=True)
+
+    result = _invoke_from(project_dir, ["heudiconv", "init"])
+
+    assert result.exit_code == 0, result.output
+    scheduler_script = project_dir / "code" / "bidsflow" / "sge" / "heudiconv.sh"
+    assert scheduler_script.is_file()
+    script_text = scheduler_script.read_text(encoding="utf-8")
+    assert "#$ -N {{ job_name }}" in script_text
+    assert "Site-specific environment setup goes here." in script_text
+    assert "{{ command }}" in script_text
+    assert f"Scheduler script: {scheduler_script} (created)" in result.output
+
+    scheduler_script.write_text("custom script\n", encoding="utf-8", newline="\n")
+    kept = _invoke_from(project_dir, ["heudiconv", "init"])
+    assert kept.exit_code == 0, kept.output
+    assert f"Scheduler script: {scheduler_script} (kept)" in kept.output
+    assert scheduler_script.read_text(encoding="utf-8") == "custom script\n"
+
+    overwritten = _invoke_from(project_dir, ["heudiconv", "init", "--force"])
+    assert overwritten.exit_code == 0, overwritten.output
+    assert f"Scheduler script: {scheduler_script} (overwritten)" in overwritten.output
+    assert "{{ command }}" in scheduler_script.read_text(encoding="utf-8")
 
 
 def test_sources_applies_configured_command(tmp_path: Path) -> None:
@@ -177,7 +210,7 @@ def test_sources_applies_configured_command(tmp_path: Path) -> None:
     (source_root / "SITE_SUB001_VISIT01").mkdir(parents=True)
     (source_root / "SITE_SUB001_VISIT02").mkdir(parents=True)
 
-    result = _invoke_from(project_dir, ["sources"])
+    result = _invoke_from(project_dir, ["heudiconv", "init"])
 
     assert result.exit_code == 0, result.output
     assert "Label generation used command:" in result.output
@@ -227,7 +260,7 @@ def test_sources_reports_collisions(tmp_path: Path) -> None:
     (source_root / "SITEA_SUB001_VISIT01").mkdir(parents=True)
     (source_root / "SITEB_SUB001_VISIT01").mkdir(parents=True)
 
-    result = _invoke_from(project_dir, ["sources"])
+    result = _invoke_from(project_dir, ["heudiconv", "init"])
 
     assert result.exit_code == 0, result.output
     assert "- collision: 2" in result.output
@@ -272,13 +305,13 @@ def test_sources_rejects_command_with_more_than_two_lines(tmp_path: Path) -> Non
     source_root = project_dir / "sourcedata"
     (source_root / "SITE_SUB001_VISIT01").mkdir(parents=True)
 
-    result = _invoke_from(project_dir, ["sources"])
+    result = _invoke_from(project_dir, ["heudiconv", "init"])
 
     assert result.exit_code == 2
     assert "returned more than two non-empty output lines" in result.output
 
 
-def test_sources_requires_reset_before_regenerating(tmp_path: Path) -> None:
+def test_heudiconv_init_keeps_existing_sources_without_force(tmp_path: Path) -> None:
     project_dir = tmp_path / "demo-project"
 
     init_result = runner.invoke(app, ["init", str(project_dir)])
@@ -287,15 +320,22 @@ def test_sources_requires_reset_before_regenerating(tmp_path: Path) -> None:
     source_root = project_dir / "sourcedata"
     (source_root / "SUB001_SES01").mkdir(parents=True)
 
-    first = _invoke_from(project_dir, ["sources"])
+    first = _invoke_from(project_dir, ["heudiconv", "init"])
     assert first.exit_code == 0, first.output
 
-    blocked = _invoke_from(project_dir, ["sources"])
-    assert blocked.exit_code == 2
-    assert "Existing BIDSFlow sources state was found" in blocked.output
+    (source_root / "SUB002_SES01").mkdir(parents=True)
 
-    allowed = _invoke_from(project_dir, ["sources", "--reset"])
+    kept = _invoke_from(project_dir, ["heudiconv", "init"])
+    assert kept.exit_code == 0, kept.output
+    assert "(kept)" in kept.output
+    rows = _read_sources_rows(project_dir / "state" / "sources.tsv")
+    assert [row["source_name"] for row in rows] == ["SUB001_SES01"]
+
+    allowed = _invoke_from(project_dir, ["heudiconv", "init", "--force"])
     assert allowed.exit_code == 0, allowed.output
+    assert "(overwritten)" in allowed.output
+    rows = _read_sources_rows(project_dir / "state" / "sources.tsv")
+    assert [row["source_name"] for row in rows] == ["SUB001_SES01", "SUB002_SES01"]
 
 
 def test_sources_uses_configured_source_root(tmp_path: Path) -> None:
@@ -317,7 +357,7 @@ def test_sources_uses_configured_source_root(tmp_path: Path) -> None:
     source_root = project_dir / "incoming"
     (source_root / "SUB010_SES01").mkdir(parents=True)
 
-    result = _invoke_from(project_dir, ["sources"])
+    result = _invoke_from(project_dir, ["heudiconv", "init"])
 
     assert result.exit_code == 0, result.output
     state = json.loads((project_dir / "state" / "sources.json").read_text(encoding="utf-8"))
@@ -340,8 +380,7 @@ def test_sources_rejects_mutually_exclusive_generation_config(tmp_path: Path) ->
         ],
     )
 
-    result = _invoke_from(project_dir, ["sources"])
+    result = _invoke_from(project_dir, ["heudiconv", "init"])
 
     assert result.exit_code == 2
     assert "may define pattern or command, but not both" in result.output
-

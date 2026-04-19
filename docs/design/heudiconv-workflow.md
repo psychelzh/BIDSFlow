@@ -24,15 +24,15 @@ Source notes:
 The current codebase implements three public actions:
 
 ```bash
-bidsflow sources [--reset] [--dry-run]
-bidsflow heudiconv --draft <sample-path>... [--reset] [--dry-run]
+bidsflow heudiconv init [--force]
+bidsflow heudiconv draft <sample-path>... [--force] [--dry-run]
 bidsflow heudiconv [--dry-run]
 ```
 
-### 2.1 `sources`
+### 2.1 `heudiconv init`
 
-`bidsflow sources` is a project source-table command, not a HeuDiConv
-tool action.
+`bidsflow heudiconv init` prepares HeuDiConv support files without
+calling HeuDiConv.
 
 Current behavior:
 
@@ -45,14 +45,19 @@ Current behavior:
 - calls `[sources].command` with `source_name` when configured
 - recomputes and reports `ready`, `needs_review`, `collision`,
   `missing_source`, and `excluded` status counts
+- creates HeuDiConv support directories such as `code/heudiconv/`
+- if `[execution].scheduler = "sge"`, writes the scheduler script to the
+  configured scheduler script path, currently
+  `code/bidsflow/sge/heudiconv.sh`
+- keeps existing init-managed files unless `--force` is used
 
 `sources.tsv` is the durable table that users review and edit. The JSON
 state file only records metadata such as the command result, paths, and
 summary counts.
 
-### 2.2 `heudiconv --draft`
+### 2.2 `heudiconv draft`
 
-`bidsflow heudiconv --draft` prepares heuristic starter material from
+`bidsflow heudiconv draft` prepares heuristic starter material from
 one or more representative sample directories.
 
 Current behavior:
@@ -125,12 +130,15 @@ behavior that users may need to inspect.
 
 ## 4. Relationship between preparation actions
 
-`sources` and `heudiconv --draft` solve different preparation problems.
+`heudiconv init` and `heudiconv draft` solve different preparation
+problems.
 
-`sources` standardizes dataset-wide source identity and final label
-handoff. It is useful even if a project already has a working heuristic.
+`heudiconv init` standardizes dataset-wide source identity and final
+label handoff. It is useful even if a project already has a working
+heuristic. It also materializes target support files such as scheduler
+scripts.
 
-`heudiconv --draft` produces sample-level heuristic starter material. It
+`heudiconv draft` produces sample-level heuristic starter material. It
 is useful even before final subject/session naming is frozen.
 
 Neither action is a strict prerequisite for the other. The managed
@@ -187,6 +195,10 @@ Current config concepts:
   labels
 - `[heudiconv].heuristic`: project-owned heuristic path
 - `[heudiconv].launcher`: optional launcher prefix
+- `[execution].scheduler`: optional scheduler family selected during
+  `bidsflow init`
+- `[execution].scheduler_template`: path template for the HeuDiConv
+  scheduler script
 
 `[sources].pattern` and `[sources].command` are mutually exclusive.
 Both operate on `source_name`, not on full filesystem paths.
@@ -197,7 +209,6 @@ Not implemented yet:
 
 - persisted `BIDSLayout` database construction after successful runs
 - additional identity-mapping helpers beyond `sources.tsv`
-- optional HeuDiConv maintenance actions such as `populate-templates`
 - cluster submission and scheduler observation
 - automatic participants bookkeeping beyond what HeuDiConv already
   handles

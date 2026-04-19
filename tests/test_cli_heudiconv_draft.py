@@ -41,7 +41,7 @@ def test_heudiconv_draft_dry_run_single_path_uses_generated_subject(tmp_path: Pa
     sample_dir = project_dir / "sourcedata" / "sample-ses-01"
     sample_dir.mkdir(parents=True)
 
-    result = _invoke_from(project_dir, ["heudiconv", "--draft", "sample-ses-01", "--dry-run"])
+    result = _invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01", "--dry-run"])
 
     assert result.exit_code == 0, result.output
     assert "single-directory draft" in result.output
@@ -66,7 +66,7 @@ def test_heudiconv_draft_dry_run_multiple_paths_shows_session_split(tmp_path: Pa
 
     result = _invoke_from(
         project_dir,
-        ["heudiconv", "--draft", "sample-ses-01", "sample-ses-02", "--dry-run"],
+        ["heudiconv", "draft", "sample-ses-01", "sample-ses-02", "--dry-run"],
     )
 
     assert result.exit_code == 0, result.output
@@ -98,7 +98,7 @@ def test_heudiconv_draft_dry_run_uses_configured_heuristic_path(tmp_path: Path) 
     sample_dir = project_dir / "sourcedata" / "sample-ses-01"
     sample_dir.mkdir(parents=True)
 
-    result = _invoke_from(project_dir, ["heudiconv", "--draft", "sample-ses-01", "--dry-run"])
+    result = _invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01", "--dry-run"])
 
     assert result.exit_code == 0, result.output
     assert str(project_dir / "code" / "custom" / "heuristic.py") in result.output
@@ -147,7 +147,7 @@ def test_heudiconv_draft_single_path_uses_generated_subject(tmp_path: Path) -> N
     sample_dir = project_dir / "sourcedata" / "sample-ses-01"
     sample_dir.mkdir(parents=True)
 
-    result = _invoke_from(project_dir, ["heudiconv", "--draft", "sample-ses-01"])
+    result = _invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01"])
 
     assert result.exit_code == 0, result.output
     assert "Draft samples: 1" in result.output
@@ -226,7 +226,7 @@ def test_heudiconv_draft_multiple_paths_split_into_session_units(tmp_path: Path)
 
     result = _invoke_from(
         project_dir,
-        ["heudiconv", "--draft", "sample-ses-01", "sample-ses-02"],
+        ["heudiconv", "draft", "sample-ses-01", "sample-ses-02"],
     )
 
     assert result.exit_code == 0, result.output
@@ -297,14 +297,14 @@ def test_heudiconv_draft_requires_reset_before_regenerating(tmp_path: Path) -> N
     sample_dir = project_dir / "sourcedata" / "sample-ses-01"
     sample_dir.mkdir(parents=True)
 
-    first = _invoke_from(project_dir, ["heudiconv", "--draft", "sample-ses-01"])
+    first = _invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01"])
     assert first.exit_code == 0, first.output
 
-    blocked = _invoke_from(project_dir, ["heudiconv", "--draft", "sample-ses-01"])
+    blocked = _invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01"])
     assert blocked.exit_code == 2
     assert "Existing HeuDiConv draft state was found" in blocked.output
 
-    allowed = _invoke_from(project_dir, ["heudiconv", "--draft", "sample-ses-01", "--reset"])
+    allowed = _invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01", "--force"])
     assert allowed.exit_code == 0, allowed.output
 
 
@@ -320,7 +320,7 @@ def test_heudiconv_draft_rejects_invalid_launcher_config(tmp_path: Path) -> None
     sample_dir = project_dir / "sourcedata" / "sample-ses-01"
     sample_dir.mkdir(parents=True)
 
-    result = _invoke_from(project_dir, ["heudiconv", "--draft", "sample-ses-01", "--dry-run"])
+    result = _invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01", "--dry-run"])
 
     assert result.exit_code == 2
     assert "[heudiconv].launcher must be a non-empty list of strings." in result.output
@@ -336,11 +336,10 @@ def test_heudiconv_draft_rejects_sample_outside_configured_source_root(tmp_path:
     outside_sample_dir = project_dir / "other-data" / "sample-ses-01"
     outside_sample_dir.mkdir(parents=True)
 
-    result = _invoke_from(project_dir, ["heudiconv", "--draft", str(outside_sample_dir), "--dry-run"])
+    result = _invoke_from(project_dir, ["heudiconv", "draft", str(outside_sample_dir), "--dry-run"])
 
     assert result.exit_code == 2
     assert "Sample path must resolve under the configured source root" in result.output
-
 
 
 

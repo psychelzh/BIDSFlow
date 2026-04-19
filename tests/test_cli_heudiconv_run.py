@@ -74,7 +74,7 @@ def test_heudiconv_run_dry_run_shows_summary_and_one_example(tmp_path: Path) -> 
     (project_dir / "sourcedata" / "SUB001_SES01").mkdir(parents=True)
     (project_dir / "sourcedata" / "SUB001_SES02").mkdir(parents=True)
 
-    sources_result = _invoke_from(project_dir, ["sources"])
+    sources_result = _invoke_from(project_dir, ["heudiconv", "init"])
     assert sources_result.exit_code == 0, sources_result.output
 
     heuristic_path = _write_minimal_heuristic(project_dir)
@@ -103,7 +103,7 @@ def test_heudiconv_run_recomputes_sources_status_from_manual_edits(tmp_path: Pat
     config_path = project_dir / "bidsflow.toml"
     (project_dir / "sourcedata" / "SUB001").mkdir(parents=True)
 
-    sources_result = _invoke_from(project_dir, ["sources"])
+    sources_result = _invoke_from(project_dir, ["heudiconv", "init"])
     assert sources_result.exit_code == 0, sources_result.output
 
     sources_path = project_dir / "state" / "sources.tsv"
@@ -172,7 +172,7 @@ def test_heudiconv_run_writes_current_state_and_unit_table(tmp_path: Path) -> No
 
     (project_dir / "sourcedata" / "SUB001_SES01").mkdir(parents=True)
     (project_dir / "sourcedata" / "SUB001_SES02").mkdir(parents=True)
-    sources_result = _invoke_from(project_dir, ["sources"])
+    sources_result = _invoke_from(project_dir, ["heudiconv", "init"])
     assert sources_result.exit_code == 0, sources_result.output
 
     _write_minimal_heuristic(project_dir)
@@ -251,7 +251,7 @@ def test_heudiconv_run_rejects_sources_that_still_needs_review(tmp_path: Path) -
     assert init_result.exit_code == 0, init_result.output
 
     (project_dir / "sourcedata" / "SUB001_SES01").mkdir(parents=True)
-    sources_result = _invoke_from(project_dir, ["sources"])
+    sources_result = _invoke_from(project_dir, ["heudiconv", "init"])
     assert sources_result.exit_code == 0, sources_result.output
 
     _write_minimal_heuristic(project_dir)
@@ -277,7 +277,7 @@ def test_heudiconv_run_overwrites_current_state_and_keeps_unit_logs(tmp_path: Pa
     )
 
     (project_dir / "sourcedata" / "SUB001_SES01").mkdir(parents=True)
-    sources_result = _invoke_from(project_dir, ["sources"])
+    sources_result = _invoke_from(project_dir, ["heudiconv", "init"])
     assert sources_result.exit_code == 0, sources_result.output
     _write_minimal_heuristic(project_dir)
 

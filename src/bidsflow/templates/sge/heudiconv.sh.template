@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+#$ -S /bin/bash
+#$ -cwd
+#$ -N {{ job_name }}
+#$ -o {{ stdout_path }}
+#$ -e {{ stderr_path }}
+
+set -uo pipefail
+
+# Site-specific scheduler settings can be enabled here.
+# Examples:
+# #$ -q all.q
+# #$ -pe smp 1
+# #$ -l h_rt=04:00:00
+
+# Site-specific environment setup goes here.
+# Examples:
+# module load heudiconv
+# source ~/miniconda3/etc/profile.d/conda.sh
+# conda activate heudiconv
+
+printf 'BIDSFlow HeuDiConv job\n'
+printf 'Started at: %s\n' "$(date -Is)"
+printf 'Unit: {{ unit_name }}\n'
+printf 'Source: {{ source_name }}\n'
+printf 'Subject: {{ subject_label }}\n'
+printf 'Session: {{ session_label }}\n'
+printf 'Project root: {{ project_root }}\n'
+printf 'Raw BIDS root: {{ raw_bids_root }}\n'
+printf '\n'
+printf 'Command:\n  {{ command_display }}\n'
+printf '\n'
+printf '%s\n' '----- HeuDiConv output -----'
+
+set +e
+{{ command }}
+status=$?
+set -e
+
+printf '%s\n' '----- End HeuDiConv output -----'
+printf 'Finished at: %s\n' "$(date -Is)"
+printf 'Exit status: %s\n' "$status"
+
+exit "$status"

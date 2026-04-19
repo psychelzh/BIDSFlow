@@ -85,7 +85,7 @@ class SourcesPlan:
     source_root: Path
     sources_path: Path
     sources_state_path: Path
-    template: str | None
+    pattern: str | None
     command: tuple[str, ...] | None
     entries: tuple[SourcesEntry, ...]
 
@@ -346,17 +346,17 @@ def plan_sources(
     )
 
     sources_config = context.sources
-    template_pattern: re.Pattern[str] | None
-    if sources_config.template is not None:
-        template_pattern = _compile_sources_template(sources_config.template)
+    source_name_pattern: re.Pattern[str] | None
+    if sources_config.pattern is not None:
+        source_name_pattern = _compile_sources_pattern(sources_config.pattern)
     else:
-        template_pattern = None
+        source_name_pattern = None
 
     entries: list[SourcesEntry] = []
     for candidate in source_units:
-        if template_pattern is not None:
-            subject_label, session_label, notes = _derive_sources_labels_from_template(
-                template_pattern,
+        if source_name_pattern is not None:
+            subject_label, session_label, notes = _derive_sources_labels_from_pattern(
+                source_name_pattern,
                 candidate.name,
             )
         elif sources_config.command is not None:
@@ -385,7 +385,7 @@ def plan_sources(
         source_root=resolved_source_root,
         sources_path=context.paths.state_root / "sources.tsv",
         sources_state_path=context.paths.state_root / "sources.json",
-        template=sources_config.template,
+        pattern=sources_config.pattern,
         command=sources_config.command,
         entries=computed_entries,
     )
@@ -613,48 +613,48 @@ def format_command(argv: tuple[str, ...]) -> str:
     return subprocess.list2cmdline(list(argv))
 
 
-def _compile_sources_template(template: str) -> re.Pattern[str]:
+def _compile_sources_pattern(pattern: str) -> re.Pattern[str]:
     pattern_parts: list[str] = ["^"]
     fields: list[str] = []
 
-    for literal_text, field_name, format_spec, conversion in Formatter().parse(template):
+    for literal_text, field_name, format_spec, conversion in Formatter().parse(pattern):
         pattern_parts.append(re.escape(literal_text))
         if field_name is None:
             continue
         if format_spec or conversion:
             raise SourcesError(
-                "BIDSFlow sources table template does not support format specs or conversions."
+                "BIDSFlow sources pattern does not support format specs or conversions."
             )
         if not field_name.isidentifier():
             raise SourcesError(
-                f"BIDSFlow sources table template field is not a valid identifier: {field_name!r}"
+                f"BIDSFlow sources pattern field is not a valid identifier: {field_name!r}"
             )
         if field_name not in {"subject", "session"}:
             raise SourcesError(
-                "BIDSFlow sources table template only supports {subject} and optional {session}."
+                "BIDSFlow sources pattern only supports {subject} and optional {session}."
             )
         fields.append(field_name)
         pattern_parts.append(f"(?P<{field_name}>.+?)")
 
     if "subject" not in fields:
         raise SourcesError(
-            "BIDSFlow sources table template must include a {subject} field."
+            "BIDSFlow sources pattern must include a {subject} field."
         )
 
     pattern_parts.append("$")
     try:
         return re.compile("".join(pattern_parts))
     except re.error as exc:
-        raise SourcesError(f"Invalid BIDSFlow sources table template: {exc}") from exc
+        raise SourcesError(f"Invalid BIDSFlow sources pattern: {exc}") from exc
 
 
-def _derive_sources_labels_from_template(
-    template_pattern: re.Pattern[str],
+def _derive_sources_labels_from_pattern(
+    source_name_pattern: re.Pattern[str],
     source_name: str,
 ) -> tuple[str, str, str]:
-    match = template_pattern.fullmatch(source_name)
+    match = source_name_pattern.fullmatch(source_name)
     if match is None:
-        return "", "", "sources template did not match source_name"
+        return "", "", "sources pattern did not match source_name"
 
     subject_label = match.groupdict().get("subject", "") or ""
     session_label = match.groupdict().get("session", "") or ""
@@ -1504,7 +1504,7 @@ def _write_sources_state(context: ProjectContext, plan: SourcesPlan) -> None:
             },
         },
         "label_generation": {
-            "template": plan.template,
+            "pattern": plan.pattern,
             "command": list(plan.command) if plan.command is not None else None,
         },
         "entry_count": len(plan.entries),
@@ -1558,4 +1558,3 @@ def _summarize_sources_entries(entries: tuple[SourcesEntry, ...]) -> dict[str, i
     for entry in entries:
         summary[entry.status] = summary.get(entry.status, 0) + 1
     return summary
-

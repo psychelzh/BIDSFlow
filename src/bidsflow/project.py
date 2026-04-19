@@ -14,7 +14,7 @@ class HeudiconvConfig:
 
 @dataclass(frozen=True)
 class SourcesConfig:
-    template: str | None
+    pattern: str | None
     command: tuple[str, ...] | None
 
 
@@ -141,23 +141,23 @@ def _load_heudiconv_config(project_root: Path, heudiconv_section: dict[str, Any]
 def _load_sources_config(
     sources_section: dict[str, Any],
 ) -> SourcesConfig:
-    template = sources_section.get("template")
+    pattern = sources_section.get("pattern")
     command = sources_section.get("command")
 
-    if template is not None and not isinstance(template, str):
-        raise ValueError("[sources].template must be a string.")
+    if pattern is not None and not isinstance(pattern, str):
+        raise ValueError("[sources].pattern must be a string.")
     if command is not None and (
         not isinstance(command, list)
         or not command
         or not all(isinstance(item, str) for item in command)
     ):
         raise ValueError("[sources].command must be a non-empty list of strings.")
-    if template is not None and command is not None:
+    if pattern is not None and command is not None:
         raise ValueError(
-            "[sources] may define template or command, but not both."
+            "[sources] may define pattern or command, but not both."
         )
 
     return SourcesConfig(
-        template=template,
+        pattern=pattern,
         command=tuple(command) if command is not None else None,
     )

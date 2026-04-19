@@ -41,7 +41,7 @@ Current behavior:
 - writes the reviewable truth table to `state/sources.tsv`
 - writes overall metadata to `state/sources.json`
 - leaves final `subject_label/session_label` blank by default
-- derives labels from `[sources].template` when configured
+- derives labels from `[sources].pattern` when configured
 - calls `[sources].command` with `source_name` when configured
 - recomputes and reports `ready`, `needs_review`, `collision`,
   `missing_source`, and `excluded` status counts
@@ -182,13 +182,13 @@ Current config concepts:
 - `[paths].work_root`: transient execution views and work files
 - `[paths].logs_root`: BIDSFlow orchestration logs
 - `[paths].state_root`: BIDSFlow state metadata
-- `[sources].template`: optional source-name-to-label template
+- `[sources].pattern`: optional source-name-to-label pattern
 - `[sources].command`: optional project command that returns final
   labels
 - `[heudiconv].heuristic`: project-owned heuristic path
 - `[heudiconv].launcher`: optional launcher prefix
 
-`[sources].template` and `[sources].command` are mutually exclusive.
+`[sources].pattern` and `[sources].command` are mutually exclusive.
 Both operate on `source_name`, not on full filesystem paths.
 
 ## 8. Future work

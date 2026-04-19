@@ -85,7 +85,7 @@ heuristic = "code/heudiconv/heuristic.py"
 # Optional source label generation. Configure one strategy when directory names
 # can be mapped automatically onto final subject/session labels.
 # [sources]
-# template = "SUB{subject}_SES{session}"
+# pattern = "SUB{subject}_SES{session}"
 # command receives source_name as its last argument, runs from project_root,
 # and must print one line (subject_label) or two lines (subject_label, session_label).
 # command = ["python", "code/bidsflow/derive_labels.py"]
@@ -498,36 +498,36 @@ Current status:
   generated heuristic
 - validated and used by the managed `bidsflow heudiconv` run
 
-### 6.3 Sources template
+### 6.3 Sources pattern
 
 Meaning:
 
-- a project-owned template that derives final `subject_label` and
+- a project-owned source-name pattern that derives final `subject_label` and
   optional `session_label` directly from each `source_name`
 
 Likely config shape:
 
-- `[sources].template = "SUB{subject}_SES{session}"`
+- `[sources].pattern = "SUB{subject}_SES{session}"`
 
 Why this may belong in config:
 
 - source directory naming is usually a project-wide convention
 - keeping it in config lets `sources` generate final labels without
   adding ad hoc command-line flags
-- the template can remain human-readable and versioned with the project
+- the pattern can remain human-readable and versioned with the project
 
 Current status:
 
 - supported now by `bidsflow sources`
-- the template is applied to `source_name`, not to full source paths
+- the pattern is applied to `source_name`, not to full source paths
 - `{subject}` is required and becomes `subject_label`
 - `{session}` is optional and becomes `session_label` when present
-- no other dynamic template fields are supported
+- no other dynamic pattern fields are supported
 
 Source notes:
 
 - This is a BIDSFlow sources design choice inspired by HeuDiConv-style
-  path templates, but applied to source directory names rather than
+  path patterns, but applied to source directory names rather than
   direct DICOM discovery.
 
 ### 6.4 Sources label command
@@ -543,7 +543,7 @@ Likely config shape:
 
 Why this may belong in config:
 
-- complex site-specific naming rules often exceed what a single template
+- complex site-specific naming rules often exceed what a single pattern
   can express
 - a project-owned command keeps those rules versioned and auditable
 - `sources` can stay generic while still supporting custom label logic
@@ -562,7 +562,7 @@ Current status:
 - minimal stdout examples:
   `001`
   `001` + newline + `01`
-- `[sources].template` and `[sources].command`
+- `[sources].pattern` and `[sources].command`
   are mutually exclusive
 
 Source notes:

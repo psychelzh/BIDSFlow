@@ -51,7 +51,7 @@ def test_sources_dry_run_shows_blank_label_behavior(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert "Planned BIDSFlow sources scan." in result.output
     assert "Entries discovered: 2" in result.output
-    assert "Label generation: no template or command configured" in result.output
+    assert "Label generation: no pattern or command configured" in result.output
     assert "Links: not created by sources" in result.output
     assert str(project_dir / "state" / "sources.tsv") in result.output
     assert str(project_dir / "state" / "sources.json") in result.output
@@ -101,7 +101,7 @@ def test_sources_writes_blank_review_table_by_default(tmp_path: Path) -> None:
     assert "entries" not in state
 
 
-def test_sources_applies_configured_template(tmp_path: Path) -> None:
+def test_sources_applies_configured_pattern(tmp_path: Path) -> None:
     project_dir = tmp_path / "demo-project"
 
     init_result = runner.invoke(app, ["init", str(project_dir)])
@@ -112,7 +112,7 @@ def test_sources_applies_configured_template(tmp_path: Path) -> None:
         config_path,
         [
             "[sources]",
-            'template = "CAMP_SUB{subject}_VISIT{session}"',
+            'pattern = "CAMP_SUB{subject}_VISIT{session}"',
         ],
     )
 
@@ -132,7 +132,7 @@ def test_sources_applies_configured_template(tmp_path: Path) -> None:
     assert all(row["status"] == "ready" for row in rows)
 
     state = json.loads((project_dir / "state" / "sources.json").read_text(encoding="utf-8"))
-    assert state["label_generation"]["template"] == "CAMP_SUB{subject}_VISIT{session}"
+    assert state["label_generation"]["pattern"] == "CAMP_SUB{subject}_VISIT{session}"
     assert state["label_generation"]["command"] is None
 
 
@@ -335,7 +335,7 @@ def test_sources_rejects_mutually_exclusive_generation_config(tmp_path: Path) ->
         config_path,
         [
             "[sources]",
-            'template = "SUB{subject}"',
+            'pattern = "SUB{subject}"',
             'command = ["python", "code/bidsflow/derive_labels.py"]',
         ],
     )
@@ -343,6 +343,5 @@ def test_sources_rejects_mutually_exclusive_generation_config(tmp_path: Path) ->
     result = _invoke_from(project_dir, ["sources"])
 
     assert result.exit_code == 2
-    assert "may define template or command, but not both" in result.output
-
+    assert "may define pattern or command, but not both" in result.output
 

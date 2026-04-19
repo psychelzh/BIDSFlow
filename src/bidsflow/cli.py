@@ -201,8 +201,8 @@ def sources(
         typer.echo(f"Sources: {plan.sources_path}")
         typer.echo(f"State: {plan.sources_state_path}")
         typer.echo("Links: not created by sources; heudiconv will materialize temporary links if needed.")
-        if plan.template is not None:
-            typer.echo(f"Label generation: template={plan.template!r}")
+        if plan.pattern is not None:
+            typer.echo(f"Label generation: pattern={plan.pattern!r}")
         elif plan.command is not None:
             typer.echo(f"Label generation: command={format_command(plan.command)}")
             typer.echo(
@@ -211,7 +211,7 @@ def sources(
                 "stdout line 2 is optional session_label."
             )
         else:
-            typer.echo("Label generation: no template or command configured; labels will be left blank.")
+            typer.echo("Label generation: no pattern or command configured; labels will be left blank.")
         return
 
     try:

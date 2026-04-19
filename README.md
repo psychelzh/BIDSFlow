@@ -59,7 +59,7 @@ Current `sources` behavior:
   `source_root`
 - `sources` does not call HeuDiConv
 - by default it writes a review table with empty final label columns
-- if `[sources].template` is configured, it derives final
+- if `[sources].pattern` is configured, it derives final
   `subject_label/session_label` directly from `source_name`
 - if `[sources].command` is configured, it calls that
   project-owned command with `source_name` and expects one stdout line

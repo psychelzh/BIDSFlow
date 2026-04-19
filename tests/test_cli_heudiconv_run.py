@@ -67,7 +67,7 @@ def test_heudiconv_run_dry_run_shows_summary_and_one_example(tmp_path: Path) -> 
         config_path,
         [
             "[sources]",
-            'template = "SUB{subject}_SES{session}"',
+            'pattern = "SUB{subject}_SES{session}"',
         ],
     )
 
@@ -166,7 +166,7 @@ def test_heudiconv_run_writes_current_state_and_unit_table(tmp_path: Path) -> No
         config_path,
         [
             "[sources]",
-            'template = "SUB{subject}_SES{session}"',
+            'pattern = "SUB{subject}_SES{session}"',
         ],
     )
 
@@ -272,7 +272,7 @@ def test_heudiconv_run_overwrites_current_state_and_keeps_unit_logs(tmp_path: Pa
         config_path,
         [
             "[sources]",
-            'template = "SUB{subject}_SES{session}"',
+            'pattern = "SUB{subject}_SES{session}"',
         ],
     )
 
@@ -335,4 +335,3 @@ def test_heudiconv_run_overwrites_current_state_and_keeps_unit_logs(tmp_path: Pa
     assert first_log_dir != second_log_dir
     assert Path(first_rows[0]["log_path"]).is_file()
     assert Path(second_rows[0]["log_path"]).is_file()
-

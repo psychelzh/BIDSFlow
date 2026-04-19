@@ -119,7 +119,7 @@ heuristic = "code/heudiconv/heuristic.py"
 # Optional source label generation. Configure one strategy when directory names
 # can be mapped automatically onto final subject/session labels.
 # [sources]
-# template = "SUB{subject}_SES{session}"
+# pattern = "SUB{subject}_SES{session}"
 # command receives source_name as its last argument, runs from project_root,
 # and must print one line (subject_label) or two lines (subject_label, session_label).
 # command = ["python", "code/bidsflow/derive_labels.py"]

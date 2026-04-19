@@ -365,8 +365,18 @@ def _run_heudiconv_default(
         typer.echo(f"Raw BIDS root: {plan.raw_bids_root}")
         typer.echo(f"Execution view root: {plan.execution_view_root}")
         typer.echo(f"State: {plan.state_path}")
-        typer.echo(f"Units: {plan.units_path}")
-        typer.echo(f"Unit logs: {plan.log_dir}")
+        typer.echo(f"Final units table: {plan.units_path}")
+        typer.echo(f"Logs: {plan.log_dir}")
+        typer.echo(f"Unit status files: {plan.unit_state_dir}")
+        typer.echo(f"Unit claims: {plan.claim_dir}")
+        if plan.sge is not None:
+            typer.echo("Backend: sge")
+            typer.echo(f"Scheduler template: {plan.sge.template_path}")
+            typer.echo(f"Rendered scheduler script: {plan.sge.script_path}")
+            typer.echo(f"Scheduler unit list: {plan.sge.unit_list_path}")
+            typer.echo(f"Scheduler logs: {plan.sge.scheduler_log_dir}")
+        else:
+            typer.echo("Backend: local")
         typer.echo(f"Run units: {len(plan.units)}")
         if plan.units:
             unit = plan.units[0]
@@ -389,12 +399,28 @@ def _run_heudiconv_default(
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
 
-    typer.echo("Completed `bidsflow heudiconv` execution.")
+    if result.status == "submitted":
+        typer.echo("Submitted `bidsflow heudiconv` execution.")
+    elif result.status == "skipped":
+        typer.echo("No runnable `bidsflow heudiconv` units were found.")
+    else:
+        typer.echo("Completed `bidsflow heudiconv` execution.")
     typer.echo(f"Run units: {len(result.unit_results)}")
+    if result.skipped_units:
+        typer.echo(f"Skipped units: {result.skipped_units}")
     typer.echo(f"Raw BIDS root: {result.raw_bids_root}")
     typer.echo(f"State: {result.state_path}")
-    typer.echo(f"Units: {result.units_path}")
-    typer.echo(f"Unit logs: {result.log_dir}")
+    typer.echo(f"Final units table: {result.units_path}")
+    typer.echo(f"Logs: {result.log_dir}")
+    typer.echo(f"Unit status files: {plan.unit_state_dir}")
+    typer.echo(f"Unit claims: {plan.claim_dir}")
+    if result.backend == "sge":
+        typer.echo(f"Scheduler: sge")
+        typer.echo(f"Scheduler job id: {result.scheduler_job_id or '-'}")
+        typer.echo(f"Scheduler script: {result.scheduler_script_path}")
+        if plan.sge is not None:
+            typer.echo(f"Scheduler unit list: {plan.sge.unit_list_path}")
+        typer.echo(f"Scheduler logs: {result.scheduler_log_dir}")
 
 
 if __name__ == "__main__":

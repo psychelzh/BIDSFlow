@@ -153,14 +153,25 @@ def test_heudiconv_init_writes_sge_scheduler_script(tmp_path: Path) -> None:
     assert scheduler_script.is_file()
     script_text = scheduler_script.read_text(encoding="utf-8")
     assert "#$ -N {{ job_name }}" in script_text
+    assert "#$ -t 1-{{ task_count }}" in script_text
     assert "#$ -j y" in script_text
-    assert "#$ -o {{ unit_log_path }}" in script_text
+    assert "#$ -o {{ scheduler_log_dir }}" in script_text
     assert "# #$ -q all.q" in script_text
     assert script_text.index("# #$ -q all.q") < script_text.index("set -uo pipefail")
     assert "Site-specific environment setup goes here." in script_text
+    assert "unit_list_path={{ shell_unit_list_path }}" in script_text
+    assert "SGE_TASK_ID" in script_text
+    assert "unit_row=" in script_text
+    assert "write_unit_status" in script_text
+    assert 'rm -f -- "$claim_path"' in script_text
+    assert "unit_log_path" not in script_text
+    assert "task_table_path" not in script_text
+    assert "task table does not exist" not in script_text
+    assert "SGE job/task:" in script_text
+    assert 'exec >> "$unit_log_path" 2>&1' not in script_text
     assert "stdout_path" not in script_text
     assert "stderr_path" not in script_text
-    assert "{{ command }}" in script_text
+    assert "{{ command }}" not in script_text
     assert f"Scheduler script: {scheduler_script} (created)" in result.output
 
     scheduler_script.write_text("custom script\n", encoding="utf-8", newline="\n")
@@ -172,7 +183,7 @@ def test_heudiconv_init_writes_sge_scheduler_script(tmp_path: Path) -> None:
     overwritten = _invoke_from(project_dir, ["heudiconv", "init", "--force"])
     assert overwritten.exit_code == 0, overwritten.output
     assert f"Scheduler script: {scheduler_script} (overwritten)" in overwritten.output
-    assert "{{ command }}" in scheduler_script.read_text(encoding="utf-8")
+    assert "#$ -t 1-{{ task_count }}" in scheduler_script.read_text(encoding="utf-8")
 
 
 def test_sources_applies_configured_command(tmp_path: Path) -> None:

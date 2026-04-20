@@ -1,6 +1,6 @@
 ---
 name: bids-app-command-builder
-description: Design target-aware adapter command construction for app-backed BIDSFlow targets such as fMRIPrep, MRIQC, XCP-D, QSIPrep, and future BIDS Apps. Use when rebuilding target adapters, mapping future request or config fields to tool arguments, separating target semantics from backend wrapping, or preserving executable provenance in the task-first CLI.
+description: Design target-aware adapter command construction for app-backed BIDSFlow targets such as fMRIPrep, MRIQC, XCP-D, QSIPrep, and future BIDS Apps. Use when rebuilding target adapters, mapping request or config fields to tool arguments, separating target semantics from backend wrapping, or preserving executable provenance.
 ---
 
 # Bids App Command Builder
@@ -13,9 +13,9 @@ without mixing tool semantics, container wrapping, and scheduler logic.
 Start by reading these files:
 
 - `README.md`
-- `docs/design/target-model.md`
-- `docs/design/task-first-cli.md`
-- `docs/design/handoff-contract.md`
+- `src/bidsflow/project.py`
+- `src/bidsflow/heudiconv/`
+- `tests/`
 
 Read `references/tool-mapping.md` before changing target-specific
 command construction.
@@ -42,9 +42,9 @@ Keep the scheduler out of this layer:
 - do not let SLURM resource keys leak into tool argument mapping
 - let the scheduler consume a launch spec produced here
 
-Because the repository is currently design-first, update docs before
-reintroducing implementation assumptions. If the needed target contract
-is still unclear, refine the design docs first.
+Keep user-facing behavior anchored in the CLI, implementation, tests,
+issues, and pull requests. Do not recreate long design documents for
+temporary decisions.
 
 ## Tool-Specific Guidance
 
@@ -78,11 +78,7 @@ When implementing or modifying command builders:
 
 ## Validation
 
-If the work is still docs-only, ensure the target model, CLI wording, and
-handoff assumptions remain consistent.
-
-If implementation has resumed, run the narrowest local checks that cover
-adapter edits.
+Run the narrowest local checks that cover adapter edits.
 
 Do not recreate stage-first assumptions while rebuilding adapters.
 

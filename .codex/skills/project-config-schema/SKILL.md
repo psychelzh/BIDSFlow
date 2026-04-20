@@ -1,6 +1,6 @@
 ---
 name: project-config-schema
-description: Maintain the BIDSFlow project configuration shape across design docs, scaffold expectations, and future implementation. Use when defining or renaming config concepts for `bidsflow init`, target-aware execution requests, path naming, or future schema fields, and when keeping config terminology aligned with the task-first CLI.
+description: Maintain the BIDSFlow project configuration shape across the README, scaffold template, implementation, tests, issues, and pull requests. Use when defining or renaming config concepts for `bidsflow init`, execution requests, path naming, or future schema fields.
 ---
 
 # Project Config Schema
@@ -13,10 +13,10 @@ documented semantics aligned.
 Start by reading these files:
 
 - `README.md`
-- `docs/design/project-init.md`
-- `docs/design/task-first-cli.md`
-- `docs/design/target-model.md`
-- `docs/design/handoff-contract.md`
+- `src/bidsflow/templates/bidsflow.toml.template`
+- `src/bidsflow/project.py`
+- `src/bidsflow/cli.py`
+- `tests/`
 
 Read `references/schema-rules.md` before making non-trivial schema changes.
 
@@ -24,11 +24,11 @@ Read `references/schema-rules.md` before making non-trivial schema changes.
 
 Apply schema changes across every affected surface in the same change:
 
-- design docs that define the public shape
-- scaffold examples embedded in docs
-- future model fields and defaults
-- future code that consumes the settings
-- docs that define the meaning of the setting
+- public files that define the active shape
+- scaffold templates
+- model fields and defaults
+- code that consumes the settings
+- README examples when they mention the setting
 
 Keep the schema explicit and typed:
 
@@ -59,24 +59,23 @@ Classify the change before editing:
 
 Then make the change in this order:
 
-1. Update the design docs that define the public shape.
-2. Update any scaffold snippets or examples in the docs.
-3. Update implementation only if that implementation exists.
+1. Update the scaffold template or implementation source of truth.
+2. Update any README examples that mention the setting.
+3. Update implementation consumers.
 4. Check that the naming still matches task and target terminology.
 5. Run the validation checks listed below when applicable.
 
 ## Validation
 
-During the current docs-first phase, validate terminology and public
-shape consistency across:
+Validate terminology and public shape consistency across:
 
 - `README.md`
-- `docs/design/project-init.md`
-- `docs/design/task-first-cli.md`
-- `docs/design/target-model.md`
+- `src/bidsflow/templates/bidsflow.toml.template`
+- `src/bidsflow/project.py`
+- related tests
 
-When implementation returns, run the narrowest code and CLI checks that
-cover the affected schema surface.
+Run the narrowest code and CLI checks that cover the affected schema
+surface.
 
 ## References
 

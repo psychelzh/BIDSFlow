@@ -8,7 +8,9 @@ BIDSFlow.
 Current public anchors:
 
 - `README.md`
-- design docs under `docs/design/`
+- `src/bidsflow/templates/bidsflow.toml.template`
+- `src/bidsflow/project.py`
+- related tests
 
 ## Naming Rules
 
@@ -24,11 +26,10 @@ Current public anchors:
 - If introducing a new default, document the operational effect.
 - If renaming a key, update all examples and all consumers in the same
   patch.
-- Do not let examples drift from the active design docs.
+- Do not let examples drift from the scaffold template or CLI behavior.
 - Keep future cluster settings under execution or backend-specific
   sections unless a stronger boundary emerges.
-- Keep `init` scaffold output conservative until execution design
-  stabilizes.
+- Keep `init` scaffold output conservative.
 
 ## Modeling Rules
 
@@ -41,7 +42,7 @@ Current public anchors:
 
 ## Change Checklist
 
-1. Update the relevant design docs first.
-2. Update any scaffold snippets or examples.
-3. Update implementation only if the corresponding code exists.
-4. Re-check terminology against the task and target model.
+1. Update the scaffold template or implementation source of truth.
+2. Update any README examples.
+3. Update implementation consumers.
+4. Re-check terminology against the CLI and project config model.

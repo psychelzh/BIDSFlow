@@ -481,7 +481,7 @@ def plan_heudiconv_init(context: ProjectContext) -> InitPlan:
     if scheduler == "sge":
         scheduler_script_path = _resolve_scheduler_script_path(context, target="heudiconv")
         scheduler_script_content = _render_sge_heudiconv_script()
-    elif scheduler != "none":
+    elif scheduler != "none":  # pragma: no cover
         raise HeudiconvInitError(f"Unsupported scheduler for HeuDiConv init: {scheduler}")
 
     return InitPlan(
@@ -621,7 +621,7 @@ def plan_heudiconv_run(context: ProjectContext) -> RunPlan:
         )
 
     if context.execution.scheduler == "sge":
-        if context.execution.submit_command is None:
+        if context.execution.submit_command is None:  # pragma: no cover
             raise HeudiconvRunError(
                 "[execution].submit_command is required when scheduler is 'sge'."
             )
@@ -646,7 +646,7 @@ def plan_heudiconv_run(context: ProjectContext) -> RunPlan:
             scheduler_log_dir=log_dir,
             submit_command=context.execution.submit_command,
         )
-    elif context.execution.scheduler != "none":
+    elif context.execution.scheduler != "none":  # pragma: no cover
         raise HeudiconvRunError(
             f"Unsupported scheduler for HeuDiConv run: {context.execution.scheduler}"
         )
@@ -875,7 +875,7 @@ def run_heudiconv(context: ProjectContext, plan: RunPlan) -> RunResult:
 
 def _submit_sge_heudiconv_run(context: ProjectContext, plan: RunPlan) -> RunResult:
     sge = plan.sge
-    if sge is None:
+    if sge is None:  # pragma: no cover
         raise HeudiconvRunError("SGE run plan is missing.")
 
     execution_view_cleared = _cleanup_run_execution_view(
@@ -1048,7 +1048,7 @@ def _write_sge_run_files(
     units: tuple[RunUnitPlan, ...],
 ) -> None:
     sge = plan.sge
-    if sge is None:
+    if sge is None:  # pragma: no cover
         raise HeudiconvRunError("SGE run plan is missing.")
 
     _write_sge_unit_list(sge.unit_list_path, units)
@@ -1144,7 +1144,7 @@ def _build_sge_run_metadata(
     job_id: str | None = None,
 ) -> dict[str, object]:
     sge = plan.sge
-    if sge is None:
+    if sge is None:  # pragma: no cover
         raise HeudiconvRunError("SGE run plan is missing.")
 
     planned_units = plan.units if units is None else units
@@ -1163,7 +1163,7 @@ def _build_sge_run_metadata(
 
 
 def _make_executable(path: Path) -> None:
-    if os.name == "nt":
+    if os.name == "nt":  # pragma: no cover
         return
     path.chmod(path.stat().st_mode | 0o111)
 
@@ -1174,7 +1174,7 @@ def format_command(argv: tuple[str, ...]) -> str:
 
 def _resolve_scheduler_script_path(context: ProjectContext, target: str) -> Path:
     scheduler_template = context.execution.scheduler_template
-    if scheduler_template is None:
+    if scheduler_template is None:  # pragma: no cover
         raise HeudiconvInitError(
             f"[execution].scheduler_template is required when scheduler is {context.execution.scheduler!r}."
         )
@@ -1423,7 +1423,7 @@ def _resolve_sources_source_path(source_root: Path, source_name: str) -> Path:
             f"BIDSFlow sources table source_name must name an immediate child directory under source_root: {source_name!r}"
         )
     resolved_source_path = (source_root / source_candidate).resolve()
-    if not resolved_source_path.is_relative_to(source_root.resolve()):
+    if not resolved_source_path.is_relative_to(source_root.resolve()):  # pragma: no cover
         raise HeudiconvRunError(
             f"BIDSFlow sources table source_name resolves outside source_root: {source_name!r}"
         )

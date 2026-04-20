@@ -1,47 +1,50 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
-import sys
 
-from typer.testing import CliRunner
-
-from bidsflow.cli import app
-
-runner = CliRunner()
-
-
-def _invoke_from(project_dir: Path, args: list[str]):
-    previous_cwd = Path.cwd()
-    try:
-        os.chdir(project_dir)
-        return runner.invoke(app, args)
-    finally:
-        os.chdir(previous_cwd)
+from helpers import (
+    init_project,
+    make_source_dirs,
+    replace_config,
+    set_launcher,
+    write_python_script,
+)
 
 
-def _set_launcher(config_path: Path, launcher_line: str) -> None:
-    config_path.write_text(
-        config_path.read_text(encoding="utf-8").replace(
-            '# launcher = ["heudiconv"]',
-            launcher_line,
+def _write_successful_draft_launcher(project_dir: Path) -> Path:
+    return write_python_script(
+        project_dir / "fake_heudiconv.py",
+        (
+            "from pathlib import Path",
+            "import sys",
+            "",
+            "argv = sys.argv[1:]",
+            "out_dir = Path(argv[argv.index('-o') + 1])",
+            "sample_path = argv[argv.index('--files') + 1]",
+            "subject = argv[argv.index('-s') + 1] if '-s' in argv else None",
+            "session = argv[argv.index('-ss') + 1] if '-ss' in argv else 'single'",
+            "info_dir = out_dir / '.heudiconv' / 'draft' / session",
+            "info_dir.mkdir(parents=True, exist_ok=True)",
+            "(info_dir / 'heuristic.py').write_text('def infotodict(seqinfo):\\n    return {}\\n', encoding='utf-8')",
+            "(info_dir / 'dicominfo.tsv').write_text(",
+            "    f'series_id\\tprotocol_name\\tsample_path\\tsubject\\tsession\\n1\\tT1w\\t{sample_path}\\t{subject}\\t{session}\\n',",
+            "    encoding='utf-8',",
+            ")",
+            "print('draft ok')",
         ),
-        encoding="utf-8",
-        newline="\n",
     )
 
 
-def test_heudiconv_draft_dry_run_single_path_uses_generated_subject(tmp_path: Path) -> None:
-    project_dir = tmp_path / "demo-project"
+def test_heudiconv_draft_dry_run_single_path_uses_generated_subject(
+    tmp_path: Path,
+    invoke_from,
+    runner,
+) -> None:
+    project_dir = init_project(tmp_path, runner)
+    sample_dir = make_source_dirs(project_dir, "sample-ses-01") / "sample-ses-01"
 
-    init_result = runner.invoke(app, ["init", str(project_dir)])
-    assert init_result.exit_code == 0, init_result.output
-
-    sample_dir = project_dir / "sourcedata" / "sample-ses-01"
-    sample_dir.mkdir(parents=True)
-
-    result = _invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01", "--dry-run"])
+    result = invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01", "--dry-run"])
 
     assert result.exit_code == 0, result.output
     assert "single-directory draft" in result.output
@@ -53,18 +56,15 @@ def test_heudiconv_draft_dry_run_single_path_uses_generated_subject(tmp_path: Pa
     assert str(project_dir / "state" / "heudiconv" / "draft.json") in result.output
 
 
-def test_heudiconv_draft_dry_run_multiple_paths_shows_session_split(tmp_path: Path) -> None:
-    project_dir = tmp_path / "demo-project"
+def test_heudiconv_draft_dry_run_multiple_paths_shows_session_split(
+    tmp_path: Path,
+    invoke_from,
+    runner,
+) -> None:
+    project_dir = init_project(tmp_path, runner)
+    make_source_dirs(project_dir, "sample-ses-01", "sample-ses-02")
 
-    init_result = runner.invoke(app, ["init", str(project_dir)])
-    assert init_result.exit_code == 0, init_result.output
-
-    sample_dir_one = project_dir / "sourcedata" / "sample-ses-01"
-    sample_dir_two = project_dir / "sourcedata" / "sample-ses-02"
-    sample_dir_one.mkdir(parents=True)
-    sample_dir_two.mkdir(parents=True)
-
-    result = _invoke_from(
+    result = invoke_from(
         project_dir,
         ["heudiconv", "draft", "sample-ses-01", "sample-ses-02", "--dry-run"],
     )
@@ -79,75 +79,46 @@ def test_heudiconv_draft_dry_run_multiple_paths_shows_session_split(tmp_path: Pa
     assert str(project_dir / "state" / "heudiconv" / "draft.json") in result.output
 
 
-def test_heudiconv_draft_dry_run_uses_configured_heuristic_path(tmp_path: Path) -> None:
-    project_dir = tmp_path / "demo-project"
-
-    init_result = runner.invoke(app, ["init", str(project_dir)])
-    assert init_result.exit_code == 0, init_result.output
+def test_heudiconv_draft_dry_run_uses_configured_heuristic_path(
+    tmp_path: Path,
+    invoke_from,
+    runner,
+) -> None:
+    project_dir = init_project(tmp_path, runner)
 
     config_path = project_dir / "bidsflow.toml"
-    config_path.write_text(
-        config_path.read_text(encoding="utf-8").replace(
-            'heuristic = "code/heudiconv/heuristic.py"',
-            'heuristic = "code/custom/heuristic.py"',
-        ),
-        encoding="utf-8",
-        newline="\n",
+    replace_config(
+        config_path,
+        'heuristic = "code/heudiconv/heuristic.py"',
+        'heuristic = "code/custom/heuristic.py"',
     )
+    make_source_dirs(project_dir, "sample-ses-01")
 
-    sample_dir = project_dir / "sourcedata" / "sample-ses-01"
-    sample_dir.mkdir(parents=True)
-
-    result = _invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01", "--dry-run"])
+    result = invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01", "--dry-run"])
 
     assert result.exit_code == 0, result.output
     assert str(project_dir / "code" / "custom" / "heuristic.py") in result.output
     assert str(project_dir / "code" / "heudiconv" / "dicominfo") in result.output
 
 
-def test_heudiconv_draft_single_path_uses_generated_subject(tmp_path: Path) -> None:
-    project_dir = tmp_path / "demo-project"
-
-    init_result = runner.invoke(app, ["init", str(project_dir)])
-    assert init_result.exit_code == 0, init_result.output
-
-    launcher_script = project_dir / "fake_heudiconv.py"
-    launcher_script.write_text(
-        "\n".join(
-            (
-                "from pathlib import Path",
-                "import sys",
-                "",
-                "argv = sys.argv[1:]",
-                "out_dir = Path(argv[argv.index('-o') + 1])",
-                "sample_path = argv[argv.index('--files') + 1]",
-                "subject = argv[argv.index('-s') + 1]",
-                "session = argv[argv.index('-ss') + 1] if '-ss' in argv else 'single'",
-                "info_dir = out_dir / '.heudiconv' / 'draft' / session",
-                "info_dir.mkdir(parents=True, exist_ok=True)",
-                "(info_dir / 'heuristic.py').write_text('def infotodict(seqinfo):\\n    return {}\\n', encoding='utf-8')",
-                "(info_dir / 'dicominfo.tsv').write_text(",
-                "    f'series_id\\tprotocol_name\\tsample_path\\tsubject\\n1\\tT1w\\t{sample_path}\\t{subject}\\n',",
-                "    encoding='utf-8',",
-                ")",
-                "print('draft ok')",
-            )
-        )
-        + "\n",
-        encoding="utf-8",
-        newline="\n",
-    )
+def test_heudiconv_draft_single_path_uses_generated_subject(
+    tmp_path: Path,
+    invoke_from,
+    python_launcher: str,
+    runner,
+) -> None:
+    project_dir = init_project(tmp_path, runner)
+    launcher_script = _write_successful_draft_launcher(project_dir)
 
     config_path = project_dir / "bidsflow.toml"
-    _set_launcher(
+    set_launcher(
         config_path,
-        f'launcher = ["{sys.executable.replace("\\", "/")}", "{launcher_script.as_posix()}"]',
+        f'launcher = ["{python_launcher}", "{launcher_script.as_posix()}"]',
     )
 
-    sample_dir = project_dir / "sourcedata" / "sample-ses-01"
-    sample_dir.mkdir(parents=True)
+    sample_dir = make_source_dirs(project_dir, "sample-ses-01") / "sample-ses-01"
 
-    result = _invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01"])
+    result = invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01"])
 
     assert result.exit_code == 0, result.output
     assert "Draft samples: 1" in result.output
@@ -180,51 +151,26 @@ def test_heudiconv_draft_single_path_uses_generated_subject(tmp_path: Path) -> N
     assert str(draft_work_root) in unit_log_text
 
 
-def test_heudiconv_draft_multiple_paths_split_into_session_units(tmp_path: Path) -> None:
-    project_dir = tmp_path / "demo-project"
-
-    init_result = runner.invoke(app, ["init", str(project_dir)])
-    assert init_result.exit_code == 0, init_result.output
-
-    launcher_script = project_dir / "fake_heudiconv.py"
-    launcher_script.write_text(
-        "\n".join(
-            (
-                "from pathlib import Path",
-                "import sys",
-                "",
-                "argv = sys.argv[1:]",
-                "out_dir = Path(argv[argv.index('-o') + 1])",
-                "sample_path = argv[argv.index('--files') + 1]",
-                "subject = argv[argv.index('-s') + 1] if '-s' in argv else None",
-                "session = argv[argv.index('-ss') + 1] if '-ss' in argv else 'single'",
-                "info_dir = out_dir / '.heudiconv' / 'draft' / session",
-                "info_dir.mkdir(parents=True, exist_ok=True)",
-                "(info_dir / 'heuristic.py').write_text('def infotodict(seqinfo):\\n    return {}\\n', encoding='utf-8')",
-                "(info_dir / 'dicominfo.tsv').write_text(",
-                "    f'series_id\\tprotocol_name\\tsample_path\\tsubject\\tsession\\n1\\tT1w\\t{sample_path}\\t{subject}\\t{session}\\n',",
-                "    encoding='utf-8',",
-                ")",
-                "print('draft ok')",
-            )
-        )
-        + "\n",
-        encoding="utf-8",
-        newline="\n",
-    )
+def test_heudiconv_draft_multiple_paths_split_into_session_units(
+    tmp_path: Path,
+    invoke_from,
+    python_launcher: str,
+    runner,
+) -> None:
+    project_dir = init_project(tmp_path, runner)
+    launcher_script = _write_successful_draft_launcher(project_dir)
 
     config_path = project_dir / "bidsflow.toml"
-    _set_launcher(
+    set_launcher(
         config_path,
-        f'launcher = ["{sys.executable.replace("\\", "/")}", "{launcher_script.as_posix()}"]',
+        f'launcher = ["{python_launcher}", "{launcher_script.as_posix()}"]',
     )
 
-    sample_dir_one = project_dir / "sourcedata" / "sample-ses-01"
-    sample_dir_two = project_dir / "sourcedata" / "sample-ses-02"
-    sample_dir_one.mkdir(parents=True)
-    sample_dir_two.mkdir(parents=True)
+    source_root = make_source_dirs(project_dir, "sample-ses-01", "sample-ses-02")
+    sample_dir_one = source_root / "sample-ses-01"
+    sample_dir_two = source_root / "sample-ses-02"
 
-    result = _invoke_from(
+    result = invoke_from(
         project_dir,
         ["heudiconv", "draft", "sample-ses-01", "sample-ses-02"],
     )
@@ -260,84 +206,59 @@ def test_heudiconv_draft_multiple_paths_split_into_session_units(tmp_path: Path)
     assert (Path(state["unit_log_dir"]) / "draft-ses02.log").is_file()
 
 
-def test_heudiconv_draft_requires_reset_before_regenerating(tmp_path: Path) -> None:
-    project_dir = tmp_path / "demo-project"
-
-    init_result = runner.invoke(app, ["init", str(project_dir)])
-    assert init_result.exit_code == 0, init_result.output
-
-    launcher_script = project_dir / "fake_heudiconv.py"
-    launcher_script.write_text(
-        "\n".join(
-            (
-                "from pathlib import Path",
-                "import sys",
-                "",
-                "argv = sys.argv[1:]",
-                "out_dir = Path(argv[argv.index('-o') + 1])",
-                "subject = argv[argv.index('-s') + 1]",
-                "session = argv[argv.index('-ss') + 1] if '-ss' in argv else 'single'",
-                "info_dir = out_dir / '.heudiconv' / 'draft' / session",
-                "info_dir.mkdir(parents=True, exist_ok=True)",
-                "(info_dir / 'heuristic.py').write_text('def infotodict(seqinfo):\\n    return {}\\n', encoding='utf-8')",
-                "(info_dir / 'dicominfo.tsv').write_text('series_id\\tprotocol_name\\n1\\tT1w\\n', encoding='utf-8')",
-            )
-        )
-        + "\n",
-        encoding="utf-8",
-        newline="\n",
-    )
+def test_heudiconv_draft_requires_reset_before_regenerating(
+    tmp_path: Path,
+    invoke_from,
+    python_launcher: str,
+    runner,
+) -> None:
+    project_dir = init_project(tmp_path, runner)
+    launcher_script = _write_successful_draft_launcher(project_dir)
 
     config_path = project_dir / "bidsflow.toml"
-    _set_launcher(
+    set_launcher(
         config_path,
-        f'launcher = ["{sys.executable.replace("\\", "/")}", "{launcher_script.as_posix()}"]',
+        f'launcher = ["{python_launcher}", "{launcher_script.as_posix()}"]',
     )
 
-    sample_dir = project_dir / "sourcedata" / "sample-ses-01"
-    sample_dir.mkdir(parents=True)
+    make_source_dirs(project_dir, "sample-ses-01")
 
-    first = _invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01"])
+    first = invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01"])
     assert first.exit_code == 0, first.output
 
-    blocked = _invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01"])
+    blocked = invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01"])
     assert blocked.exit_code == 2
     assert "Existing HeuDiConv draft state was found" in blocked.output
 
-    allowed = _invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01", "--force"])
+    allowed = invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01", "--force"])
     assert allowed.exit_code == 0, allowed.output
 
 
-def test_heudiconv_draft_rejects_invalid_launcher_config(tmp_path: Path) -> None:
-    project_dir = tmp_path / "demo-project"
-
-    init_result = runner.invoke(app, ["init", str(project_dir)])
-    assert init_result.exit_code == 0, init_result.output
+def test_heudiconv_draft_rejects_invalid_launcher_config(tmp_path: Path, invoke_from, runner) -> None:
+    project_dir = init_project(tmp_path, runner)
 
     config_path = project_dir / "bidsflow.toml"
-    _set_launcher(config_path, 'launcher = "heudiconv"')
+    set_launcher(config_path, 'launcher = "heudiconv"')
 
-    sample_dir = project_dir / "sourcedata" / "sample-ses-01"
-    sample_dir.mkdir(parents=True)
+    make_source_dirs(project_dir, "sample-ses-01")
 
-    result = _invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01", "--dry-run"])
+    result = invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01", "--dry-run"])
 
     assert result.exit_code == 2
     assert "[heudiconv].launcher must be a non-empty list of strings." in result.output
 
 
-def test_heudiconv_draft_rejects_sample_outside_configured_source_root(tmp_path: Path) -> None:
-    project_dir = tmp_path / "demo-project"
-
-    init_result = runner.invoke(app, ["init", str(project_dir)])
-    assert init_result.exit_code == 0, init_result.output
-
+def test_heudiconv_draft_rejects_sample_outside_configured_source_root(
+    tmp_path: Path,
+    invoke_from,
+    runner,
+) -> None:
+    project_dir = init_project(tmp_path, runner)
     (project_dir / "sourcedata").mkdir(parents=True)
     outside_sample_dir = project_dir / "other-data" / "sample-ses-01"
     outside_sample_dir.mkdir(parents=True)
 
-    result = _invoke_from(project_dir, ["heudiconv", "draft", str(outside_sample_dir), "--dry-run"])
+    result = invoke_from(project_dir, ["heudiconv", "draft", str(outside_sample_dir), "--dry-run"])
 
     assert result.exit_code == 2
     assert "Sample path must resolve under the configured source root" in result.output
-

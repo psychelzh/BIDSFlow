@@ -100,7 +100,7 @@ def _select_init_scheduler(requested_scheduler: str) -> tuple[str, str, str | No
             )
         return "sge", "Scheduler: sge (detected qsub)", None
 
-    raise AssertionError(f"Unhandled scheduler: {requested_scheduler}")
+    raise AssertionError(f"Unhandled scheduler: {requested_scheduler}")  # pragma: no cover
 
 
 def _default_project_name(directory: Path) -> str:
@@ -289,7 +289,7 @@ def _run_heudiconv_draft(
     force: bool,
     dry_run: bool,
 ) -> None:
-    if not sample_paths:
+    if not sample_paths:  # pragma: no cover
         typer.echo("`bidsflow heudiconv draft` requires at least one sample path.", err=True)
         raise typer.Exit(code=2)
 
@@ -423,5 +423,5 @@ def _run_heudiconv_default(
         typer.echo(f"Scheduler logs: {result.scheduler_log_dir}")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     app()

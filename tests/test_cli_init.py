@@ -2,13 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import click
 import pytest
-from typer.testing import CliRunner
 
 import bidsflow.cli as cli
 from bidsflow.cli import app
-
-runner = CliRunner()
 
 
 @pytest.fixture(autouse=True)
@@ -16,7 +14,21 @@ def _no_scheduler_on_path(monkeypatch) -> None:
     monkeypatch.setattr(cli.shutil, "which", lambda executable: None)
 
 
-def test_init_writes_config_without_materializing_layout_by_default(tmp_path: Path) -> None:
+def test_init_rejects_target_file(tmp_path: Path, runner) -> None:
+    target = tmp_path / "not-a-directory"
+    target.write_text("not a directory\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["init", str(target)])
+
+    assert result.exit_code == 2
+    assert "is a file" in result.output
+
+    with pytest.raises(click.exceptions.Exit) as exc_info:
+        cli.init(directory=target, name=None, force=False, make_dirs=False, scheduler="none")
+    assert exc_info.value.exit_code == 2
+
+
+def test_init_writes_config_without_materializing_layout_by_default(tmp_path: Path, runner) -> None:
     project_dir = tmp_path / "demo-project"
 
     result = runner.invoke(app, ["init", str(project_dir)])
@@ -54,7 +66,17 @@ def test_init_writes_config_without_materializing_layout_by_default(tmp_path: Pa
     assert "Scheduler: none (no supported scheduler detected)" in result.output
 
 
-def test_init_scheduler_auto_detects_sge(tmp_path: Path, monkeypatch) -> None:
+def test_init_accepts_explicit_none_scheduler(tmp_path: Path, runner) -> None:
+    project_dir = tmp_path / "none-project"
+
+    result = runner.invoke(app, ["init", str(project_dir), "--scheduler", "none"])
+
+    assert result.exit_code == 0, result.output
+    assert "Scheduler: none" in result.output
+    assert 'scheduler = "none"' in (project_dir / "bidsflow.toml").read_text(encoding="utf-8")
+
+
+def test_init_scheduler_auto_detects_sge(tmp_path: Path, monkeypatch, runner) -> None:
     project_dir = tmp_path / "sge-project"
     monkeypatch.setattr(
         cli.shutil,
@@ -72,7 +94,21 @@ def test_init_scheduler_auto_detects_sge(tmp_path: Path, monkeypatch) -> None:
     assert "Scheduler: sge (detected qsub)" in result.output
 
 
-def test_init_scheduler_sge_writes_config_even_when_qsub_is_missing(tmp_path: Path) -> None:
+def test_init_explicit_sge_uses_detected_qsub_message(tmp_path: Path, monkeypatch, runner) -> None:
+    monkeypatch.setattr(
+        cli.shutil,
+        "which",
+        lambda executable: "/opt/sge/bin/qsub" if executable == "qsub" else None,
+    )
+
+    result = runner.invoke(app, ["init", str(tmp_path / "sge-project"), "--scheduler", "sge"])
+
+    assert result.exit_code == 0, result.output
+    assert "Scheduler: sge (detected qsub)" in result.output
+    assert "Warning:" not in result.output
+
+
+def test_init_scheduler_sge_writes_config_even_when_qsub_is_missing(tmp_path: Path, runner) -> None:
     project_dir = tmp_path / "sge-project"
 
     result = runner.invoke(app, ["init", str(project_dir), "--scheduler", "sge"])
@@ -86,7 +122,7 @@ def test_init_scheduler_sge_writes_config_even_when_qsub_is_missing(tmp_path: Pa
     assert "Warning: qsub was not found on PATH" in result.output
 
 
-def test_init_rejects_unknown_scheduler(tmp_path: Path) -> None:
+def test_init_rejects_unknown_scheduler(tmp_path: Path, runner) -> None:
     project_dir = tmp_path / "bad-scheduler-project"
 
     result = runner.invoke(app, ["init", str(project_dir), "--scheduler", "slurm"])
@@ -96,7 +132,7 @@ def test_init_rejects_unknown_scheduler(tmp_path: Path) -> None:
     assert not project_dir.exists()
 
 
-def test_init_make_dirs_materializes_default_layout(tmp_path: Path) -> None:
+def test_init_make_dirs_materializes_default_layout(tmp_path: Path, runner) -> None:
     project_dir = tmp_path / "demo-project"
 
     result = runner.invoke(app, ["init", str(project_dir), "--make-dirs"])
@@ -111,7 +147,7 @@ def test_init_make_dirs_materializes_default_layout(tmp_path: Path) -> None:
     assert (project_dir / "state").is_dir()
 
 
-def test_init_defaults_to_current_directory(tmp_path: Path, monkeypatch) -> None:
+def test_init_defaults_to_current_directory(tmp_path: Path, monkeypatch, runner) -> None:
     monkeypatch.chdir(tmp_path)
 
     result = runner.invoke(app, ["init"])
@@ -122,7 +158,7 @@ def test_init_defaults_to_current_directory(tmp_path: Path, monkeypatch) -> None
     assert f'name = "{tmp_path.resolve().name}"' in config_text
 
 
-def test_init_respects_custom_name(tmp_path: Path) -> None:
+def test_init_respects_custom_name(tmp_path: Path, runner) -> None:
     project_dir = tmp_path / "custom-project"
 
     result = runner.invoke(
@@ -142,7 +178,7 @@ def test_init_respects_custom_name(tmp_path: Path) -> None:
     assert 'name = "TJNU camp project"' in config_text
 
 
-def test_init_requires_force_to_overwrite_existing_config(tmp_path: Path) -> None:
+def test_init_requires_force_to_overwrite_existing_config(tmp_path: Path, runner) -> None:
     project_dir = tmp_path / "existing-project"
     project_dir.mkdir()
     config_path = project_dir / "bidsflow.toml"

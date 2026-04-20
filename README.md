@@ -1,5 +1,8 @@
 # BIDSFlow
 
+[![Python Quality](https://github.com/psychelzh/BIDSFlow/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/psychelzh/BIDSFlow/actions/workflows/ci.yml)
+[![Codecov](https://codecov.io/gh/psychelzh/BIDSFlow/branch/main/graph/badge.svg)](https://codecov.io/gh/psychelzh/BIDSFlow)
+
 BIDSFlow is a CLI for managing BIDS workflow logistics.
 
 The current implementation focuses on managed HeuDiConv preparation and

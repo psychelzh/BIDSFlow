@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 import bidsflow.heudiconv as h
+import bidsflow.heudiconv.sources as heudiconv_sources
 from helpers import (
     append_config,
     init_project,
@@ -134,7 +135,7 @@ def test_compute_sources_status_handles_invalid_and_outside_source_names(
 ) -> None:
     source_root = tmp_path / "source"
     source_root.mkdir()
-    invalid_entries = h._compute_sources_statuses(
+    invalid_entries = heudiconv_sources._compute_sources_statuses(
         source_root,
         (
             h.SourcesEntry("../bad", "001", "", True, "", ""),
@@ -153,4 +154,4 @@ def test_compute_sources_status_handles_invalid_and_outside_source_names(
 
     monkeypatch.setattr(Path, "resolve", _fake_resolve)
     with pytest.raises(h.HeudiconvRunError, match="resolves outside source_root"):
-        h._resolve_sources_source_path(source_root, "LINK")
+        heudiconv_sources._resolve_sources_source_path(source_root, "LINK")

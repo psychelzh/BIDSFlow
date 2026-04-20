@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 
 import bidsflow.heudiconv as h
+import bidsflow.heudiconv.common as heudiconv_common
+import bidsflow.heudiconv.run as heudiconv_run_module
 from helpers import (
     init_project,
     load_context,
@@ -276,7 +278,11 @@ def test_run_rejects_execution_view_cleanup_failure(
     project_dir = ready_heudiconv_project(tmp_path, runner, invoke_from, scheduler=scheduler)
     context = load_context(project_dir)
     plan = h.plan_heudiconv_run(context)
-    monkeypatch.setattr(h, "_cleanup_run_execution_view", lambda project_root, execution_view_root: False)
+    monkeypatch.setattr(
+        heudiconv_run_module,
+        "_cleanup_run_execution_view",
+        lambda project_root, execution_view_root: False,
+    )
 
     with pytest.raises(h.HeudiconvRunError, match="Failed to clear prior run execution view"):
         h.run_heudiconv(context, plan)
@@ -292,10 +298,10 @@ def test_scheduler_path_and_project_ownership_helpers(tmp_path: Path, runner) ->
     )
     context = load_context(project_dir)
 
-    assert h._resolve_scheduler_script_path(context, target="heudiconv") == absolute_template.resolve()
+    assert heudiconv_common._resolve_scheduler_script_path(context, target="heudiconv") == absolute_template.resolve()
 
     with pytest.raises(h.HeudiconvInitError, match="outside the project root"):
-        h._ensure_project_owned_path(project_dir, tmp_path / "outside.sh")
+        heudiconv_common._ensure_project_owned_path(project_dir, tmp_path / "outside.sh")
 
 
 def test_scheduler_template_path_rejects_unsupported_placeholder(
@@ -312,7 +318,7 @@ def test_scheduler_template_path_rejects_unsupported_placeholder(
     context = load_context(project_dir)
 
     with pytest.raises(h.HeudiconvInitError, match="supports only"):
-        h._resolve_scheduler_script_path(context, target="heudiconv")
+        heudiconv_common._resolve_scheduler_script_path(context, target="heudiconv")
 
     make_source_dirs(project_dir, "SUB001_SES01")
     (project_dir / "state").mkdir()

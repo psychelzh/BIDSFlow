@@ -169,6 +169,8 @@ def assert_rendered_sge_script(
     assert "unit_row=" in text
     assert "write_unit_status" in text
     assert "append_final_result" in text
+    assert "cleanup_results_table_lock" in text
+    assert "Timed out waiting for results table lock" in text
     assert 'rm -f -- "$claim_path"' in text
     if cleanup_workdir:
         assert 'if [[ "true" == "true" ]]; then' in text

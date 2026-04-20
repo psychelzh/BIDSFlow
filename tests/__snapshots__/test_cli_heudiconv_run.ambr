@@ -33,6 +33,16 @@
   results_table_path=<PROJECT>/state/heudiconv/results.tsv
   results_table_lock="${results_table_path}.lock"
   scheduler_log_dir=<PROJECT>/logs/heudiconv/sge/run-<ATTEMPT>
+  results_lock_acquired="false"
+  cleanup_results_table_lock() {
+      if [[ "${results_lock_acquired:-false}" == "true" ]]; then
+          rmdir "$results_table_lock" 2>/dev/null || true
+          results_lock_acquired="false"
+      fi
+  }
+  trap cleanup_results_table_lock EXIT
+  trap 'cleanup_results_table_lock; exit 130' INT
+  trap 'cleanup_results_table_lock; exit 143' TERM
   unit_row="$(sed -n "$((task_id + 1))p" "$unit_list_path")"
   if [[ -z "$unit_row" ]]; then
       printf '[bidsflow] Unit row was not found for SGE task %s in %s\n' "$task_id" "$unit_list_path" >&2
@@ -81,6 +91,9 @@
       local started="$3"
       local finished="$4"
       local summary
+      local waited_seconds=0
+      local max_wait_seconds=300
+      local append_status
       if [[ -n "$session_label" ]]; then
           summary="sub-${subject_label} ses-${session_label}"
       else
@@ -88,8 +101,14 @@
       fi
       mkdir -p "$(dirname "$results_table_path")"
       while ! mkdir "$results_table_lock" 2>/dev/null; do
-          sleep 0.2
+          if (( waited_seconds >= max_wait_seconds )); then
+              printf '[bidsflow] Timed out waiting for results table lock: %s\n' "$results_table_lock" >&2
+              return 6
+          fi
+          sleep 1
+          waited_seconds=$((waited_seconds + 1))
       done
+      results_lock_acquired="true"
       {
           if [[ ! -s "$results_table_path" ]]; then
               printf 'unit_name\tsource_name\tsubject_label\tsession_label\tsummary\tstatus\texit_code\tstarted_at\tfinished_at\tlog_path\tscheduler\tscheduler_job_id\tscheduler_task_id\tnotes\n'
@@ -110,7 +129,9 @@
               "$task_id" \
               ""
       } >> "$results_table_path"
-      rmdir "$results_table_lock" 2>/dev/null || true
+      append_status=$?
+      cleanup_results_table_lock
+      return "$append_status"
   }
   launcher=(
       <PYTHON>
@@ -152,6 +173,17 @@
   fi
   write_unit_status "$final_status" "$status" "$started_at" "$finished_at" "$error_message"
   append_final_result "$final_status" "$status" "$started_at" "$finished_at"
+  append_status=$?
+  if [[ "$append_status" -ne 0 ]]; then
+      error_message="Failed to append results.tsv row (status $append_status)"
+      if [[ "$status" -eq 0 ]]; then
+          final_status="failed"
+      fi
+      write_unit_status "$final_status" "$status" "$started_at" "$finished_at" "$error_message"
+      rm -f -- "$claim_path"
+      printf '[bidsflow] %s\n' "$error_message" >&2
+      exit "$append_status"
+  fi
   if [[ "true" == "true" ]]; then
       rm -f -- "$execution_path"
       rmdir "$(dirname "$execution_path")" 2>/dev/null || true

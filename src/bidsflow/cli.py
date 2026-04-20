@@ -11,6 +11,8 @@ from .heudiconv import (
     HeudiconvDraftError,
     HeudiconvInitError,
     HeudiconvRunError,
+    RunPlan,
+    RunResult,
     SourcesError,
     format_command,
     list_sources_review_issues,
@@ -377,47 +379,7 @@ def _run_heudiconv_default(
         raise typer.Exit(code=2) from exc
 
     if dry_run:
-        runnable_units, unit_counts = preview_run_unit_selection(plan)
-        typer.echo("Planned `bidsflow heudiconv` execution.")
-        typer.echo("Dry run only; no files or directories were created.")
-        typer.echo(f"Config: {config_path}")
-        typer.echo(f"Sources table: {plan.sources_path}")
-        typer.echo(f"Heuristic: {plan.heuristic_path}")
-        typer.echo(f"Raw BIDS output: {plan.raw_bids_root}")
-        if plan.sge is not None:
-            typer.echo("Backend: sge")
-            typer.echo(f"Scheduler template: {plan.sge.template_path}")
-            typer.echo(f"Submit command: {format_command(plan.sge.submit_command)}")
-            typer.echo("Scheduler artifacts are created only when the job is submitted.")
-        else:
-            typer.echo("Backend: local")
-        cleanup_summary = (
-            "enabled; use --keep-workdir to inspect temporary execution views."
-            if clean_workdir
-            else "disabled; temporary execution views will be kept."
-        )
-        typer.echo(f"Cleanup: {cleanup_summary}")
-        typer.echo(f"Ready units in sources.tsv: {unit_counts['total']}")
-        typer.echo(f"Runnable units now: {unit_counts['selected']}")
-        if unit_counts["skipped"]:
-            typer.echo(f"Skipped units: {unit_counts['skipped']}")
-        if unit_counts["skipped_succeeded"]:
-            typer.echo(f"- already succeeded: {unit_counts['skipped_succeeded']}")
-        if unit_counts["skipped_active_claim"]:
-            typer.echo(f"- active claim: {unit_counts['skipped_active_claim']}")
-        if runnable_units:
-            unit = runnable_units[0]
-            typer.echo("Example runnable unit:")
-            typer.echo(
-                f"{unit.source_name}: subject={unit.subject_label} "
-                f"session={unit.session_label or '-'}"
-            )
-            typer.echo(format_command(unit.command))
-            if len(runnable_units) > 1:
-                typer.echo(
-                    f"Additional runnable units omitted: {len(runnable_units) - 1}. "
-                    "HeuDiConv will apply the same sources-driven pattern to each ready row."
-                )
+        _echo_heudiconv_dry_run(config_path, plan, clean_workdir=clean_workdir)
         return
 
     try:
@@ -426,6 +388,66 @@ def _run_heudiconv_default(
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
 
+    _echo_heudiconv_run_result(result, plan, clean_workdir=clean_workdir)
+
+
+def _echo_heudiconv_dry_run(
+    config_path: Path,
+    plan: RunPlan,
+    *,
+    clean_workdir: bool,
+) -> None:
+    runnable_units, unit_counts = preview_run_unit_selection(plan)
+    typer.echo("Planned `bidsflow heudiconv` execution.")
+    typer.echo("Dry run only; no files or directories were created.")
+    typer.echo(f"Config: {config_path}")
+    typer.echo(f"Sources table: {plan.sources_path}")
+    typer.echo(f"Heuristic: {plan.heuristic_path}")
+    typer.echo(f"Raw BIDS output: {plan.raw_bids_root}")
+    if plan.sge is not None:
+        typer.echo("Backend: sge")
+        typer.echo(f"Scheduler template: {plan.sge.template_path}")
+        typer.echo(f"Submit command: {format_command(plan.sge.submit_command)}")
+        typer.echo("Scheduler artifacts are created only when the job is submitted.")
+    else:
+        typer.echo("Backend: local")
+    cleanup_summary = (
+        "enabled; use --keep-workdir to inspect temporary execution views."
+        if clean_workdir
+        else "disabled; temporary execution views will be kept."
+    )
+    typer.echo(f"Cleanup: {cleanup_summary}")
+    typer.echo(f"Ready units in sources.tsv: {unit_counts['total']}")
+    typer.echo(f"Runnable units now: {unit_counts['selected']}")
+    if unit_counts["skipped"]:
+        typer.echo(f"Skipped units: {unit_counts['skipped']}")
+    if unit_counts["skipped_succeeded"]:
+        typer.echo(f"- already succeeded: {unit_counts['skipped_succeeded']}")
+    if unit_counts["skipped_active_claim"]:
+        typer.echo(f"- active claim: {unit_counts['skipped_active_claim']}")
+    if not runnable_units:
+        return
+
+    unit = runnable_units[0]
+    typer.echo("Example runnable unit:")
+    typer.echo(
+        f"{unit.source_name}: subject={unit.subject_label} "
+        f"session={unit.session_label or '-'}"
+    )
+    typer.echo(format_command(unit.command))
+    if len(runnable_units) > 1:
+        typer.echo(
+            f"Additional runnable units omitted: {len(runnable_units) - 1}. "
+            "HeuDiConv will apply the same sources-driven pattern to each ready row."
+        )
+
+
+def _echo_heudiconv_run_result(
+    result: RunResult,
+    plan: RunPlan,
+    *,
+    clean_workdir: bool,
+) -> None:
     if result.status == "submitted":
         typer.echo("Submitted `bidsflow heudiconv` execution.")
     elif result.status == "skipped":
@@ -450,7 +472,7 @@ def _run_heudiconv_default(
     if not clean_workdir:
         typer.echo(f"Execution view kept: {plan.execution_view_root}")
     if result.backend == "sge":
-        typer.echo(f"Scheduler: sge")
+        typer.echo("Scheduler: sge")
         typer.echo(f"Scheduler job id: {result.scheduler_job_id or '-'}")
         typer.echo(f"Scheduler script: {result.scheduler_script_path}")
         if plan.sge is not None:

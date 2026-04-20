@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from helpers import (
@@ -86,7 +87,6 @@ def test_heudiconv_run_sge_dry_run_reports_scheduler_artifacts(tmp_path: Path, i
 def test_heudiconv_run_recomputes_sources_status_from_manual_edits(
     tmp_path: Path,
     invoke_from,
-    python_launcher: str,
     runner,
 ) -> None:
     project_dir = init_project(tmp_path, runner)
@@ -115,7 +115,7 @@ def test_heudiconv_run_recomputes_sources_status_from_manual_edits(
     fake_launcher = _write_successful_run_launcher(project_dir)
     set_launcher(
         config_path,
-        f'launcher = ["{python_launcher}", "{fake_launcher.as_posix()}"]',
+        f'launcher = ["{sys.executable}", "{fake_launcher.as_posix()}"]',
     )
 
     result = invoke_from(project_dir, ["heudiconv"])
@@ -127,7 +127,6 @@ def test_heudiconv_run_recomputes_sources_status_from_manual_edits(
 def test_heudiconv_run_writes_current_state_and_unit_table(
     tmp_path: Path,
     invoke_from,
-    python_launcher: str,
     runner,
 ) -> None:
     project_dir = init_project(tmp_path, runner)
@@ -142,7 +141,7 @@ def test_heudiconv_run_writes_current_state_and_unit_table(
     fake_launcher = _write_successful_run_launcher(project_dir)
     set_launcher(
         config_path,
-        f'launcher = ["{python_launcher}", "{fake_launcher.as_posix()}"]',
+        f'launcher = ["{sys.executable}", "{fake_launcher.as_posix()}"]',
     )
 
     result = invoke_from(project_dir, ["heudiconv"])
@@ -198,7 +197,6 @@ def test_heudiconv_run_writes_current_state_and_unit_table(
 def test_heudiconv_run_with_sge_generates_array_artifacts_and_submits(
     tmp_path: Path,
     invoke_from,
-    python_launcher: str,
     runner,
 ) -> None:
     project_dir = init_project(tmp_path, runner, name="sge-project", scheduler="sge")
@@ -221,7 +219,7 @@ def test_heudiconv_run_with_sge_generates_array_artifacts_and_submits(
     )
     set_submit_command(
         config_path,
-        f'submit_command = ["{python_launcher}", "{fake_qsub.as_posix()}"]',
+        f'submit_command = ["{sys.executable}", "{fake_qsub.as_posix()}"]',
     )
 
     make_source_dirs(project_dir, "SUB001_SES01", "SUB001_SES02")
@@ -331,7 +329,6 @@ def test_heudiconv_run_rejects_sources_that_still_needs_review(tmp_path: Path, i
 def test_heudiconv_run_overwrites_current_state_and_keeps_unit_logs(
     tmp_path: Path,
     invoke_from,
-    python_launcher: str,
     runner,
 ) -> None:
     project_dir = init_project(tmp_path, runner)
@@ -365,7 +362,7 @@ def test_heudiconv_run_overwrites_current_state_and_keeps_unit_logs(
     )
     set_launcher(
         config_path,
-        f'launcher = ["{python_launcher}", "{flaky_launcher.as_posix()}"]',
+        f'launcher = ["{sys.executable}", "{flaky_launcher.as_posix()}"]',
     )
 
     first_result = invoke_from(project_dir, ["heudiconv"])

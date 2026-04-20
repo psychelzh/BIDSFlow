@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 from importlib import resources
 from pathlib import Path
@@ -41,6 +42,16 @@ DEFAULT_LAYOUT_DIRECTORIES = (
     Path("state"),
 )
 INIT_SCHEDULERS = ("auto", "none", "sge")
+UNSUPPORTED_WINDOWS_MESSAGE = (
+    "BIDSFlow currently supports Unix-like environments only. "
+    "On Windows, run BIDSFlow inside WSL."
+)
+
+
+def _ensure_supported_platform() -> None:
+    if os.name == "nt":  # pragma: no cover
+        typer.echo(UNSUPPORTED_WINDOWS_MESSAGE, err=True)
+        raise typer.Exit(code=2)
 
 
 def _toml_string(value: str) -> str:
@@ -110,6 +121,7 @@ def _default_project_name(directory: Path) -> str:
 @app.callback()
 def main() -> None:
     """BIDSFlow: task-first CLI for BIDS workflow logistics."""
+    _ensure_supported_platform()
 
 
 @app.command()

@@ -21,6 +21,17 @@ next implementation pass.
 - Adapters, backends, and schedulers should stay behind the public CLI
   surface.
 
+## Platform Support
+
+BIDSFlow is currently supported only in Unix-like environments such as
+Linux, macOS, WSL, and typical HPC login or compute nodes. Native
+Windows is not a supported execution environment for this rebuilt CLI.
+
+On Windows, use WSL and run BIDSFlow from the WSL shell. This matches
+the expected deployment environment for HeuDiConv, cluster schedulers,
+shell scheduler scripts, POSIX permissions, and symlink-based temporary
+execution views.
+
 ## Proposed CLI Surface
 
 ```bash

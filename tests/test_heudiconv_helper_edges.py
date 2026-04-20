@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-import os
 from pathlib import Path
-import subprocess
 
 import pytest
 
@@ -129,7 +127,6 @@ def test_low_level_path_and_scheduler_helpers(tmp_path: Path) -> None:
         h._reset_draft_state(project_root, draft_plan)
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX executable bits are not meaningful on Windows.")
 def test_make_executable_sets_posix_execute_bit(tmp_path: Path) -> None:
     executable = tmp_path / "script.sh"
     executable.write_text("#!/bin/sh\n", encoding="utf-8", newline="\n")
@@ -150,37 +147,12 @@ def test_materialize_run_execution_view_error_paths(tmp_path: Path, monkeypatch)
         symlink_calls.append((Path(target), target_is_directory))
 
     monkeypatch.setattr(Path, "symlink_to", _record_symlink)
-    assert h._materialize_run_execution_view(execution_path, source_path) == "symlink"
+    h._materialize_run_execution_view(execution_path, source_path)
     assert symlink_calls == [(source_path, True)]
 
     def _raise_symlink_error(self, target, target_is_directory=False):
         raise OSError("no symlink")
 
     monkeypatch.setattr(Path, "symlink_to", _raise_symlink_error)
-    monkeypatch.setattr(h.os, "name", "posix")
     with pytest.raises(h.HeudiconvRunError, match="Failed to create temporary execution link"):
         h._materialize_run_execution_view(execution_path, source_path)
-
-    monkeypatch.setattr(h.os, "name", "nt")
-    monkeypatch.setattr(
-        h.subprocess,
-        "run",
-        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 1, "", "junction failed"),
-    )
-    with pytest.raises(h.HeudiconvRunError, match="junction failed"):
-        h._materialize_run_execution_view(execution_path, source_path)
-
-    original_exists = Path.exists
-
-    def _fake_execution_path_exists(self):
-        if self == execution_path:
-            return True
-        return original_exists(self)
-
-    monkeypatch.setattr(Path, "exists", _fake_execution_path_exists)
-    monkeypatch.setattr(
-        h.subprocess,
-        "run",
-        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, "junction created", ""),
-    )
-    assert h._materialize_run_execution_view(execution_path, source_path) == "junction"

@@ -7,7 +7,19 @@ tools, not as a flag-complete wrapper around every BIDS App.
 
 Its job is to make runs predictable, resumable, and auditable.
 
-## 2. What BIDSFlow should own
+## 2. Platform boundary
+
+BIDSFlow currently targets Unix-like execution environments: Linux,
+macOS, WSL, and HPC systems. Native Windows is intentionally outside the
+supported runtime boundary.
+
+This keeps the execution model aligned with the environments where BIDS
+conversion and BIDS Apps are normally run. It also avoids maintaining
+parallel filesystem behavior for shell scripts, POSIX permissions,
+symlinks, and scheduler integration. Windows users should run BIDSFlow
+inside WSL.
+
+## 3. What BIDSFlow should own
 
 For each task execution, BIDSFlow should be responsible for:
 
@@ -24,7 +36,7 @@ For each task execution, BIDSFlow should be responsible for:
 This is the stable value BIDSFlow adds even when the scientific command
 itself remains user-editable.
 
-## 3. What BIDSFlow should not own
+## 4. What BIDSFlow should not own
 
 BIDSFlow should not try to:
 
@@ -35,12 +47,12 @@ BIDSFlow should not try to:
 
 The goal is to own the logistics, not to erase the tools.
 
-## 4. Core runtime objects
+## 5. Core runtime objects
 
 The rebuilt runtime should revolve around a small set of durable
 objects.
 
-### 4.1 Command template
+### 5.1 Command template
 
 A command template is the user-editable command definition for a tool
 run.
@@ -59,7 +71,7 @@ This is the right abstraction for tools such as `fmriprep`, `mriqc`,
 `xcpd`, and other app-backed runs where BIDSFlow does not need to own
 the full native flag surface.
 
-### 4.2 Artifact record
+### 5.2 Artifact record
 
 An artifact record describes an input or output that later work may
 consume.
@@ -82,7 +94,7 @@ Examples include:
 - a generated heuristic file
 - a reviewed source table or descriptor file produced during preparation
 
-### 4.3 State record
+### 5.3 State record
 
 A state record is the durable record of the current known status for one
 managed step.
@@ -106,7 +118,7 @@ For multi-unit steps, the state record points to the unit log directory
 while the unit table records each concrete per-unit log path. This keeps
 future parallel execution from interleaving unrelated tool output.
 
-### 4.4 Managed workflow
+### 5.4 Managed workflow
 
 A managed workflow is a tool integration for which BIDSFlow knows the
 internal step boundaries and the expected handoff between those steps.
@@ -117,7 +129,7 @@ orchestration logic, not for every BIDS App.
 The first candidate is HeuDiConv because its official workflow already
 has a natural multi-step shape.
 
-### 4.5 Derived execution view
+### 5.5 Derived execution view
 
 Some runs may need a temporary filesystem view that is derived from a
 durable artifact but is not itself the source of truth.
@@ -137,11 +149,11 @@ This keeps long-lived truth in artifacts such as `sources.tsv` while
 letting execution steps materialize short-lived helper structures only
 when they are actually needed.
 
-## 5. Two execution styles
+## 6. Two execution styles
 
 The first rebuilt runtime should support two styles of work.
 
-### 5.1 Managed workflow
+### 6.1 Managed workflow
 
 BIDSFlow knows the step sequence and the step-specific artifacts.
 
@@ -153,7 +165,7 @@ This is appropriate for HeuDiConv, where BIDSFlow can help with:
 - finalization steps
 - rerun safety around `.heudiconv` state
 
-### 5.2 Template-backed job
+### 6.2 Template-backed job
 
 BIDSFlow generates or stores a user-editable command template and then
 executes it while managing inputs, outputs, logs, and retries.
@@ -163,7 +175,7 @@ This is appropriate for most other BIDS Apps.
 In that model, BIDSFlow owns the logistics contract while the user still
 owns the scientific command details.
 
-## 6. Status and rerun semantics
+## 7. Status and rerun semantics
 
 The initial runtime does not need an elaborate scheduler model, but it
 does need explicit run states.
@@ -208,7 +220,7 @@ already recorded locally.
 Reruns may write new unit log directories while mutating the current
 state files in place.
 
-## 7. CLI implications
+## 8. CLI implications
 
 This runtime model does not require a large public CLI.
 
@@ -222,7 +234,7 @@ The current minimal task set can remain:
 The exact public noun that follows those tasks can remain conservative
 while the runtime model stabilizes.
 
-## 8. Relationship to handoffs
+## 9. Relationship to handoffs
 
 The existing handoff idea still matters, but it should become more
 concrete.
@@ -230,7 +242,7 @@ concrete.
 A handoff is best understood as the downstream use of recorded
 artifacts, not as opaque path passing between abstract stages.
 
-## 9. Summary
+## 10. Summary
 
 The next implementation should treat BIDSFlow as a logistics system with
 managed workflows, command templates, artifact records, and run records

@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from pathlib import Path
-import sys
 
 import pytest
 from typer.testing import CliRunner
@@ -27,8 +26,3 @@ def invoke_from(runner: CliRunner) -> Callable[[Path, list[str]], object]:
             os.chdir(previous_cwd)
 
     return _invoke_from
-
-
-@pytest.fixture
-def python_launcher() -> str:
-    return sys.executable.replace("\\", "/")

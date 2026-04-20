@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -61,7 +62,6 @@ def test_sources_command_status_variants(
     tmp_path: Path,
     invoke_from,
     runner,
-    python_launcher: str,
     script_body: str,
     message: str | None,
 ) -> None:
@@ -71,7 +71,7 @@ def test_sources_command_status_variants(
     write_python_script(script_path, (script_body,))
     append_config(
         project_dir / "bidsflow.toml",
-        ["[sources]", f'command = ["{python_launcher}", "{script_path.as_posix()}"]'],
+        ["[sources]", f'command = ["{sys.executable}", "{script_path.as_posix()}"]'],
     )
     make_source_dirs(project_dir, "SUB001")
 
@@ -103,7 +103,6 @@ def test_sources_pattern_miss_and_duplicate_subject_without_sessions(
     tmp_path: Path,
     invoke_from,
     runner,
-    python_launcher: str,
 ) -> None:
     miss_project = init_project(tmp_path, runner, name="pattern-miss")
     set_sources_pattern(miss_project / "bidsflow.toml", "SUB{subject}")
@@ -119,7 +118,7 @@ def test_sources_pattern_miss_and_duplicate_subject_without_sessions(
     write_python_script(script_path, ("print('001')",))
     append_config(
         duplicate_project / "bidsflow.toml",
-        ["[sources]", f'command = ["{python_launcher}", "{script_path.as_posix()}"]'],
+        ["[sources]", f'command = ["{sys.executable}", "{script_path.as_posix()}"]'],
     )
     make_source_dirs(duplicate_project, "A", "B")
 

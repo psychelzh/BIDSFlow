@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -136,7 +137,6 @@ def test_local_run_skips_units_with_succeeded_status_or_active_claim(
     tmp_path: Path,
     invoke_from,
     runner,
-    python_launcher: str,
 ) -> None:
     project_dir = ready_heudiconv_project(tmp_path, runner, invoke_from)
     config_path = project_dir / "bidsflow.toml"
@@ -153,7 +153,7 @@ def test_local_run_skips_units_with_succeeded_status_or_active_claim(
             "target.mkdir(parents=True, exist_ok=True)",
         ),
     )
-    set_launcher(config_path, f'launcher = ["{python_launcher}", "{fake_launcher.as_posix()}"]')
+    set_launcher(config_path, f'launcher = ["{sys.executable}", "{fake_launcher.as_posix()}"]')
 
     first = invoke_from(project_dir, ["heudiconv"])
     assert first.exit_code == 0, first.output
@@ -196,14 +196,13 @@ def test_sge_submit_failure_releases_claims_and_records_state(
     tmp_path: Path,
     invoke_from,
     runner,
-    python_launcher: str,
 ) -> None:
     project_dir = ready_heudiconv_project(tmp_path, runner, invoke_from, scheduler="sge")
     fake_qsub = project_dir / "fake_qsub_fail.py"
     write_python_script(fake_qsub, ("import sys", "print('queue full', file=sys.stderr)", "raise SystemExit(9)"))
     set_submit_command(
         project_dir / "bidsflow.toml",
-        f'submit_command = ["{python_launcher}", "{fake_qsub.as_posix()}"]',
+        f'submit_command = ["{sys.executable}", "{fake_qsub.as_posix()}"]',
     )
 
     result = invoke_from(project_dir, ["heudiconv"])

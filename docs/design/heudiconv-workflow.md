@@ -12,6 +12,15 @@ its official usage already has a real lifecycle:
 BIDSFlow should manage the logistics around that lifecycle without
 turning itself into a flag-complete wrapper for every HeuDiConv option.
 
+Platform scope:
+
+- the managed HeuDiConv workflow is supported in Unix-like environments
+  such as Linux, macOS, WSL, and HPC systems
+- native Windows is not supported; Windows users should run BIDSFlow
+  inside WSL
+- temporary execution views are materialized with symlinks and are
+  treated as Unix-like runtime artifacts
+
 Source notes:
 
 - HeuDiConv custom heuristic tutorial:

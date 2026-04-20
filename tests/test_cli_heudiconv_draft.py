@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from helpers import (
@@ -104,7 +105,6 @@ def test_heudiconv_draft_dry_run_uses_configured_heuristic_path(
 def test_heudiconv_draft_single_path_uses_generated_subject(
     tmp_path: Path,
     invoke_from,
-    python_launcher: str,
     runner,
 ) -> None:
     project_dir = init_project(tmp_path, runner)
@@ -113,7 +113,7 @@ def test_heudiconv_draft_single_path_uses_generated_subject(
     config_path = project_dir / "bidsflow.toml"
     set_launcher(
         config_path,
-        f'launcher = ["{python_launcher}", "{launcher_script.as_posix()}"]',
+        f'launcher = ["{sys.executable}", "{launcher_script.as_posix()}"]',
     )
 
     sample_dir = make_source_dirs(project_dir, "sample-ses-01") / "sample-ses-01"
@@ -154,7 +154,6 @@ def test_heudiconv_draft_single_path_uses_generated_subject(
 def test_heudiconv_draft_multiple_paths_split_into_session_units(
     tmp_path: Path,
     invoke_from,
-    python_launcher: str,
     runner,
 ) -> None:
     project_dir = init_project(tmp_path, runner)
@@ -163,7 +162,7 @@ def test_heudiconv_draft_multiple_paths_split_into_session_units(
     config_path = project_dir / "bidsflow.toml"
     set_launcher(
         config_path,
-        f'launcher = ["{python_launcher}", "{launcher_script.as_posix()}"]',
+        f'launcher = ["{sys.executable}", "{launcher_script.as_posix()}"]',
     )
 
     source_root = make_source_dirs(project_dir, "sample-ses-01", "sample-ses-02")
@@ -209,7 +208,6 @@ def test_heudiconv_draft_multiple_paths_split_into_session_units(
 def test_heudiconv_draft_requires_reset_before_regenerating(
     tmp_path: Path,
     invoke_from,
-    python_launcher: str,
     runner,
 ) -> None:
     project_dir = init_project(tmp_path, runner)
@@ -218,7 +216,7 @@ def test_heudiconv_draft_requires_reset_before_regenerating(
     config_path = project_dir / "bidsflow.toml"
     set_launcher(
         config_path,
-        f'launcher = ["{python_launcher}", "{launcher_script.as_posix()}"]',
+        f'launcher = ["{sys.executable}", "{launcher_script.as_posix()}"]',
     )
 
     make_source_dirs(project_dir, "sample-ses-01")

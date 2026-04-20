@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -79,7 +80,6 @@ def test_draft_failure_paths_write_failed_state(
     tmp_path: Path,
     invoke_from,
     runner,
-    python_launcher: str,
     script_lines: list[str],
     sample_args: list[str],
     message: str,
@@ -91,7 +91,7 @@ def test_draft_failure_paths_write_failed_state(
     write_python_script(launcher_script, script_lines)
     set_launcher(
         project_dir / "bidsflow.toml",
-        f'launcher = ["{python_launcher}", "{launcher_script.as_posix()}"]',
+        f'launcher = ["{sys.executable}", "{launcher_script.as_posix()}"]',
     )
 
     result = invoke_from(project_dir, ["heudiconv", "draft", *sample_args])
@@ -121,7 +121,6 @@ def test_draft_rejects_different_heuristics_across_sample_units(
     tmp_path: Path,
     invoke_from,
     runner,
-    python_launcher: str,
 ) -> None:
     project_dir = init_project(tmp_path, runner, name="draft-different-heuristics")
     make_source_dirs(project_dir, "sample-ses-01", "sample-ses-02")
@@ -143,7 +142,7 @@ def test_draft_rejects_different_heuristics_across_sample_units(
     )
     set_launcher(
         project_dir / "bidsflow.toml",
-        f'launcher = ["{python_launcher}", "{launcher_script.as_posix()}"]',
+        f'launcher = ["{sys.executable}", "{launcher_script.as_posix()}"]',
     )
 
     result = invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01", "sample-ses-02"])

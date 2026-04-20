@@ -183,7 +183,6 @@ class RunUnitResult:
     session_label: str | None
     execution_path: Path
     command: tuple[str, ...]
-    execution_view_kind: str
     log_path: Path
     status: str
     started_at: str
@@ -732,9 +731,8 @@ def run_heudiconv(context: ProjectContext, plan: RunPlan) -> RunResult:
                 started_at=unit_started_at,
                 log_path=unit.log_path,
             )
-            execution_view_kind = ""
             try:
-                execution_view_kind = _materialize_run_execution_view(
+                _materialize_run_execution_view(
                     unit.execution_path,
                     unit.source_path,
                 )
@@ -755,7 +753,6 @@ def run_heudiconv(context: ProjectContext, plan: RunPlan) -> RunResult:
                     session_label=unit.session_label,
                     execution_path=unit.execution_path,
                     command=unit.command,
-                    execution_view_kind=execution_view_kind,
                     log_path=unit.log_path,
                     status="failed",
                     started_at=unit_started_at,
@@ -787,7 +784,6 @@ def run_heudiconv(context: ProjectContext, plan: RunPlan) -> RunResult:
                 session_label=unit.session_label,
                 execution_path=unit.execution_path,
                 command=unit.command,
-                execution_view_kind=execution_view_kind,
                 log_path=unit.log_path,
                 status=status,
                 started_at=unit_started_at,
@@ -935,7 +931,7 @@ def _submit_sge_heudiconv_run(context: ProjectContext, plan: RunPlan) -> RunResu
     try:
         for unit in claim_selection.claimed_units:
             current_unit = unit
-            execution_view_kind = _materialize_run_execution_view(
+            _materialize_run_execution_view(
                 unit.execution_path,
                 unit.source_path,
             )
@@ -949,7 +945,6 @@ def _submit_sge_heudiconv_run(context: ProjectContext, plan: RunPlan) -> RunResu
                     session_label=unit.session_label,
                     execution_path=unit.execution_path,
                     command=unit.command,
-                    execution_view_kind=execution_view_kind,
                     log_path=unit.log_path,
                     status="submitted",
                     started_at=started_at,
@@ -1124,7 +1119,7 @@ def _submit_sge_script(
             text=True,
             check=False,
         )
-    except FileNotFoundError as exc:
+    except OSError as exc:
         raise HeudiconvRunError(
             f"Failed to start SGE submit command {sge.submit_command[0]!r}: {exc}"
         ) from exc
@@ -1163,8 +1158,6 @@ def _build_sge_run_metadata(
 
 
 def _make_executable(path: Path) -> None:
-    if os.name == "nt":  # pragma: no cover
-        return
     path.chmod(path.stat().st_mode | 0o111)
 
 
@@ -1274,7 +1267,7 @@ def _derive_sources_labels_from_command(
             text=True,
             check=False,
         )
-    except FileNotFoundError as exc:
+    except OSError as exc:
         raise SourcesError(
             f"Failed to start sources command while processing {source_name}: {exc}"
         ) from exc
@@ -1850,30 +1843,14 @@ def _write_run_state(
     _write_json(plan.state_path, payload)
 
 
-def _materialize_run_execution_view(execution_path: Path, source_path: Path) -> str:
+def _materialize_run_execution_view(execution_path: Path, source_path: Path) -> None:
     execution_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         execution_path.symlink_to(source_path, target_is_directory=True)
-        return "symlink"
-    except OSError:
-        if os.name != "nt":
-            raise HeudiconvRunError(
-                f"Failed to create temporary execution link: {execution_path} -> {source_path}"
-            ) from None
-
-    completed = subprocess.run(
-        ["cmd", "/c", "mklink", "/J", str(execution_path), str(source_path)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if completed.returncode != 0 or not execution_path.exists():
-        details = (completed.stderr or completed.stdout or "").strip()
-        suffix = f" {details}" if details else ""
+    except OSError as exc:
         raise HeudiconvRunError(
-            f"Failed to create temporary execution link: {execution_path} -> {source_path}.{suffix}"
-        )
-    return "junction"
+            f"Failed to create temporary execution link: {execution_path} -> {source_path}"
+        ) from exc
 
 
 def _run_heudiconv_command(
@@ -1891,7 +1868,7 @@ def _run_heudiconv_command(
             text=True,
             check=False,
         )
-    except FileNotFoundError as exc:
+    except OSError as exc:
         _append_log(log_path, f"[{label}] Failed to start launcher: {exc}")
         raise HeudiconvRunError(
             f"Failed to start HeuDiConv launcher. See {log_path} for details."
@@ -2067,7 +2044,7 @@ def _run_command(
             text=True,
             check=False,
         )
-    except FileNotFoundError as exc:
+    except OSError as exc:
         _append_log(log_path, f"[{label}] Failed to start launcher: {exc}")
         raise HeudiconvDraftError(
             f"Failed to start HeuDiConv launcher. See {log_path} for details."

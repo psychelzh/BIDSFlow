@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from helpers import (
@@ -138,7 +139,7 @@ def test_heudiconv_init_reports_custom_heuristic_directory(tmp_path: Path, invok
     assert f"Heuristic directory: {project_dir / 'code' / 'custom'}" in result.output
 
 
-def test_sources_applies_configured_command(tmp_path: Path, invoke_from, python_launcher: str, runner) -> None:
+def test_sources_applies_configured_command(tmp_path: Path, invoke_from, runner) -> None:
     project_dir = init_project(tmp_path, runner)
 
     command_script = project_dir / "code" / "heudiconv" / "derive_labels.py"
@@ -162,7 +163,7 @@ def test_sources_applies_configured_command(tmp_path: Path, invoke_from, python_
         config_path,
         [
             "[sources]",
-            f'command = ["{python_launcher}", "code/heudiconv/derive_labels.py"]',
+            f'command = ["{sys.executable}", "code/heudiconv/derive_labels.py"]',
         ],
     )
 
@@ -184,7 +185,7 @@ def test_sources_applies_configured_command(tmp_path: Path, invoke_from, python_
     assert all(row["status"] == "ready" for row in rows)
 
 
-def test_sources_reports_collisions(tmp_path: Path, invoke_from, python_launcher: str, runner) -> None:
+def test_sources_reports_collisions(tmp_path: Path, invoke_from, runner) -> None:
     project_dir = init_project(tmp_path, runner)
 
     config_path = project_dir / "bidsflow.toml"
@@ -195,7 +196,7 @@ def test_sources_reports_collisions(tmp_path: Path, invoke_from, python_launcher
         config_path,
         [
             "[sources]",
-            f'command = ["{python_launcher}", "code/heudiconv/derive_collision_labels.py"]',
+            f'command = ["{sys.executable}", "code/heudiconv/derive_collision_labels.py"]',
         ],
     )
 
@@ -215,7 +216,6 @@ def test_sources_reports_collisions(tmp_path: Path, invoke_from, python_launcher
 def test_sources_rejects_command_with_more_than_two_lines(
     tmp_path: Path,
     invoke_from,
-    python_launcher: str,
     runner,
 ) -> None:
     project_dir = init_project(tmp_path, runner)
@@ -228,7 +228,7 @@ def test_sources_rejects_command_with_more_than_two_lines(
         config_path,
         [
             "[sources]",
-            f'command = ["{python_launcher}", "code/heudiconv/derive_too_many_lines.py"]',
+            f'command = ["{sys.executable}", "code/heudiconv/derive_too_many_lines.py"]',
         ],
     )
 

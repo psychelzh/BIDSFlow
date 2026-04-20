@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import re
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
@@ -112,3 +113,58 @@ def read_key_value_file(path: Path) -> dict[str, str]:
         key, value = line.split("=", 1)
         values[key] = value
     return values
+
+
+def assert_lines_in_order(text: str, expected_lines: list[str]) -> None:
+    lines = text.splitlines()
+    search_start = 0
+    for expected in expected_lines:
+        for index in range(search_start, len(lines)):
+            if lines[index] == expected:
+                search_start = index + 1
+                break
+        else:
+            raise AssertionError(f"Could not find line after index {search_start}: {expected!r}")
+
+
+def normalize_generated_text(
+    text: str,
+    *,
+    replacements: dict[str, str] | None = None,
+) -> str:
+    normalized = text.replace("\r\n", "\n")
+    for old, new in sorted((replacements or {}).items(), key=lambda item: len(item[0]), reverse=True):
+        normalized = normalized.replace(old, new)
+    return re.sub(r"\d{8}T\d{6}\d{6}Z", "<ATTEMPT>", normalized)
+
+
+def assert_rendered_sge_script(
+    text: str,
+    *,
+    task_count: int,
+    scheduler_log_dir: Path,
+    unit_list_path: Path,
+    cleanup_workdir: bool,
+) -> None:
+    assert_lines_in_order(
+        text,
+        [
+            "#$ -S /bin/bash",
+            "#$ -cwd",
+            "#$ -N bidsflow-heudiconv",
+            f"#$ -t 1-{task_count}",
+            "#$ -j y",
+            f"#$ -o {scheduler_log_dir}",
+        ],
+    )
+    assert f"unit_list_path={unit_list_path}" in text
+    assert "launcher=(" in text
+    assert "unit_row=" in text
+    assert "write_unit_status" in text
+    assert 'rm -f -- "$claim_path"' in text
+    if cleanup_workdir:
+        assert 'if [[ "true" == "true" ]]; then' in text
+        assert 'rm -f -- "$execution_path"' in text
+    else:
+        assert 'if [[ "false" == "true" ]]; then' in text
+    assert "{{" not in text

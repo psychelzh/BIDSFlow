@@ -124,6 +124,10 @@ else
 fi
 
 write_unit_status "$final_status" "$status" "$started_at" "$finished_at" "$error_message"
+if [[ "{{ cleanup_workdir }}" == "true" ]]; then
+    rm -f -- "$execution_path"
+    rmdir "$(dirname "$execution_path")" 2>/dev/null || true
+fi
 rm -f -- "$claim_path"
 
 printf '\n[bidsflow] Finished: %s\n' "$finished_at"

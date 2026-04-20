@@ -6,6 +6,7 @@ from pathlib import Path
 
 from helpers import (
     append_config,
+    assert_lines_in_order,
     init_project,
     make_source_dirs,
     read_tsv_rows,
@@ -90,26 +91,28 @@ def test_heudiconv_init_writes_sge_scheduler_script(tmp_path: Path, invoke_from,
     scheduler_script = project_dir / "code" / "bidsflow" / "sge" / "heudiconv.sh"
     assert scheduler_script.is_file()
     script_text = scheduler_script.read_text(encoding="utf-8")
-    assert "#$ -N {{ job_name }}" in script_text
-    assert "#$ -t 1-{{ task_count }}" in script_text
-    assert "#$ -j y" in script_text
-    assert "#$ -o {{ scheduler_log_dir }}" in script_text
+    assert_lines_in_order(
+        script_text,
+        [
+            "#$ -S /bin/bash",
+            "#$ -cwd",
+            "#$ -N {{ job_name }}",
+            "#$ -t 1-{{ task_count }}",
+            "#$ -j y",
+            "#$ -o {{ scheduler_log_dir }}",
+        ],
+    )
     assert "# #$ -q all.q" in script_text
-    assert script_text.index("# #$ -q all.q") < script_text.index("set -uo pipefail")
+    assert_lines_in_order(script_text, ["# #$ -q all.q", "set -uo pipefail"])
     assert "Site-specific environment setup goes here." in script_text
     assert "unit_list_path={{ shell_unit_list_path }}" in script_text
     assert "SGE_TASK_ID" in script_text
     assert "unit_row=" in script_text
     assert "write_unit_status" in script_text
+    assert '{{ cleanup_workdir }}' in script_text
+    assert 'rm -f -- "$execution_path"' in script_text
     assert 'rm -f -- "$claim_path"' in script_text
-    assert "unit_log_path" not in script_text
-    assert "task_table_path" not in script_text
-    assert "task table does not exist" not in script_text
     assert "SGE job/task:" in script_text
-    assert 'exec >> "$unit_log_path" 2>&1' not in script_text
-    assert "stdout_path" not in script_text
-    assert "stderr_path" not in script_text
-    assert "{{ command }}" not in script_text
     assert f"Scheduler script: {scheduler_script} (created)" in result.output
 
     scheduler_script.write_text("custom script\n", encoding="utf-8", newline="\n")

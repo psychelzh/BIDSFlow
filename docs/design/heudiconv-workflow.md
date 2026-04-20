@@ -35,7 +35,7 @@ The current codebase implements three public actions:
 ```bash
 bidsflow heudiconv init [--force]
 bidsflow heudiconv draft <sample-path>... [--force] [--dry-run]
-bidsflow heudiconv [--dry-run]
+bidsflow heudiconv [--dry-run] [--clean-workdir|--keep-workdir]
 ```
 
 ### 2.1 `heudiconv init`
@@ -106,11 +106,14 @@ Current behavior:
 - materializes a temporary execution view under
   `work/heudiconv/run-<attempt>/`
 - runs one managed HeuDiConv invocation per ready source row
+- cleans temporary execution views by default; `--keep-workdir`
+  preserves them for debugging
 - writes overall metadata to `state/heudiconv/run.json`
 - writes unit final statuses to `state/heudiconv/run.tsv`
 - writes each unit's raw tool output to
   `logs/heudiconv/run-<attempt>/<source_name>.log`
-- removes the temporary execution view after success or failure
+- removes the temporary execution view after success or failure unless
+  `--keep-workdir` is used
 
 `run.tsv` is the per-unit final-status table for `bidsflow heudiconv`.
 `run.json` is the current step metadata record and should not duplicate

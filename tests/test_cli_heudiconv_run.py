@@ -4,9 +4,13 @@ import json
 import sys
 from pathlib import Path
 
+from syrupy.assertion import SnapshotAssertion
+
 from helpers import (
+    assert_rendered_sge_script,
     init_project,
     make_source_dirs,
+    normalize_generated_text,
     read_key_value_file,
     read_tsv_rows,
     set_launcher,
@@ -57,13 +61,18 @@ def test_heudiconv_run_dry_run_shows_summary_and_one_example(tmp_path: Path, inv
     assert str(project_dir / "state" / "sources.tsv") in result.output
     assert str(heuristic_path) in result.output
     assert str(project_dir / "sourcedata" / "raw") in result.output
-    assert str(project_dir / "state" / "heudiconv" / "run.json") in result.output
-    assert str(project_dir / "state" / "heudiconv" / "run.tsv") in result.output
-    assert "Run units: 2" in result.output
-    assert "Example unit:" in result.output
+    assert str(project_dir / "state" / "heudiconv" / "run.json") not in result.output
+    assert str(project_dir / "state" / "heudiconv" / "run.tsv") not in result.output
+    assert "Dry run only; no files or directories were created." in result.output
+    assert "Ready units in sources.tsv: 2" in result.output
+    assert "Runnable units now: 2" in result.output
+    assert "Example runnable unit:" in result.output
     assert "SUB001_SES01: subject=001 session=01" in result.output
     assert "-s 001 -ss 01" in result.output
-    assert "Additional units omitted: 1." in result.output
+    assert "Additional runnable units omitted: 1." in result.output
+    assert not (project_dir / "state" / "heudiconv" / "run.json").exists()
+    assert not (project_dir / "work").exists()
+    assert not (project_dir / "logs").exists()
 
 
 def test_heudiconv_run_sge_dry_run_reports_scheduler_artifacts(tmp_path: Path, invoke_from, runner) -> None:
@@ -79,9 +88,11 @@ def test_heudiconv_run_sge_dry_run_reports_scheduler_artifacts(tmp_path: Path, i
     assert result.exit_code == 0, result.output
     assert "Backend: sge" in result.output
     assert "Scheduler template:" in result.output
-    assert "Rendered scheduler script:" in result.output
-    assert "Scheduler unit list:" in result.output
-    assert "Scheduler logs:" in result.output
+    assert "Submit command:" in result.output
+    assert "Scheduler artifacts are created only when the job is submitted." in result.output
+    assert "Rendered scheduler script:" not in result.output
+    assert "Scheduler unit list:" not in result.output
+    assert "Scheduler logs:" not in result.output
 
 
 def test_heudiconv_run_recomputes_sources_status_from_manual_edits(
@@ -165,6 +176,7 @@ def test_heudiconv_run_writes_current_state_and_unit_table(
     assert state["started_at"] is not None
     assert state["finished_at"] is not None
     assert state["artifacts"]["raw_bids_dataset"] == str(raw_root)
+    assert state["cleanup_workdir"] is True
     assert Path(state["log_dir"]).is_dir()
     assert Path(state["unit_status_dir"]).is_dir()
     assert Path(state["claim_dir"]).is_dir()
@@ -194,10 +206,76 @@ def test_heudiconv_run_writes_current_state_and_unit_table(
     assert "--files" in unit_log_text
 
 
+def test_heudiconv_run_can_keep_temporary_execution_view(
+    tmp_path: Path,
+    invoke_from,
+    runner,
+) -> None:
+    project_dir = init_project(tmp_path, runner, name="keep-workdir-project")
+    config_path = project_dir / "bidsflow.toml"
+    set_sources_pattern(config_path, "SUB{subject}")
+    make_source_dirs(project_dir, "SUB001")
+    sources_result = invoke_from(project_dir, ["heudiconv", "init"])
+    assert sources_result.exit_code == 0, sources_result.output
+    write_minimal_heuristic(project_dir)
+
+    fake_launcher = _write_successful_run_launcher(project_dir)
+    set_launcher(
+        config_path,
+        f'launcher = ["{sys.executable}", "{fake_launcher.as_posix()}"]',
+    )
+
+    result = invoke_from(project_dir, ["heudiconv", "--keep-workdir"])
+
+    assert result.exit_code == 0, result.output
+    assert "Execution view kept:" in result.output
+
+    state = json.loads((project_dir / "state" / "heudiconv" / "run.json").read_text(encoding="utf-8"))
+    assert state["cleanup_workdir"] is False
+    assert "execution_view_cleaned" not in state
+    assert Path(state["execution_view_root"]).exists()
+
+
+def test_heudiconv_run_reports_partially_skipped_units(
+    tmp_path: Path,
+    invoke_from,
+    runner,
+) -> None:
+    project_dir = init_project(tmp_path, runner, name="partial-skip-project")
+    config_path = project_dir / "bidsflow.toml"
+    set_sources_pattern(config_path, "SUB{subject}_SES{session}")
+    make_source_dirs(project_dir, "SUB001_SES01", "SUB001_SES02")
+    sources_result = invoke_from(project_dir, ["heudiconv", "init"])
+    assert sources_result.exit_code == 0, sources_result.output
+    write_minimal_heuristic(project_dir)
+
+    fake_launcher = _write_successful_run_launcher(project_dir)
+    set_launcher(
+        config_path,
+        f'launcher = ["{sys.executable}", "{fake_launcher.as_posix()}"]',
+    )
+
+    unit_status_dir = project_dir / "state" / "heudiconv" / "units"
+    unit_status_dir.mkdir(parents=True)
+    (unit_status_dir / "sub-001_ses-01.status").write_text(
+        "status=succeeded\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    result = invoke_from(project_dir, ["heudiconv"])
+
+    assert result.exit_code == 0, result.output
+    assert "Completed `bidsflow heudiconv` execution." in result.output
+    assert "Run units: 1" in result.output
+    assert "Skipped units: 1" in result.output
+
+
 def test_heudiconv_run_with_sge_generates_array_artifacts_and_submits(
     tmp_path: Path,
     invoke_from,
     runner,
+    snapshot: SnapshotAssertion,
 ) -> None:
     project_dir = init_project(tmp_path, runner, name="sge-project", scheduler="sge")
 
@@ -241,6 +319,7 @@ def test_heudiconv_run_with_sge_generates_array_artifacts_and_submits(
 
     assert state["backend"] == "sge"
     assert state["status"] == "submitted"
+    assert state["cleanup_workdir"] is True
     assert state["scheduler"]["name"] == "sge"
     assert state["scheduler"]["job_id"] == "12345"
     assert state["scheduler"]["array_range"] == "1-2"
@@ -266,21 +345,18 @@ def test_heudiconv_run_with_sge_generates_array_artifacts_and_submits(
     assert not (scheduler_script.parent / "commands").exists()
 
     script_text = scheduler_script.read_text(encoding="utf-8")
-    assert "#$ -t 1-2" in script_text
-    assert f"#$ -o {scheduler_log_dir}" in script_text
-    assert "unit_list_path=" in script_text
-    assert str(unit_list_path) in script_text
-    assert "launcher=(" in script_text
-    assert "unit_row=" in script_text
-    assert "write_unit_status" in script_text
-    assert 'rm -f -- "$claim_path"' in script_text
-    assert "Log directory:" not in script_text
-    assert "Unit list:" not in script_text
-    assert "Execution path:" not in script_text
-    assert "SGE job/task:" in script_text
-    assert "unit_log_path" not in script_text
-    assert "{{" not in script_text
-    assert "task_table_path" not in script_text
+    normalized_script = normalize_generated_text(
+        script_text,
+        replacements={str(project_dir): "<PROJECT>"},
+    )
+    assert normalized_script == snapshot(name="heudiconv_sge_rendered_script")
+    assert_rendered_sge_script(
+        script_text,
+        task_count=2,
+        scheduler_log_dir=scheduler_log_dir,
+        unit_list_path=unit_list_path,
+        cleanup_workdir=True,
+    )
 
     unit_rows = read_tsv_rows(unit_list_path)
     assert [row["unit_name"] for row in unit_rows] == ["sub-001_ses-01", "sub-001_ses-02"]
@@ -310,6 +386,9 @@ def test_heudiconv_run_with_sge_generates_array_artifacts_and_submits(
     assert second_result.exit_code == 0, second_result.output
     assert "No runnable `bidsflow heudiconv` units were found." in second_result.output
     assert "Skipped units: 2" in second_result.output
+    second_state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert second_state["status"] == "submitted"
+    assert second_state["scheduler"]["job_id"] == "12345"
 
 
 def test_heudiconv_run_rejects_sources_that_still_needs_review(tmp_path: Path, invoke_from, runner) -> None:

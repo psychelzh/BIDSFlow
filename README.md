@@ -61,7 +61,7 @@ deferred from the first rebuilt CLI.
 bidsflow init [DIRECTORY] [--scheduler auto|none|sge]
 bidsflow heudiconv init [--force]
 bidsflow heudiconv draft <sample-path>... [--force] [--dry-run]
-bidsflow heudiconv [--dry-run]
+bidsflow heudiconv [--dry-run] [--clean-workdir|--keep-workdir]
 ```
 
 Current `heudiconv init` behavior:
@@ -122,6 +122,8 @@ Current `bidsflow heudiconv` behavior:
 - it materializes a temporary execution view under
   `work/heudiconv/run-<attempt>/`
 - it runs one managed HeuDiConv invocation per ready source row
+- it cleans temporary execution views by default; use `--keep-workdir`
+  when debugging the runtime view
 - `state/heudiconv/run.json` records only overall metadata and artifact
   paths
 - `state/heudiconv/run.tsv` records the final status of each unit

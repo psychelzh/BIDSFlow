@@ -83,10 +83,10 @@ The initial generated config should stay minimal:
 # Review before first use:
 # - adjust [project].name if you want a clearer project label
 # - adjust [paths] if your project layout differs from this scaffold
+# - optionally configure [sources] when source directory names map cleanly to final labels
 # - review [execution] if you use a scheduler such as SGE
 # - keep or adjust [heudiconv].heuristic before running HeuDiConv
 # - uncomment [heudiconv].launcher if you need a wrapper or Singularity launcher
-# - optionally configure [sources] when source directory names map cleanly to final labels
 
 [project]
 name = "Example BIDSFlow project"
@@ -99,6 +99,14 @@ derivatives_root = "derivatives"
 work_root = "work"
 logs_root = "logs"
 state_root = "state"
+
+# Optional source label generation. Configure one strategy when directory names
+# can be mapped automatically onto final subject/session labels.
+# [sources]
+# pattern = "SUB{subject}_SES{session}"
+# command receives source_name as its last argument, runs from project_root,
+# and must print one line (subject_label) or two lines (subject_label, session_label).
+# command = ["python", "code/heudiconv/derive_labels.py"]
 
 [execution]
 scheduler = "none"
@@ -115,14 +123,6 @@ heuristic = "code/heudiconv/heuristic.py"
 # Uncomment and edit one launcher if HeuDiConv is launched through a wrapper or container.
 # launcher = ["heudiconv"]
 # launcher = ["singularity", "run", "/containers/heudiconv.sif"]
-
-# Optional source label generation. Configure one strategy when directory names
-# can be mapped automatically onto final subject/session labels.
-# [sources]
-# pattern = "SUB{subject}_SES{session}"
-# command receives source_name as its last argument, runs from project_root,
-# and must print one line (subject_label) or two lines (subject_label, session_label).
-# command = ["python", "code/heudiconv/derive_labels.py"]
 ```
 
 When `--scheduler auto` detects `qsub`, or when `--scheduler sge` is

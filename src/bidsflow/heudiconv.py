@@ -200,14 +200,16 @@ class RunResult:
     backend: str = "local"
     status: str = "succeeded"
     skipped_units: int = 0
+    skipped_succeeded: int = 0
+    skipped_active_claim: int = 0
     scheduler_job_id: str | None = None
     scheduler_script_path: Path | None = None
     scheduler_log_dir: Path | None = None
 
 
 @dataclass(frozen=True)
-class ClaimSelection:
-    claimed_units: tuple[RunUnitPlan, ...]
+class RunUnitSelection:
+    runnable_units: tuple[RunUnitPlan, ...]
     skipped_succeeded: int
     skipped_active_claim: int
 
@@ -669,36 +671,21 @@ def plan_heudiconv_run(context: ProjectContext) -> RunPlan:
     )
 
 
-def run_heudiconv(context: ProjectContext, plan: RunPlan) -> RunResult:
+def run_heudiconv(
+    context: ProjectContext,
+    plan: RunPlan,
+    *,
+    cleanup_workdir: bool = True,
+) -> RunResult:
     if plan.sge is not None:
-        return _submit_sge_heudiconv_run(context, plan)
-
-    execution_view_cleared = _cleanup_run_execution_view(
-        context.project_root,
-        plan.execution_view_root,
-    )
-    if not execution_view_cleared:
-        raise HeudiconvRunError(
-            f"Failed to clear prior run execution view: {plan.execution_view_root}"
-        )
-
-    _prepare_run_directories(plan)
-    _ensure_run_units_tsv_header(plan.units_path)
+        return _submit_sge_heudiconv_run(context, plan, cleanup_workdir=cleanup_workdir)
 
     started_at = _utc_now()
     claim_selection = _claim_runnable_units(
         units=plan.units,
     )
     unit_counts = _build_run_unit_counts(plan.units, claim_selection)
-    if not claim_selection.claimed_units:
-        _write_run_state(
-            context=context,
-            plan=plan,
-            status="skipped",
-            started_at=started_at,
-            finished_at=_utc_now(),
-            unit_counts=unit_counts,
-        )
+    if not claim_selection.runnable_units:
         return RunResult(
             raw_bids_root=plan.raw_bids_root,
             state_path=plan.state_path,
@@ -707,20 +694,35 @@ def run_heudiconv(context: ProjectContext, plan: RunPlan) -> RunResult:
             unit_results=(),
             status="skipped",
             skipped_units=unit_counts["skipped"],
+            skipped_succeeded=unit_counts["skipped_succeeded"],
+            skipped_active_claim=unit_counts["skipped_active_claim"],
         )
-
-    _write_run_state(
-        context=context,
-        plan=plan,
-        status="running",
-        started_at=started_at,
-        unit_counts=unit_counts,
-    )
 
     unit_results: list[RunUnitResult] = []
     current_unit: RunUnitPlan | None = None
     try:
-        for unit in claim_selection.claimed_units:
+        execution_view_cleared = _cleanup_run_execution_view(
+            context.project_root,
+            plan.execution_view_root,
+        )
+        if not execution_view_cleared:
+            raise HeudiconvRunError(
+                f"Failed to clear prior run execution view: {plan.execution_view_root}"
+            )
+
+        _prepare_run_directories(plan)
+        _ensure_run_units_tsv_header(plan.units_path)
+
+        _write_run_state(
+            context=context,
+            plan=plan,
+            status="running",
+            started_at=started_at,
+            cleanup_workdir=cleanup_workdir,
+            unit_counts=unit_counts,
+        )
+
+        for unit in claim_selection.runnable_units:
             current_unit = unit
             unit_started_at = _utc_now()
             _write_unit_status(
@@ -828,33 +830,39 @@ def run_heudiconv(context: ProjectContext, plan: RunPlan) -> RunResult:
             unit_results.append(result)
             current_unit = None
     except HeudiconvRunError as exc:
-        _release_unfinished_claims(claim_selection.claimed_units, unit_results, current_unit)
-        execution_view_cleaned = _cleanup_run_execution_view(
-            context.project_root,
-            plan.execution_view_root,
-        )
+        _release_unfinished_claims(claim_selection.runnable_units, unit_results, current_unit)
+        execution_view_cleaned = None
+        if cleanup_workdir:
+            execution_view_cleaned = _cleanup_run_execution_view(
+                context.project_root,
+                plan.execution_view_root,
+            )
         _write_run_state(
             context=context,
             plan=plan,
             status="failed",
             started_at=started_at,
             finished_at=_utc_now(),
+            cleanup_workdir=cleanup_workdir,
             execution_view_cleaned=execution_view_cleaned,
             unit_counts=unit_counts,
             error=str(exc),
         )
         raise
 
-    execution_view_cleaned = _cleanup_run_execution_view(
-        context.project_root,
-        plan.execution_view_root,
-    )
+    execution_view_cleaned = None
+    if cleanup_workdir:
+        execution_view_cleaned = _cleanup_run_execution_view(
+            context.project_root,
+            plan.execution_view_root,
+        )
     _write_run_state(
         context=context,
         plan=plan,
         status="succeeded",
         started_at=started_at,
         finished_at=_utc_now(),
+        cleanup_workdir=cleanup_workdir,
         execution_view_cleaned=execution_view_cleaned,
         unit_counts=unit_counts,
     )
@@ -866,43 +874,27 @@ def run_heudiconv(context: ProjectContext, plan: RunPlan) -> RunResult:
         log_dir=plan.log_dir,
         unit_results=tuple(unit_results),
         skipped_units=unit_counts["skipped"],
+        skipped_succeeded=unit_counts["skipped_succeeded"],
+        skipped_active_claim=unit_counts["skipped_active_claim"],
     )
 
 
-def _submit_sge_heudiconv_run(context: ProjectContext, plan: RunPlan) -> RunResult:
+def _submit_sge_heudiconv_run(
+    context: ProjectContext,
+    plan: RunPlan,
+    *,
+    cleanup_workdir: bool,
+) -> RunResult:
     sge = plan.sge
     if sge is None:  # pragma: no cover
         raise HeudiconvRunError("SGE run plan is missing.")
-
-    execution_view_cleared = _cleanup_run_execution_view(
-        context.project_root,
-        plan.execution_view_root,
-    )
-    if not execution_view_cleared:
-        raise HeudiconvRunError(
-            f"Failed to clear prior run execution view: {plan.execution_view_root}"
-    )
-
-    _prepare_run_directories(plan)
-    _ensure_run_units_tsv_header(plan.units_path)
 
     started_at = _utc_now()
     claim_selection = _claim_runnable_units(
         units=plan.units,
     )
     unit_counts = _build_run_unit_counts(plan.units, claim_selection)
-    scheduler_metadata = _build_sge_run_metadata(plan, units=claim_selection.claimed_units)
-    if not claim_selection.claimed_units:
-        _write_run_state(
-            context=context,
-            plan=plan,
-            status="skipped",
-            started_at=started_at,
-            finished_at=_utc_now(),
-            backend="sge",
-            scheduler=scheduler_metadata,
-            unit_counts=unit_counts,
-        )
+    if not claim_selection.runnable_units:
         return RunResult(
             raw_bids_root=plan.raw_bids_root,
             state_path=plan.state_path,
@@ -912,24 +904,40 @@ def _submit_sge_heudiconv_run(context: ProjectContext, plan: RunPlan) -> RunResu
             backend="sge",
             status="skipped",
             skipped_units=unit_counts["skipped"],
+            skipped_succeeded=unit_counts["skipped_succeeded"],
+            skipped_active_claim=unit_counts["skipped_active_claim"],
             scheduler_script_path=sge.script_path,
             scheduler_log_dir=sge.scheduler_log_dir,
         )
 
-    _write_run_state(
-        context=context,
-        plan=plan,
-        status="preparing",
-        started_at=started_at,
-        backend="sge",
-        scheduler=scheduler_metadata,
-        unit_counts=unit_counts,
-    )
-
     unit_results: list[RunUnitResult] = []
     current_unit: RunUnitPlan | None = None
     try:
-        for unit in claim_selection.claimed_units:
+        execution_view_cleared = _cleanup_run_execution_view(
+            context.project_root,
+            plan.execution_view_root,
+        )
+        if not execution_view_cleared:
+            raise HeudiconvRunError(
+                f"Failed to clear prior run execution view: {plan.execution_view_root}"
+            )
+
+        _prepare_run_directories(plan)
+        _ensure_run_units_tsv_header(plan.units_path)
+
+        scheduler_metadata = _build_sge_run_metadata(plan, units=claim_selection.runnable_units)
+        _write_run_state(
+            context=context,
+            plan=plan,
+            status="preparing",
+            started_at=started_at,
+            backend="sge",
+            cleanup_workdir=cleanup_workdir,
+            scheduler=scheduler_metadata,
+            unit_counts=unit_counts,
+        )
+
+        for unit in claim_selection.runnable_units:
             current_unit = unit
             _materialize_run_execution_view(
                 unit.execution_path,
@@ -954,7 +962,12 @@ def _submit_sge_heudiconv_run(context: ProjectContext, plan: RunPlan) -> RunResu
             )
             current_unit = None
 
-        _write_sge_run_files(context, plan, claim_selection.claimed_units)
+        _write_sge_run_files(
+            context,
+            plan,
+            claim_selection.runnable_units,
+            cleanup_workdir=cleanup_workdir,
+        )
         completed = _submit_sge_script(context, sge)
         if completed.returncode != 0:
             details = _combine_process_output(completed.stdout, completed.stderr).strip()
@@ -965,7 +978,7 @@ def _submit_sge_heudiconv_run(context: ProjectContext, plan: RunPlan) -> RunResu
             )
         scheduler_job_id = _parse_sge_job_id(completed.stdout)
     except HeudiconvRunError as exc:
-        for unit in claim_selection.claimed_units:
+        for unit in claim_selection.runnable_units:
             _write_unit_status(
                 unit,
                 status="submit_failed",
@@ -978,10 +991,17 @@ def _submit_sge_heudiconv_run(context: ProjectContext, plan: RunPlan) -> RunResu
             )
             _release_unit_claim(unit)
         _release_unfinished_claims(
-            claim_selection.claimed_units,
+            claim_selection.runnable_units,
             tuple(unit_results),
             current_unit,
         )
+        execution_view_cleaned = None
+        if cleanup_workdir:
+            execution_view_cleaned = _cleanup_run_execution_view(
+                context.project_root,
+                plan.execution_view_root,
+            )
+        scheduler_metadata = _build_sge_run_metadata(plan, units=claim_selection.runnable_units)
         _write_run_state(
             context=context,
             plan=plan,
@@ -989,6 +1009,8 @@ def _submit_sge_heudiconv_run(context: ProjectContext, plan: RunPlan) -> RunResu
             started_at=started_at,
             finished_at=_utc_now(),
             backend="sge",
+            cleanup_workdir=cleanup_workdir,
+            execution_view_cleaned=execution_view_cleaned,
             scheduler=scheduler_metadata,
             unit_counts=unit_counts,
             error=str(exc),
@@ -997,10 +1019,10 @@ def _submit_sge_heudiconv_run(context: ProjectContext, plan: RunPlan) -> RunResu
 
     scheduler_metadata = _build_sge_run_metadata(
         plan,
-        units=claim_selection.claimed_units,
+        units=claim_selection.runnable_units,
         job_id=scheduler_job_id,
     )
-    for task_id, unit in enumerate(claim_selection.claimed_units, start=1):
+    for task_id, unit in enumerate(claim_selection.runnable_units, start=1):
         _write_unit_status(
             unit,
             status="submitted",
@@ -1018,6 +1040,7 @@ def _submit_sge_heudiconv_run(context: ProjectContext, plan: RunPlan) -> RunResu
         started_at=started_at,
         finished_at=_utc_now(),
         backend="sge",
+        cleanup_workdir=cleanup_workdir,
         scheduler=scheduler_metadata,
         unit_counts=unit_counts,
     )
@@ -1031,6 +1054,8 @@ def _submit_sge_heudiconv_run(context: ProjectContext, plan: RunPlan) -> RunResu
         backend="sge",
         status="submitted",
         skipped_units=unit_counts["skipped"],
+        skipped_succeeded=unit_counts["skipped_succeeded"],
+        skipped_active_claim=unit_counts["skipped_active_claim"],
         scheduler_job_id=scheduler_job_id,
         scheduler_script_path=sge.script_path,
         scheduler_log_dir=sge.scheduler_log_dir,
@@ -1041,6 +1066,8 @@ def _write_sge_run_files(
     context: ProjectContext,
     plan: RunPlan,
     units: tuple[RunUnitPlan, ...],
+    *,
+    cleanup_workdir: bool,
 ) -> None:
     sge = plan.sge
     if sge is None:  # pragma: no cover
@@ -1060,6 +1087,7 @@ def _write_sge_run_files(
         .replace("{{ shell_raw_bids_root }}", shlex.quote(str(plan.raw_bids_root)))
         .replace("{{ shell_heuristic_path }}", shlex.quote(str(plan.heuristic_path)))
         .replace("{{ shell_launcher_items }}", _format_shell_array_items(plan.launcher))
+        .replace("{{ cleanup_workdir }}", "true" if cleanup_workdir else "false")
     )
     if "{{" in rendered or "}}" in rendered:
         raise HeudiconvRunError(
@@ -1067,8 +1095,8 @@ def _write_sge_run_files(
             "Supported run placeholders are {{ job_name }}, {{ task_count }}, "
             "{{ attempt_label }}, {{ scheduler_log_dir }}, {{ unit_list_path }}, "
             "{{ shell_unit_list_path }}, {{ shell_scheduler_log_dir }}, {{ shell_project_root }}, "
-            "{{ shell_raw_bids_root }}, {{ shell_heuristic_path }}, and "
-            "{{ shell_launcher_items }}."
+            "{{ shell_raw_bids_root }}, {{ shell_heuristic_path }}, "
+            "{{ shell_launcher_items }}, and {{ cleanup_workdir }}."
         )
     sge.script_path.write_text(rendered, encoding="utf-8", newline="\n")
     _make_executable(sge.script_path)
@@ -1653,8 +1681,8 @@ def _append_run_units_tsv(
 def _claim_runnable_units(
     *,
     units: tuple[RunUnitPlan, ...],
-) -> ClaimSelection:
-    claimed_units: list[RunUnitPlan] = []
+) -> RunUnitSelection:
+    runnable_units: list[RunUnitPlan] = []
     skipped_succeeded = 0
     skipped_active_claim = 0
 
@@ -1669,10 +1697,35 @@ def _claim_runnable_units(
         except FileExistsError:
             skipped_active_claim += 1
             continue
-        claimed_units.append(unit)
+        runnable_units.append(unit)
 
-    return ClaimSelection(
-        claimed_units=tuple(claimed_units),
+    return RunUnitSelection(
+        runnable_units=tuple(runnable_units),
+        skipped_succeeded=skipped_succeeded,
+        skipped_active_claim=skipped_active_claim,
+    )
+
+
+def preview_run_unit_selection(plan: RunPlan) -> tuple[tuple[RunUnitPlan, ...], dict[str, int]]:
+    selection = _preview_runnable_units(plan.units)
+    return selection.runnable_units, _build_run_unit_counts(plan.units, selection)
+
+
+def _preview_runnable_units(units: tuple[RunUnitPlan, ...]) -> RunUnitSelection:
+    runnable_units: list[RunUnitPlan] = []
+    skipped_succeeded = 0
+    skipped_active_claim = 0
+
+    for unit in units:
+        if _unit_status_is_succeeded(unit.status_path):
+            skipped_succeeded += 1
+        elif unit.claim_path.exists():
+            skipped_active_claim += 1
+        else:
+            runnable_units.append(unit)
+
+    return RunUnitSelection(
+        runnable_units=tuple(runnable_units),
         skipped_succeeded=skipped_succeeded,
         skipped_active_claim=skipped_active_claim,
     )
@@ -1680,12 +1733,12 @@ def _claim_runnable_units(
 
 def _build_run_unit_counts(
     planned_units: tuple[RunUnitPlan, ...],
-    claim_selection: ClaimSelection,
+    claim_selection: RunUnitSelection,
 ) -> dict[str, int]:
     skipped = claim_selection.skipped_succeeded + claim_selection.skipped_active_claim
     return {
         "total": len(planned_units),
-        "selected": len(claim_selection.claimed_units),
+        "selected": len(claim_selection.runnable_units),
         "skipped": skipped,
         "skipped_succeeded": claim_selection.skipped_succeeded,
         "skipped_active_claim": claim_selection.skipped_active_claim,
@@ -1791,6 +1844,7 @@ def _write_run_state(
     started_at: str,
     backend: str = "local",
     finished_at: str | None = None,
+    cleanup_workdir: bool | None = None,
     execution_view_cleaned: bool | None = None,
     scheduler: dict[str, object] | None = None,
     unit_counts: dict[str, int] | None = None,
@@ -1836,6 +1890,8 @@ def _write_run_state(
         payload["scheduler"] = scheduler
     if unit_counts is not None:
         payload["unit_counts"] = unit_counts
+    if cleanup_workdir is not None:
+        payload["cleanup_workdir"] = cleanup_workdir
     if execution_view_cleaned is not None:
         payload["execution_view_cleaned"] = execution_view_cleaned
     if error is not None:

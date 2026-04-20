@@ -157,11 +157,22 @@ def test_local_run_skips_units_with_succeeded_status_or_active_claim(
 
     first = invoke_from(project_dir, ["heudiconv"])
     assert first.exit_code == 0, first.output
+    work_entries = sorted(path.name for path in (project_dir / "work" / "heudiconv").glob("*"))
+    log_entries = sorted(path.name for path in (project_dir / "logs" / "heudiconv" / "local").glob("*"))
 
     skipped_succeeded = invoke_from(project_dir, ["heudiconv"])
     assert skipped_succeeded.exit_code == 0, skipped_succeeded.output
     assert "No runnable `bidsflow heudiconv` units were found." in skipped_succeeded.output
     assert "Skipped units: 1" in skipped_succeeded.output
+    assert sorted(path.name for path in (project_dir / "work" / "heudiconv").glob("*")) == work_entries
+    assert sorted(path.name for path in (project_dir / "logs" / "heudiconv" / "local").glob("*")) == log_entries
+    state = json.loads((project_dir / "state" / "heudiconv" / "run.json").read_text(encoding="utf-8"))
+    assert state["status"] == "succeeded"
+
+    dry_run_succeeded = invoke_from(project_dir, ["heudiconv", "--dry-run"])
+    assert dry_run_succeeded.exit_code == 0, dry_run_succeeded.output
+    assert "Runnable units now: 0" in dry_run_succeeded.output
+    assert "- already succeeded: 1" in dry_run_succeeded.output
 
     status_path = next((project_dir / "state" / "heudiconv" / "units").glob("*.status"))
     status_path.unlink()
@@ -171,8 +182,15 @@ def test_local_run_skips_units_with_succeeded_status_or_active_claim(
 
     skipped_claimed = invoke_from(project_dir, ["heudiconv"])
     assert skipped_claimed.exit_code == 0, skipped_claimed.output
+    assert "Skipped units: 1" in skipped_claimed.output
+    assert "- active claim: 1" in skipped_claimed.output
     state = json.loads((project_dir / "state" / "heudiconv" / "run.json").read_text(encoding="utf-8"))
-    assert state["unit_counts"]["skipped_active_claim"] == 1
+    assert state["status"] == "succeeded"
+
+    dry_run_claimed = invoke_from(project_dir, ["heudiconv", "--dry-run"])
+    assert dry_run_claimed.exit_code == 0, dry_run_claimed.output
+    assert "Runnable units now: 0" in dry_run_claimed.output
+    assert "- active claim: 1" in dry_run_claimed.output
 
 
 def test_local_run_records_launcher_start_failure(tmp_path: Path, invoke_from, runner) -> None:

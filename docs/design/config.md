@@ -47,11 +47,11 @@ commented.
 # Review before first use:
 # - adjust [project].name if you want a clearer project label
 # - adjust [paths] if your project layout differs from this scaffold
+# - optionally configure [sources] when source directory
+#   names map cleanly to final labels
 # - review [execution] if you use a scheduler such as SGE
 # - keep or adjust [heudiconv].heuristic before running HeuDiConv
 # - uncomment [heudiconv].launcher if you need a wrapper or Singularity launcher
-# - optionally configure [sources] when source directory
-#   names map cleanly to final labels
 
 [project]
 name = "<target-directory-name>"
@@ -64,6 +64,14 @@ derivatives_root = "derivatives"
 work_root = "work"
 logs_root = "logs"
 state_root = "state"
+
+# Optional source label generation. Configure one strategy when directory names
+# can be mapped automatically onto final subject/session labels.
+# [sources]
+# pattern = "SUB{subject}_SES{session}"
+# command receives source_name as its last argument, runs from project_root,
+# and must print one line (subject_label) or two lines (subject_label, session_label).
+# command = ["python", "code/heudiconv/derive_labels.py"]
 
 [execution]
 scheduler = "none"
@@ -81,14 +89,6 @@ heuristic = "code/heudiconv/heuristic.py"
 # wrapper or container.
 # launcher = ["heudiconv"]
 # launcher = ["singularity", "run", "/containers/heudiconv.sif"]
-
-# Optional source label generation. Configure one strategy when directory names
-# can be mapped automatically onto final subject/session labels.
-# [sources]
-# pattern = "SUB{subject}_SES{session}"
-# command receives source_name as its last argument, runs from project_root,
-# and must print one line (subject_label) or two lines (subject_label, session_label).
-# command = ["python", "code/heudiconv/derive_labels.py"]
 ```
 
 ## 3. Section-by-section reference
@@ -339,7 +339,7 @@ Why this default:
 Current status:
 
 - scaffolded by `bidsflow init`
-- not yet consumed by `bidsflow heudiconv`
+- consumed by `bidsflow heudiconv init` and `bidsflow heudiconv`
 - `auto` is an init-time convenience only and is not persisted in TOML
 
 #### `scheduler_template`
@@ -391,8 +391,7 @@ Why this belongs in config:
 
 Current status:
 
-- scaffolded for future SGE support
-- not yet used by execution commands
+- used by `bidsflow heudiconv` when `[execution].scheduler = "sge"`
 
 ## 4. Default summary
 

@@ -341,5 +341,3 @@ def test_heudiconv_draft_rejects_sample_outside_configured_source_root(tmp_path:
     assert result.exit_code == 2
     assert "Sample path must resolve under the configured source root" in result.output
 
-
-

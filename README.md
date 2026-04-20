@@ -124,12 +124,14 @@ Current `bidsflow heudiconv` behavior:
 - it runs one managed HeuDiConv invocation per ready source row
 - it cleans temporary execution views by default; use `--keep-workdir`
   when debugging the runtime view
-- `state/heudiconv/run.json` records only overall metadata and artifact
-  paths
-- `state/heudiconv/run.tsv` records the final status of each unit
-- each unit's tool output is written to
-  `logs/heudiconv/run-<attempt>/<source_name>.log`, with paths
-  recorded in `run.tsv`
+- `state/heudiconv/run.json` records the BIDSFlow run/submission
+  record and artifact paths
+- `state/heudiconv/results.tsv` records the final result of each unit
+- local unit output is written to
+  `logs/heudiconv/local/run-<attempt>/<unit>.log`, with paths recorded
+  in `results.tsv`
+- SGE unit output is captured by the scheduler under
+  `logs/heudiconv/sge/run-<attempt>/`
 - the temporary execution view is removed after success or failure
 
 Current run limit:

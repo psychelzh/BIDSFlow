@@ -108,16 +108,19 @@ Current behavior:
 - runs one managed HeuDiConv invocation per ready source row
 - cleans temporary execution views by default; `--keep-workdir`
   preserves them for debugging
-- writes overall metadata to `state/heudiconv/run.json`
-- writes unit final statuses to `state/heudiconv/run.tsv`
-- writes each unit's raw tool output to
-  `logs/heudiconv/run-<attempt>/<source_name>.log`
+- writes the BIDSFlow run/submission record to
+  `state/heudiconv/run.json`
+- writes unit final results to `state/heudiconv/results.tsv`
+- writes local unit output to
+  `logs/heudiconv/local/run-<attempt>/<unit>.log`
+- captures SGE unit output under `logs/heudiconv/sge/run-<attempt>/`
 - removes the temporary execution view after success or failure unless
   `--keep-workdir` is used
 
-`run.tsv` is the per-unit final-status table for `bidsflow heudiconv`.
-`run.json` is the current step metadata record and should not duplicate
-the unit table.
+`results.tsv` is the per-unit final-results table for
+`bidsflow heudiconv`. `run.json` is the BIDSFlow control-plane record
+for the latest local run or scheduler submission and should not
+duplicate the unit table.
 
 Current limit:
 
@@ -170,11 +173,13 @@ Current files:
   generation
 - `logs/heudiconv/draft-<attempt>/<unit>.log`: per-unit draft tool
   output
-- `state/heudiconv/run.json`: overall metadata for the latest
-  `bidsflow heudiconv` execution
-- `state/heudiconv/run.tsv`: final status of each execution unit
-- `logs/heudiconv/run-<attempt>/<source_name>.log`: per-unit run tool
-  output
+- `state/heudiconv/run.json`: control-plane record for the latest
+  `bidsflow heudiconv` local run or scheduler submission
+- `state/heudiconv/results.tsv`: final result of each execution unit
+- `logs/heudiconv/local/run-<attempt>/<unit>.log`: per-unit local run
+  tool output
+- `logs/heudiconv/sge/run-<attempt>/`: scheduler-captured SGE run
+  tool output
 
 This layout is intentionally friendly to future parallel execution:
 different units can write different log files without interleaving tool

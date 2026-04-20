@@ -106,9 +106,11 @@ def test_heudiconv_init_writes_sge_scheduler_script(tmp_path: Path, invoke_from,
     assert_lines_in_order(script_text, ["# #$ -q all.q", "set -uo pipefail"])
     assert "Site-specific environment setup goes here." in script_text
     assert "unit_list_path={{ shell_unit_list_path }}" in script_text
+    assert "results_table_path={{ shell_results_table_path }}" in script_text
     assert "SGE_TASK_ID" in script_text
     assert "unit_row=" in script_text
     assert "write_unit_status" in script_text
+    assert "append_final_result" in script_text
     assert '{{ cleanup_workdir }}' in script_text
     assert 'rm -f -- "$execution_path"' in script_text
     assert 'rm -f -- "$claim_path"' in script_text

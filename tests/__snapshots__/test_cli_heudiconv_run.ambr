@@ -8,41 +8,36 @@
   # SGE captures stdout/stderr in <PROJECT>/logs/heudiconv/sge/run-<ATTEMPT>. The wrapper prints a
   # short BIDSFlow header there, then leaves HeuDiConv output on stdout/stderr.
   # Per-unit machine state is written to state/heudiconv/units/*.status; this
-  # script does not write the shared run.tsv file.
-  
+  # script appends one final row to <PROJECT>/state/heudiconv/results.tsv when the task exits.
   #$ -S /bin/bash
   #$ -cwd
   #$ -N bidsflow-heudiconv
   #$ -t 1-2
   #$ -j y
   #$ -o <PROJECT>/logs/heudiconv/sge/run-<ATTEMPT>
-  
   # Site-specific scheduler settings can be enabled here.
   # Uncomment and edit these for your cluster if needed.
   # #$ -q all.q
   # #$ -pe smp 1
   # #$ -l h_rt=04:00:00
   # #$ -tc 20
-  
   set -uo pipefail
-  
   # Site-specific environment setup goes here.
   # Output from this section is captured by the scheduler log.
   # Examples:
   # module load heudiconv
   # source ~/miniconda3/etc/profile.d/conda.sh
   # conda activate heudiconv
-  
   task_id="${SGE_TASK_ID:?This script must run as an SGE array job.}"
   unit_list_path=<PROJECT>/work/heudiconv/run-<ATTEMPT>/.bidsflow/scheduler/sge/units.tsv
+  results_table_path=<PROJECT>/state/heudiconv/results.tsv
+  results_table_lock="${results_table_path}.lock"
   scheduler_log_dir=<PROJECT>/logs/heudiconv/sge/run-<ATTEMPT>
-  
   unit_row="$(sed -n "$((task_id + 1))p" "$unit_list_path")"
   if [[ -z "$unit_row" ]]; then
       printf '[bidsflow] Unit row was not found for SGE task %s in %s\n' "$task_id" "$unit_list_path" >&2
       exit 4
   fi
-  
   # Convert tabs to a non-whitespace delimiter before read, so an empty
   # session_label field does not shift later fields.
   unit_row="${unit_row//$'\t'/$'\034'}"
@@ -51,7 +46,6 @@
       printf '[bidsflow] Unit row is incomplete for SGE task %s\n' "$task_id" >&2
       exit 5
   fi
-  
   write_unit_status() {
       local unit_status="$1"
       local exit_code="${2-}"
@@ -59,7 +53,6 @@
       local finished="${4-}"
       local error="${5-}"
       local tmp_path="${unit_status_path}.tmp.$$"
-  
       mkdir -p "$(dirname "$unit_status_path")"
       {
           printf 'status=%s\n' "$unit_status"
@@ -82,11 +75,47 @@
       } > "$tmp_path"
       mv -f "$tmp_path" "$unit_status_path"
   }
-  
+  append_final_result() {
+      local final_unit_status="$1"
+      local exit_code="$2"
+      local started="$3"
+      local finished="$4"
+      local summary
+      if [[ -n "$session_label" ]]; then
+          summary="sub-${subject_label} ses-${session_label}"
+      else
+          summary="sub-${subject_label}"
+      fi
+      mkdir -p "$(dirname "$results_table_path")"
+      while ! mkdir "$results_table_lock" 2>/dev/null; do
+          sleep 0.2
+      done
+      {
+          if [[ ! -s "$results_table_path" ]]; then
+              printf 'unit_name\tsource_name\tsubject_label\tsession_label\tsummary\tstatus\texit_code\tstarted_at\tfinished_at\tlog_path\tscheduler\tscheduler_job_id\tscheduler_task_id\tnotes\n'
+          fi
+          printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+              "$unit_name" \
+              "$source_name" \
+              "$subject_label" \
+              "$session_label" \
+              "$summary" \
+              "$final_unit_status" \
+              "$exit_code" \
+              "$started" \
+              "$finished" \
+              "$scheduler_log_dir" \
+              "sge" \
+              "${JOB_ID:-unknown}" \
+              "$task_id" \
+              ""
+      } >> "$results_table_path"
+      rmdir "$results_table_lock" 2>/dev/null || true
+  }
   launcher=(
-      heudiconv
+      <PYTHON>
+      <PROJECT>/fake_heudiconv.py
   )
-  
   command=(
       "${launcher[@]}"
       "--files" "$execution_path"
@@ -99,24 +128,20 @@
   if [[ -n "$session_label" ]]; then
       command+=("-ss" "$session_label")
   fi
-  
   started_at="$(date -Is)"
   write_unit_status "running" "" "$started_at" "" ""
-  
   printf '[bidsflow] HeuDiConv task started: %s\n' "$started_at"
   printf '[bidsflow] SGE job/task: %s/%s\n' "${JOB_ID:-unknown}" "$task_id"
   printf '[bidsflow] Unit: %s (source=%s, subject=%s, session=%s)\n' "$unit_name" "$source_name" "$subject_label" "${session_label:-none}"
   printf '[bidsflow] Command:'
   printf ' %q' "${command[@]}"
   printf '\n\n'
-  
   if cd -- <PROJECT>; then
       "${command[@]}"
       status=$?
   else
       status=$?
   fi
-  
   finished_at="$(date -Is)"
   if [[ "$status" -eq 0 ]]; then
       final_status="succeeded"
@@ -125,17 +150,15 @@
       final_status="failed"
       error_message="HeuDiConv exited with status $status"
   fi
-  
   write_unit_status "$final_status" "$status" "$started_at" "$finished_at" "$error_message"
+  append_final_result "$final_status" "$status" "$started_at" "$finished_at"
   if [[ "true" == "true" ]]; then
       rm -f -- "$execution_path"
       rmdir "$(dirname "$execution_path")" 2>/dev/null || true
   fi
   rm -f -- "$claim_path"
-  
   printf '\n[bidsflow] Finished: %s\n' "$finished_at"
   printf '[bidsflow] Exit status: %s\n' "$status"
-  
   exit "$status"
   
   '''

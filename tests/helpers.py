@@ -131,11 +131,16 @@ def normalize_generated_text(
     text: str,
     *,
     replacements: dict[str, str] | None = None,
+    drop_blank_lines: bool = False,
 ) -> str:
     normalized = text.replace("\r\n", "\n")
     for old, new in sorted((replacements or {}).items(), key=lambda item: len(item[0]), reverse=True):
         normalized = normalized.replace(old, new)
-    return re.sub(r"\d{8}T\d{6}\d{6}Z", "<ATTEMPT>", normalized)
+    normalized = re.sub(r"\d{8}T\d{6}\d{6}Z", "<ATTEMPT>", normalized)
+    if drop_blank_lines:
+        normalized = "\n".join(line for line in normalized.splitlines() if line.strip())
+        normalized += "\n"
+    return normalized
 
 
 def assert_rendered_sge_script(
@@ -144,6 +149,7 @@ def assert_rendered_sge_script(
     task_count: int,
     scheduler_log_dir: Path,
     unit_list_path: Path,
+    results_path: Path,
     cleanup_workdir: bool,
 ) -> None:
     assert_lines_in_order(
@@ -158,9 +164,11 @@ def assert_rendered_sge_script(
         ],
     )
     assert f"unit_list_path={unit_list_path}" in text
+    assert f"results_table_path={results_path}" in text
     assert "launcher=(" in text
     assert "unit_row=" in text
     assert "write_unit_status" in text
+    assert "append_final_result" in text
     assert 'rm -f -- "$claim_path"' in text
     if cleanup_workdir:
         assert 'if [[ "true" == "true" ]]; then' in text

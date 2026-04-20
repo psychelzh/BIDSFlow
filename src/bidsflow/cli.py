@@ -443,7 +443,7 @@ def _run_heudiconv_default(
         typer.echo(f"Skipped units: {result.skipped_units}")
     typer.echo(f"Raw BIDS root: {result.raw_bids_root}")
     typer.echo(f"State: {result.state_path}")
-    typer.echo(f"Final units table: {result.units_path}")
+    typer.echo(f"Results table: {result.results_path}")
     typer.echo(f"Logs: {result.log_dir}")
     typer.echo(f"Unit status files: {plan.unit_state_dir}")
     typer.echo(f"Unit claims: {plan.claim_dir}")

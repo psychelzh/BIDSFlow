@@ -167,7 +167,7 @@ def test_local_run_skips_units_with_succeeded_status_or_active_claim(
     assert sorted(path.name for path in (project_dir / "work" / "heudiconv").glob("*")) == work_entries
     assert sorted(path.name for path in (project_dir / "logs" / "heudiconv" / "local").glob("*")) == log_entries
     state = json.loads((project_dir / "state" / "heudiconv" / "run.json").read_text(encoding="utf-8"))
-    assert state["status"] == "succeeded"
+    assert state["record_state"] == "succeeded"
 
     dry_run_succeeded = invoke_from(project_dir, ["heudiconv", "--dry-run"])
     assert dry_run_succeeded.exit_code == 0, dry_run_succeeded.output
@@ -185,7 +185,7 @@ def test_local_run_skips_units_with_succeeded_status_or_active_claim(
     assert "Skipped units: 1" in skipped_claimed.output
     assert "- active claim: 1" in skipped_claimed.output
     state = json.loads((project_dir / "state" / "heudiconv" / "run.json").read_text(encoding="utf-8"))
-    assert state["status"] == "succeeded"
+    assert state["record_state"] == "succeeded"
 
     dry_run_claimed = invoke_from(project_dir, ["heudiconv", "--dry-run"])
     assert dry_run_claimed.exit_code == 0, dry_run_claimed.output
@@ -201,9 +201,9 @@ def test_local_run_records_launcher_start_failure(tmp_path: Path, invoke_from, r
 
     assert result.exit_code == 2
     state = json.loads((project_dir / "state" / "heudiconv" / "run.json").read_text(encoding="utf-8"))
-    rows = read_tsv_rows(project_dir / "state" / "heudiconv" / "run.tsv")
+    rows = read_tsv_rows(project_dir / "state" / "heudiconv" / "results.tsv")
     status_payload = read_key_value_file(next((project_dir / "state" / "heudiconv" / "units").glob("*.status")))
-    assert state["status"] == "failed"
+    assert state["record_state"] == "failed"
     assert rows[0]["status"] == "failed"
     assert rows[0]["exit_code"] == ""
     assert status_payload["status"] == "failed"
@@ -229,7 +229,7 @@ def test_sge_submit_failure_releases_claims_and_records_state(
     assert "Failed to submit HeuDiConv SGE array job" in result.output
     state = json.loads((project_dir / "state" / "heudiconv" / "run.json").read_text(encoding="utf-8"))
     assert state["backend"] == "sge"
-    assert state["status"] == "failed"
+    assert state["record_state"] == "submit_failed"
     assert list((project_dir / "state" / "heudiconv" / "claims").glob("*.running")) == []
     status_payload = read_key_value_file(next((project_dir / "state" / "heudiconv" / "units").glob("*.status")))
     assert status_payload["status"] == "submit_failed"

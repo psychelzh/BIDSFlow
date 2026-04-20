@@ -103,19 +103,18 @@ It should capture at least:
 
 - `workflow`
 - `step`
-- `status`
-- `inputs`
-- `outputs`
-- `started_at`
-- `finished_at`
+- `record_state`
+- `execution`
 - `unit_log_dir`
-- `unit_table_path`
+- `results_table_path`
 
-This is the object that powers `status`.
+This record helps power `status`, but scheduler-backed workflows should
+derive the observed outcome from per-unit status files and final results
+tables rather than treating the submission record as the final result.
 
 Attempt history should live in `logs/`, not in the state record itself.
-For multi-unit steps, the state record points to the unit log directory
-while the unit table records each concrete per-unit log path. This keeps
+For multi-unit steps, the state record points to the log directory while
+the results table records each concrete final unit outcome. This keeps
 future parallel execution from interleaving unrelated tool output.
 
 ### 5.4 Managed workflow

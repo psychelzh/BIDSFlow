@@ -164,7 +164,7 @@ class RunPlan:
     raw_bids_root: Path
     execution_view_root: Path
     state_path: Path
-    units_path: Path
+    results_path: Path
     unit_state_dir: Path
     claim_dir: Path
     log_dir: Path
@@ -194,7 +194,7 @@ class RunUnitResult:
 class RunResult:
     raw_bids_root: Path
     state_path: Path
-    units_path: Path
+    results_path: Path
     log_dir: Path
     unit_results: tuple[RunUnitResult, ...]
     backend: str = "local"
@@ -578,7 +578,7 @@ def plan_heudiconv_run(context: ProjectContext) -> RunPlan:
     attempt_label = _format_attempt_label()
     execution_view_root = context.paths.work_root / "heudiconv" / f"run-{attempt_label}"
     state_path = state_root / "run.json"
-    units_path = state_root / "run.tsv"
+    results_path = state_root / "results.tsv"
     unit_state_dir = state_root / "units"
     claim_dir = state_root / "claims"
     log_root = context.paths.logs_root / "heudiconv"
@@ -661,7 +661,7 @@ def plan_heudiconv_run(context: ProjectContext) -> RunPlan:
         raw_bids_root=context.paths.raw_bids_root,
         execution_view_root=execution_view_root,
         state_path=state_path,
-        units_path=units_path,
+        results_path=results_path,
         unit_state_dir=unit_state_dir,
         claim_dir=claim_dir,
         log_dir=log_dir,
@@ -689,7 +689,7 @@ def run_heudiconv(
         return RunResult(
             raw_bids_root=plan.raw_bids_root,
             state_path=plan.state_path,
-            units_path=plan.units_path,
+            results_path=plan.results_path,
             log_dir=plan.log_dir,
             unit_results=(),
             status="skipped",
@@ -711,15 +711,15 @@ def run_heudiconv(
             )
 
         _prepare_run_directories(plan)
-        _ensure_run_units_tsv_header(plan.units_path)
+        _ensure_results_tsv_header(plan.results_path)
 
         _write_run_state(
             context=context,
             plan=plan,
-            status="running",
+            record_state="running",
             started_at=started_at,
             cleanup_workdir=cleanup_workdir,
-            unit_counts=unit_counts,
+            planned_units=unit_counts,
         )
 
         for unit in claim_selection.runnable_units:
@@ -771,7 +771,7 @@ def run_heudiconv(
                     log_path=unit.log_path,
                     error=str(exc),
                 )
-                _append_run_units_tsv(plan.units_path, (failed_result,))
+                _append_results_tsv(plan.results_path, (failed_result,))
                 _release_unit_claim(unit)
                 unit_results.append(failed_result)
                 raise
@@ -808,7 +808,7 @@ def run_heudiconv(
                     log_path=unit.log_path,
                     error=error_message,
                 )
-                _append_run_units_tsv(plan.units_path, (result,))
+                _append_results_tsv(plan.results_path, (result,))
                 _release_unit_claim(unit)
                 unit_results.append(result)
                 raise HeudiconvRunError(
@@ -825,7 +825,7 @@ def run_heudiconv(
                 exit_code=completed.returncode,
                 log_path=unit.log_path,
             )
-            _append_run_units_tsv(plan.units_path, (result,))
+            _append_results_tsv(plan.results_path, (result,))
             _release_unit_claim(unit)
             unit_results.append(result)
             current_unit = None
@@ -840,12 +840,12 @@ def run_heudiconv(
         _write_run_state(
             context=context,
             plan=plan,
-            status="failed",
+            record_state="failed",
             started_at=started_at,
             finished_at=_utc_now(),
             cleanup_workdir=cleanup_workdir,
             execution_view_cleaned=execution_view_cleaned,
-            unit_counts=unit_counts,
+            planned_units=unit_counts,
             error=str(exc),
         )
         raise
@@ -859,18 +859,18 @@ def run_heudiconv(
     _write_run_state(
         context=context,
         plan=plan,
-        status="succeeded",
+        record_state="succeeded",
         started_at=started_at,
         finished_at=_utc_now(),
         cleanup_workdir=cleanup_workdir,
         execution_view_cleaned=execution_view_cleaned,
-        unit_counts=unit_counts,
+        planned_units=unit_counts,
     )
 
     return RunResult(
         raw_bids_root=plan.raw_bids_root,
         state_path=plan.state_path,
-        units_path=plan.units_path,
+        results_path=plan.results_path,
         log_dir=plan.log_dir,
         unit_results=tuple(unit_results),
         skipped_units=unit_counts["skipped"],
@@ -898,7 +898,7 @@ def _submit_sge_heudiconv_run(
         return RunResult(
             raw_bids_root=plan.raw_bids_root,
             state_path=plan.state_path,
-            units_path=plan.units_path,
+            results_path=plan.results_path,
             log_dir=plan.log_dir,
             unit_results=(),
             backend="sge",
@@ -923,25 +923,34 @@ def _submit_sge_heudiconv_run(
             )
 
         _prepare_run_directories(plan)
-        _ensure_run_units_tsv_header(plan.units_path)
+        _ensure_results_tsv_header(plan.results_path)
 
         scheduler_metadata = _build_sge_run_metadata(plan, units=claim_selection.runnable_units)
         _write_run_state(
             context=context,
             plan=plan,
-            status="preparing",
+            record_state="preparing",
             started_at=started_at,
             backend="sge",
             cleanup_workdir=cleanup_workdir,
             scheduler=scheduler_metadata,
-            unit_counts=unit_counts,
+            planned_units=unit_counts,
         )
 
-        for unit in claim_selection.runnable_units:
+        for task_id, unit in enumerate(claim_selection.runnable_units, start=1):
             current_unit = unit
             _materialize_run_execution_view(
                 unit.execution_path,
                 unit.source_path,
+            )
+            _write_unit_status(
+                unit,
+                status="submitted",
+                backend="sge",
+                attempt_label=plan.attempt_label,
+                started_at=started_at,
+                log_dir=sge.scheduler_log_dir,
+                scheduler_task_id=str(task_id),
             )
             unit_results.append(
                 RunUnitResult(
@@ -1005,14 +1014,14 @@ def _submit_sge_heudiconv_run(
         _write_run_state(
             context=context,
             plan=plan,
-            status="failed",
+            record_state="submit_failed",
             started_at=started_at,
             finished_at=_utc_now(),
             backend="sge",
             cleanup_workdir=cleanup_workdir,
             execution_view_cleaned=execution_view_cleaned,
             scheduler=scheduler_metadata,
-            unit_counts=unit_counts,
+            planned_units=unit_counts,
             error=str(exc),
         )
         raise
@@ -1022,33 +1031,22 @@ def _submit_sge_heudiconv_run(
         units=claim_selection.runnable_units,
         job_id=scheduler_job_id,
     )
-    for task_id, unit in enumerate(claim_selection.runnable_units, start=1):
-        _write_unit_status(
-            unit,
-            status="submitted",
-            backend="sge",
-            attempt_label=plan.attempt_label,
-            started_at=started_at,
-            log_dir=sge.scheduler_log_dir,
-            scheduler_job_id=scheduler_job_id,
-            scheduler_task_id=str(task_id),
-        )
     _write_run_state(
         context=context,
         plan=plan,
-        status="submitted",
+        record_state="submitted",
         started_at=started_at,
         finished_at=_utc_now(),
         backend="sge",
         cleanup_workdir=cleanup_workdir,
         scheduler=scheduler_metadata,
-        unit_counts=unit_counts,
+        planned_units=unit_counts,
     )
 
     return RunResult(
         raw_bids_root=plan.raw_bids_root,
         state_path=plan.state_path,
-        units_path=plan.units_path,
+        results_path=plan.results_path,
         log_dir=plan.log_dir,
         unit_results=tuple(unit_results),
         backend="sge",
@@ -1081,7 +1079,9 @@ def _write_sge_run_files(
         .replace("{{ attempt_label }}", plan.attempt_label)
         .replace("{{ scheduler_log_dir }}", str(sge.scheduler_log_dir))
         .replace("{{ unit_list_path }}", str(sge.unit_list_path))
+        .replace("{{ results_table_path }}", str(plan.results_path))
         .replace("{{ shell_unit_list_path }}", shlex.quote(str(sge.unit_list_path)))
+        .replace("{{ shell_results_table_path }}", shlex.quote(str(plan.results_path)))
         .replace("{{ shell_scheduler_log_dir }}", shlex.quote(str(sge.scheduler_log_dir)))
         .replace("{{ shell_project_root }}", shlex.quote(str(context.project_root)))
         .replace("{{ shell_raw_bids_root }}", shlex.quote(str(plan.raw_bids_root)))
@@ -1094,8 +1094,9 @@ def _write_sge_run_files(
             "SGE scheduler template contains unsupported placeholders. "
             "Supported run placeholders are {{ job_name }}, {{ task_count }}, "
             "{{ attempt_label }}, {{ scheduler_log_dir }}, {{ unit_list_path }}, "
-            "{{ shell_unit_list_path }}, {{ shell_scheduler_log_dir }}, {{ shell_project_root }}, "
-            "{{ shell_raw_bids_root }}, {{ shell_heuristic_path }}, "
+            "{{ results_table_path }}, {{ shell_unit_list_path }}, "
+            "{{ shell_results_table_path }}, {{ shell_scheduler_log_dir }}, "
+            "{{ shell_project_root }}, {{ shell_raw_bids_root }}, {{ shell_heuristic_path }}, "
             "{{ shell_launcher_items }}, and {{ cleanup_workdir }}."
         )
     sge.script_path.write_text(rendered, encoding="utf-8", newline="\n")
@@ -1534,7 +1535,7 @@ def _prepare_run_directories(plan: RunPlan) -> None:
     plan.execution_view_root.mkdir(parents=True, exist_ok=True)
     plan.raw_bids_root.mkdir(parents=True, exist_ok=True)
     plan.state_path.parent.mkdir(parents=True, exist_ok=True)
-    plan.units_path.parent.mkdir(parents=True, exist_ok=True)
+    plan.results_path.parent.mkdir(parents=True, exist_ok=True)
     plan.unit_state_dir.mkdir(parents=True, exist_ok=True)
     plan.claim_dir.mkdir(parents=True, exist_ok=True)
     plan.log_dir.mkdir(parents=True, exist_ok=True)
@@ -1623,7 +1624,7 @@ def _write_draft_state(
     _write_json(plan.draft_state_path, payload)
 
 
-RUN_UNITS_TSV_COLUMNS = (
+RESULTS_TSV_COLUMNS = (
     "unit_name",
     "source_name",
     "subject_label",
@@ -1641,20 +1642,20 @@ RUN_UNITS_TSV_COLUMNS = (
 )
 
 
-def _ensure_run_units_tsv_header(path: Path) -> None:
+def _ensure_results_tsv_header(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists() and path.stat().st_size > 0:
         return
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
-        writer.writerow(RUN_UNITS_TSV_COLUMNS)
+        writer.writerow(RESULTS_TSV_COLUMNS)
 
 
-def _append_run_units_tsv(
+def _append_results_tsv(
     path: Path,
     unit_results: tuple[RunUnitResult, ...],
 ) -> None:
-    _ensure_run_units_tsv_header(path)
+    _ensure_results_tsv_header(path)
     with path.open("a", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
         for result in unit_results:
@@ -1823,11 +1824,11 @@ def _write_unit_status(
         lines.append(("log", str(log_path)))
     if log_dir is not None:
         lines.append(("log_dir", str(log_dir)))
-    if scheduler_job_id is not None:
+    if scheduler_job_id is not None or scheduler_task_id is not None:
         lines.extend(
             (
                 ("scheduler", "sge"),
-                ("job_id", scheduler_job_id),
+                ("job_id", scheduler_job_id or ""),
                 ("task_id", scheduler_task_id or ""),
             )
         )
@@ -1840,24 +1841,65 @@ def _write_run_state(
     *,
     context: ProjectContext,
     plan: RunPlan,
-    status: str,
+    record_state: str,
     started_at: str,
     backend: str = "local",
     finished_at: str | None = None,
     cleanup_workdir: bool | None = None,
     execution_view_cleaned: bool | None = None,
     scheduler: dict[str, object] | None = None,
-    unit_counts: dict[str, int] | None = None,
+    planned_units: dict[str, int] | None = None,
     error: str | None = None,
 ) -> None:
+    updated_at = _utc_now()
+    artifacts: dict[str, object] = {
+        "raw_bids_dataset": str(plan.raw_bids_root),
+        "results_table": str(plan.results_path),
+        "unit_status_dir": str(plan.unit_state_dir),
+        "claim_dir": str(plan.claim_dir),
+        "log_dir": str(plan.log_dir),
+    }
+    if scheduler is not None:
+        artifacts.update(
+            {
+                "scheduler_template": scheduler["template_path"],
+                "scheduler_script": scheduler["script_path"],
+                "scheduler_unit_list": scheduler["unit_list_path"],
+                "scheduler_log_dir": scheduler["scheduler_log_dir"],
+            }
+        )
+
+    if backend == "sge":
+        if scheduler is None:  # pragma: no cover
+            raise HeudiconvRunError("SGE run state requires scheduler metadata.")
+        execution: dict[str, object] = {
+            "mode": "scheduler",
+            "scheduler": scheduler["name"],
+            "submit_state": record_state,
+            "submit_command": scheduler["submit_command"],
+            "array_range": scheduler["array_range"],
+            "started_at": started_at,
+        }
+        if "job_id" in scheduler:
+            execution["job_id"] = scheduler["job_id"]
+        if record_state == "submitted":
+            execution["submitted_at"] = finished_at or updated_at
+        elif record_state == "submit_failed":
+            execution["failed_at"] = finished_at or updated_at
+    else:
+        execution = {
+            "mode": "local",
+            "started_at": started_at,
+            "finished_at": finished_at,
+        }
+
     payload: dict[str, object] = {
         "workflow": "heudiconv",
         "step": "run",
         "backend": backend,
-        "status": status,
-        "updated_at": _utc_now(),
-        "started_at": started_at,
-        "finished_at": finished_at,
+        "record_state": record_state,
+        "created_at": started_at,
+        "updated_at": updated_at,
         "input_signature": _build_run_input_signature(
             launcher=plan.launcher,
             heuristic_path=plan.heuristic_path,
@@ -1874,22 +1916,11 @@ def _write_run_state(
         "heuristic_path": str(plan.heuristic_path),
         "raw_bids_root": str(plan.raw_bids_root),
         "execution_view_root": str(plan.execution_view_root),
-        "artifacts": {
-            "raw_bids_dataset": str(plan.raw_bids_root),
-            "run_table": str(plan.units_path),
-            "unit_status_dir": str(plan.unit_state_dir),
-            "claim_dir": str(plan.claim_dir),
-            "log_dir": str(plan.log_dir),
-        },
-        "log_dir": str(plan.log_dir),
-        "unit_table_path": str(plan.units_path),
-        "unit_status_dir": str(plan.unit_state_dir),
-        "claim_dir": str(plan.claim_dir),
+        "execution": execution,
+        "artifacts": artifacts,
     }
-    if scheduler is not None:
-        payload["scheduler"] = scheduler
-    if unit_counts is not None:
-        payload["unit_counts"] = unit_counts
+    if planned_units is not None:
+        payload["planned_units"] = planned_units
     if cleanup_workdir is not None:
         payload["cleanup_workdir"] = cleanup_workdir
     if execution_view_cleaned is not None:

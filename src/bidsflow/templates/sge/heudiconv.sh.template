@@ -5,7 +5,7 @@
 # SGE captures stdout/stderr in {{ scheduler_log_dir }}. The wrapper prints a
 # short BIDSFlow header there, then leaves HeuDiConv output on stdout/stderr.
 # Per-unit machine state is written to state/heudiconv/units/*.status; this
-# script does not write the shared run.tsv file.
+# script appends one final row to {{ results_table_path }} when the task exits.
 
 #$ -S /bin/bash
 #$ -cwd
@@ -32,6 +32,8 @@ set -uo pipefail
 
 task_id="${SGE_TASK_ID:?This script must run as an SGE array job.}"
 unit_list_path={{ shell_unit_list_path }}
+results_table_path={{ shell_results_table_path }}
+results_table_lock="${results_table_path}.lock"
 scheduler_log_dir={{ shell_scheduler_log_dir }}
 
 unit_row="$(sed -n "$((task_id + 1))p" "$unit_list_path")"
@@ -80,6 +82,46 @@ write_unit_status() {
     mv -f "$tmp_path" "$unit_status_path"
 }
 
+append_final_result() {
+    local final_unit_status="$1"
+    local exit_code="$2"
+    local started="$3"
+    local finished="$4"
+    local summary
+
+    if [[ -n "$session_label" ]]; then
+        summary="sub-${subject_label} ses-${session_label}"
+    else
+        summary="sub-${subject_label}"
+    fi
+
+    mkdir -p "$(dirname "$results_table_path")"
+    while ! mkdir "$results_table_lock" 2>/dev/null; do
+        sleep 0.2
+    done
+    {
+        if [[ ! -s "$results_table_path" ]]; then
+            printf 'unit_name\tsource_name\tsubject_label\tsession_label\tsummary\tstatus\texit_code\tstarted_at\tfinished_at\tlog_path\tscheduler\tscheduler_job_id\tscheduler_task_id\tnotes\n'
+        fi
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+            "$unit_name" \
+            "$source_name" \
+            "$subject_label" \
+            "$session_label" \
+            "$summary" \
+            "$final_unit_status" \
+            "$exit_code" \
+            "$started" \
+            "$finished" \
+            "$scheduler_log_dir" \
+            "sge" \
+            "${JOB_ID:-unknown}" \
+            "$task_id" \
+            ""
+    } >> "$results_table_path"
+    rmdir "$results_table_lock" 2>/dev/null || true
+}
+
 launcher=(
 {{ shell_launcher_items }}
 )
@@ -124,6 +166,7 @@ else
 fi
 
 write_unit_status "$final_status" "$status" "$started_at" "$finished_at" "$error_message"
+append_final_result "$final_status" "$status" "$started_at" "$finished_at"
 if [[ "{{ cleanup_workdir }}" == "true" ]]; then
     rm -f -- "$execution_path"
     rmdir "$(dirname "$execution_path")" 2>/dev/null || true

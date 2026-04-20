@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -62,7 +64,7 @@ def test_heudiconv_run_dry_run_shows_summary_and_one_example(tmp_path: Path, inv
     assert str(heuristic_path) in result.output
     assert str(project_dir / "sourcedata" / "raw") in result.output
     assert str(project_dir / "state" / "heudiconv" / "run.json") not in result.output
-    assert str(project_dir / "state" / "heudiconv" / "run.tsv") not in result.output
+    assert str(project_dir / "state" / "heudiconv" / "results.tsv") not in result.output
     assert "Dry run only; no files or directories were created." in result.output
     assert "Ready units in sources.tsv: 2" in result.output
     assert "Runnable units now: 2" in result.output
@@ -163,43 +165,44 @@ def test_heudiconv_run_writes_current_state_and_unit_table(
     assert (raw_root / "sub-001" / "ses-02" / "marker.txt").is_file()
 
     state_path = project_dir / "state" / "heudiconv" / "run.json"
-    units_path = project_dir / "state" / "heudiconv" / "run.tsv"
+    results_path = project_dir / "state" / "heudiconv" / "results.tsv"
     assert state_path.is_file()
-    assert units_path.is_file()
+    assert results_path.is_file()
 
     state = json.loads(state_path.read_text(encoding="utf-8"))
     assert state["workflow"] == "heudiconv"
     assert state["step"] == "run"
     assert state["backend"] == "local"
-    assert state["status"] == "succeeded"
+    assert state["record_state"] == "succeeded"
+    assert state["execution"]["mode"] == "local"
+    assert state["execution"]["finished_at"] is not None
     assert state["input_signature"].startswith("sha256:")
-    assert state["started_at"] is not None
-    assert state["finished_at"] is not None
+    assert state["created_at"] is not None
     assert state["artifacts"]["raw_bids_dataset"] == str(raw_root)
+    assert state["artifacts"]["results_table"] == str(results_path)
     assert state["cleanup_workdir"] is True
-    assert Path(state["log_dir"]).is_dir()
-    assert Path(state["unit_status_dir"]).is_dir()
-    assert Path(state["claim_dir"]).is_dir()
-    assert state["unit_table_path"] == str(units_path)
+    assert Path(state["artifacts"]["log_dir"]).is_dir()
+    assert Path(state["artifacts"]["unit_status_dir"]).is_dir()
+    assert Path(state["artifacts"]["claim_dir"]).is_dir()
     assert state["execution_view_cleaned"] is True
     assert not Path(state["execution_view_root"]).exists()
     assert "error" not in state
 
-    rows = read_tsv_rows(units_path)
+    rows = read_tsv_rows(results_path)
     assert [row["source_name"] for row in rows] == ["SUB001_SES01", "SUB001_SES02"]
     assert [row["status"] for row in rows] == ["succeeded", "succeeded"]
     assert rows[0]["summary"] == "sub-001 ses-01"
     assert rows[1]["summary"] == "sub-001 ses-02"
     assert all(Path(row["log_path"]).is_file() for row in rows)
-    assert all(Path(row["log_path"]).parent == Path(state["log_dir"]) for row in rows)
+    assert all(Path(row["log_path"]).parent == Path(state["artifacts"]["log_dir"]) for row in rows)
     assert [row["exit_code"] for row in rows] == ["0", "0"]
 
-    status_files = sorted(Path(state["unit_status_dir"]).glob("*.status"))
+    status_files = sorted(Path(state["artifacts"]["unit_status_dir"]).glob("*.status"))
     assert [path.name for path in status_files] == ["sub-001_ses-01.status", "sub-001_ses-02.status"]
     status_payloads = [read_key_value_file(path) for path in status_files]
     assert [payload["status"] for payload in status_payloads] == ["succeeded", "succeeded"]
     assert [payload["exit_code"] for payload in status_payloads] == ["0", "0"]
-    assert list(Path(state["claim_dir"]).glob("*.running")) == []
+    assert list(Path(state["artifacts"]["claim_dir"]).glob("*.running")) == []
 
     unit_log_text = Path(rows[0]["log_path"]).read_text(encoding="utf-8")
     assert "run ok" in unit_log_text
@@ -304,6 +307,11 @@ def test_heudiconv_run_with_sge_generates_array_artifacts_and_submits(
     sources_result = invoke_from(project_dir, ["heudiconv", "init"])
     assert sources_result.exit_code == 0, sources_result.output
     write_minimal_heuristic(project_dir)
+    fake_launcher = _write_successful_run_launcher(project_dir)
+    set_launcher(
+        config_path,
+        f'launcher = ["{sys.executable}", "{fake_launcher.as_posix()}"]',
+    )
 
     result = invoke_from(project_dir, ["heudiconv"])
     assert result.exit_code == 0, result.output
@@ -314,26 +322,26 @@ def test_heudiconv_run_with_sge_generates_array_artifacts_and_submits(
     assert "Unit claims:" in result.output
 
     state_path = project_dir / "state" / "heudiconv" / "run.json"
-    units_path = project_dir / "state" / "heudiconv" / "run.tsv"
+    results_path = project_dir / "state" / "heudiconv" / "results.tsv"
     state = json.loads(state_path.read_text(encoding="utf-8"))
 
     assert state["backend"] == "sge"
-    assert state["status"] == "submitted"
+    assert state["record_state"] == "submitted"
     assert state["cleanup_workdir"] is True
-    assert state["scheduler"]["name"] == "sge"
-    assert state["scheduler"]["job_id"] == "12345"
-    assert state["scheduler"]["array_range"] == "1-2"
-    assert "task_table_path" not in state["scheduler"]
-    assert "command_dir" not in state["scheduler"]
+    assert state["execution"]["mode"] == "scheduler"
+    assert state["execution"]["scheduler"] == "sge"
+    assert state["execution"]["submit_state"] == "submitted"
+    assert state["execution"]["job_id"] == "12345"
+    assert state["execution"]["array_range"] == "1-2"
     assert "execution_view_cleaned" not in state
-    assert state["unit_counts"]["selected"] == 2
-    assert state["unit_counts"]["skipped"] == 0
+    assert state["planned_units"]["selected"] == 2
+    assert state["planned_units"]["skipped"] == 0
 
-    scheduler_script = Path(state["scheduler"]["script_path"])
-    unit_list_path = Path(state["scheduler"]["unit_list_path"])
-    scheduler_log_dir = Path(state["scheduler"]["scheduler_log_dir"])
-    claim_dir = Path(state["claim_dir"])
-    unit_status_dir = Path(state["unit_status_dir"])
+    scheduler_script = Path(state["artifacts"]["scheduler_script"])
+    unit_list_path = Path(state["artifacts"]["scheduler_unit_list"])
+    scheduler_log_dir = Path(state["artifacts"]["scheduler_log_dir"])
+    claim_dir = Path(state["artifacts"]["claim_dir"])
+    unit_status_dir = Path(state["artifacts"]["unit_status_dir"])
 
     assert scheduler_script.is_file()
     assert unit_list_path.is_file()
@@ -347,7 +355,8 @@ def test_heudiconv_run_with_sge_generates_array_artifacts_and_submits(
     script_text = scheduler_script.read_text(encoding="utf-8")
     normalized_script = normalize_generated_text(
         script_text,
-        replacements={str(project_dir): "<PROJECT>"},
+        replacements={str(project_dir): "<PROJECT>", sys.executable: "<PYTHON>"},
+        drop_blank_lines=True,
     )
     assert normalized_script == snapshot(name="heudiconv_sge_rendered_script")
     assert_rendered_sge_script(
@@ -355,6 +364,7 @@ def test_heudiconv_run_with_sge_generates_array_artifacts_and_submits(
         task_count=2,
         scheduler_log_dir=scheduler_log_dir,
         unit_list_path=unit_list_path,
+        results_path=results_path,
         cleanup_workdir=True,
     )
 
@@ -373,11 +383,32 @@ def test_heudiconv_run_with_sge_generates_array_artifacts_and_submits(
     assert all(Path(row["claim_path"]).read_text(encoding="utf-8") == "" for row in unit_rows)
     status_payloads = [read_key_value_file(Path(row["unit_status_path"])) for row in unit_rows]
     assert [payload["status"] for payload in status_payloads] == ["submitted", "submitted"]
-    assert [payload["job_id"] for payload in status_payloads] == ["12345", "12345"]
+    assert [payload["job_id"] for payload in status_payloads] == ["", ""]
+    assert [payload["task_id"] for payload in status_payloads] == ["1", "2"]
     assert [payload["log_dir"] for payload in status_payloads] == [str(scheduler_log_dir), str(scheduler_log_dir)]
 
-    run_rows = read_tsv_rows(units_path)
-    assert run_rows == []
+    results_rows = read_tsv_rows(results_path)
+    assert results_rows == []
+
+    completed_task = subprocess.run(
+        ["bash", str(scheduler_script)],
+        cwd=project_dir,
+        env={**os.environ, "JOB_ID": "12345", "SGE_TASK_ID": "1"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed_task.returncode == 0, completed_task.stderr
+    completed_rows = read_tsv_rows(results_path)
+    assert [row["unit_name"] for row in completed_rows] == ["sub-001_ses-01"]
+    assert completed_rows[0]["status"] == "succeeded"
+    assert completed_rows[0]["scheduler"] == "sge"
+    assert completed_rows[0]["scheduler_job_id"] == "12345"
+    assert completed_rows[0]["scheduler_task_id"] == "1"
+    completed_status = read_key_value_file(Path(unit_rows[0]["unit_status_path"]))
+    assert completed_status["status"] == "succeeded"
+    assert completed_status["job_id"] == "12345"
+    assert not Path(unit_rows[0]["claim_path"]).exists()
 
     qsub_args = (project_dir / "qsub-args.txt").read_text(encoding="utf-8")
     assert str(scheduler_script) in qsub_args
@@ -387,8 +418,8 @@ def test_heudiconv_run_with_sge_generates_array_artifacts_and_submits(
     assert "No runnable `bidsflow heudiconv` units were found." in second_result.output
     assert "Skipped units: 2" in second_result.output
     second_state = json.loads(state_path.read_text(encoding="utf-8"))
-    assert second_state["status"] == "submitted"
-    assert second_state["scheduler"]["job_id"] == "12345"
+    assert second_state["record_state"] == "submitted"
+    assert second_state["execution"]["job_id"] == "12345"
 
 
 def test_heudiconv_run_rejects_sources_that_still_needs_review(tmp_path: Path, invoke_from, runner) -> None:
@@ -447,23 +478,23 @@ def test_heudiconv_run_overwrites_current_state_and_keeps_unit_logs(
     first_result = invoke_from(project_dir, ["heudiconv"])
     assert first_result.exit_code == 2
     state_path = project_dir / "state" / "heudiconv" / "run.json"
-    units_path = project_dir / "state" / "heudiconv" / "run.tsv"
+    results_path = project_dir / "state" / "heudiconv" / "results.tsv"
     first_state = json.loads(state_path.read_text(encoding="utf-8"))
-    first_rows = read_tsv_rows(units_path)
-    assert first_state["status"] == "failed"
+    first_rows = read_tsv_rows(results_path)
+    assert first_state["record_state"] == "failed"
     assert first_rows[0]["status"] == "failed"
     assert first_rows[0]["exit_code"] == "1"
-    first_log_dir = Path(first_state["log_dir"])
+    first_log_dir = Path(first_state["artifacts"]["log_dir"])
 
     second_result = invoke_from(project_dir, ["heudiconv"])
     assert second_result.exit_code == 0, second_result.output
 
     second_state = json.loads(state_path.read_text(encoding="utf-8"))
-    second_rows = read_tsv_rows(units_path)
-    assert second_state["status"] == "succeeded"
+    second_rows = read_tsv_rows(results_path)
+    assert second_state["record_state"] == "succeeded"
     assert [row["status"] for row in second_rows] == ["failed", "succeeded"]
     assert second_rows[-1]["exit_code"] == "0"
-    second_log_dir = Path(second_state["log_dir"])
+    second_log_dir = Path(second_state["artifacts"]["log_dir"])
 
     assert first_log_dir.is_dir()
     assert second_log_dir.is_dir()

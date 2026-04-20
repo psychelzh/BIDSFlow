@@ -13,6 +13,7 @@ from helpers import (
     make_source_dirs,
     read_tsv_rows,
     set_sources_pattern,
+    write_minimal_heuristic,
     write_python_script,
 )
 
@@ -98,6 +99,45 @@ def test_sources_command_reports_missing_executable(tmp_path: Path, invoke_from,
 
     assert result.exit_code == 2
     assert "Failed to start sources command" in result.output
+
+
+def test_sources_command_rejects_unsafe_labels(tmp_path: Path, invoke_from, runner) -> None:
+    project_dir = init_project(tmp_path, runner, name="unsafe-command-label-project")
+    script_path = project_dir / "code" / "heudiconv" / "derive.py"
+    write_python_script(script_path, ("print('../001')",))
+    append_config(
+        project_dir / "bidsflow.toml",
+        ["[sources]", f'command = ["{sys.executable}", "{script_path.as_posix()}"]'],
+    )
+    make_source_dirs(project_dir, "SUB001")
+
+    result = invoke_from(project_dir, ["heudiconv", "init"])
+
+    assert result.exit_code == 2
+    assert "unsafe characters" in result.output
+
+
+def test_manual_sources_table_rejects_unsafe_labels_before_run(tmp_path: Path, invoke_from, runner) -> None:
+    project_dir = init_project(tmp_path, runner, name="unsafe-manual-label-project")
+    make_source_dirs(project_dir, "SUB001")
+    (project_dir / "state").mkdir()
+    (project_dir / "state" / "sources.tsv").write_text(
+        "\n".join(
+            (
+                "source_name\tsubject_label\tsession_label\tinclude\tstatus\tnotes",
+                "SUB001\t../001\t\ttrue\tready\tmanual",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    write_minimal_heuristic(project_dir)
+
+    result = invoke_from(project_dir, ["heudiconv"])
+
+    assert result.exit_code == 2
+    assert "unsafe characters" in result.output
 
 
 def test_sources_pattern_miss_and_duplicate_subject_without_sessions(

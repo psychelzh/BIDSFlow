@@ -1,16 +1,25 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ..project import ProjectContext
 from .common import (
     HeudiconvInitError,
+    HeudiconvRunError,
     _ensure_project_owned_path,
     _render_sge_heudiconv_script,
     _resolve_scheduler_script_path,
 )
-from .sources import SourcesEntry, SourcesPlan, plan_sources, run_sources
+from .sources import (
+    SourcesEntry,
+    SourcesError,
+    SourcesPlan,
+    _load_confirmed_sources,
+    _write_sources_state,
+    plan_sources,
+    run_sources,
+)
 
 
 @dataclass(frozen=True)
@@ -59,12 +68,23 @@ def plan_heudiconv_init(context: ProjectContext) -> InitPlan:
 
 
 def run_heudiconv_init(context: ProjectContext, plan: InitPlan, force: bool) -> InitResult:
-    sources_exist = plan.sources_plan.sources_path.exists() or plan.sources_plan.sources_state_path.exists()
-    if sources_exist and not force:
+    sources_table_exists = plan.sources_plan.sources_path.exists()
+    sources_state_exists = plan.sources_plan.sources_state_path.exists()
+    sources_exist = sources_table_exists or sources_state_exists
+    sources_entries = plan.sources_plan.entries
+
+    if sources_table_exists and not force:
+        sources_entries = _load_existing_sources_entries(plan.sources_plan)
+    if sources_table_exists and sources_state_exists and not force:
         sources_action = "kept"
+    elif sources_table_exists and not force:
+        refreshed_plan = replace(plan.sources_plan, entries=sources_entries)
+        _write_sources_state(context, refreshed_plan)
+        sources_action = "metadata refreshed"
     else:
         run_sources(context, plan.sources_plan, reset=force)
         sources_action = "overwritten" if sources_exist else "created"
+        sources_entries = plan.sources_plan.entries
 
     plan.code_root.mkdir(parents=True, exist_ok=True)
     plan.heuristic_parent.mkdir(parents=True, exist_ok=True)
@@ -87,7 +107,7 @@ def run_heudiconv_init(context: ProjectContext, plan: InitPlan, force: bool) -> 
     return InitResult(
         sources_path=plan.sources_plan.sources_path,
         sources_state_path=plan.sources_plan.sources_state_path,
-        entries=plan.sources_plan.entries,
+        entries=sources_entries,
         sources_action=sources_action,
         code_root=plan.code_root,
         heuristic_parent=plan.heuristic_parent,
@@ -95,3 +115,10 @@ def run_heudiconv_init(context: ProjectContext, plan: InitPlan, force: bool) -> 
         scheduler_script_path=plan.scheduler_script_path,
         scheduler_script_action=scheduler_script_action,
     )
+
+
+def _load_existing_sources_entries(plan: SourcesPlan) -> tuple[SourcesEntry, ...]:
+    try:
+        return _load_confirmed_sources(plan.source_root, plan.sources_path)
+    except HeudiconvRunError as exc:
+        raise SourcesError(str(exc)) from exc

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import tomllib
 
 import click
 import pytest
@@ -169,6 +170,26 @@ def test_init_respects_custom_name(tmp_path: Path, runner) -> None:
     assert config_path.is_file()
     config_text = config_path.read_text(encoding="utf-8")
     assert 'name = "TJNU camp project"' in config_text
+
+
+def test_init_escapes_control_characters_in_custom_name(tmp_path: Path, runner) -> None:
+    project_dir = tmp_path / "control-name-project"
+
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            str(project_dir),
+            "--name",
+            "Line\nTab\tCarriage\rBackspace\bFormfeed\fNull\x00",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    config_text = (project_dir / "bidsflow.toml").read_text(encoding="utf-8")
+    expected_name = "Line\nTab\tCarriage\rBackspace\bFormfeed\fNull\x00"
+    assert 'name = "Line\\nTab\\tCarriage\\rBackspace\\bFormfeed\\fNull\\u0000"' in config_text
+    assert tomllib.loads(config_text)["project"]["name"] == expected_name
 
 
 def test_init_requires_force_to_overwrite_existing_config(tmp_path: Path, runner) -> None:

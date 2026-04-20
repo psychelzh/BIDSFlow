@@ -176,6 +176,7 @@ if cd -- {{ shell_project_root }}; then
     status=$?
 else
     status=$?
+    printf '[bidsflow] Failed to change to project root: %s (status %s)\n' {{ shell_project_root }} "$status" >&2
 fi
 
 finished_at="$(date -Is)"

@@ -13,7 +13,7 @@ an execution command.
 The command should look like:
 
 ```bash
-bidsflow init [DIRECTORY] [--scheduler auto|none|sge]
+bidsflow init [DIRECTORY] [--name NAME] [--force] [--make-dirs] [--scheduler auto|none|sge]
 ```
 
 The directory argument should be positional and default to `.`.
@@ -71,8 +71,8 @@ templates.
 - inspect source directories
 - submit or preview execution
 
-Those concerns belong to later tasks such as `check` and `run`, or to a
-future dedicated task namespace if one proves necessary.
+Those concerns belong to later task surfaces or to target-specific
+commands such as the current managed `heudiconv` flow.
 
 ## 6. Initial Config Shape
 

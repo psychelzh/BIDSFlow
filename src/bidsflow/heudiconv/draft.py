@@ -184,11 +184,10 @@ def _resolve_draft_sample_path(
 
 def run_draft(context: ProjectContext, plan: DraftPlan, reset: bool) -> DraftResult:
     _guard_draft_reset_requirement(plan, reset)
-    _prepare_draft_directories(plan)
 
     if reset:
         _reset_draft_state(context.project_root, plan)
-        _prepare_draft_directories(plan)
+    _prepare_draft_directories(plan)
 
     started_at = _utc_now()
     _write_draft_state(
@@ -363,7 +362,6 @@ def _run_draft_unit(
     return _collect_unit_result(
         plan=plan,
         unit=unit,
-        final_command=unit.initial_command,
         attempted_commands=(unit.initial_command,),
         subject_label=unit.subject_label,
         session_label=unit.session_label,
@@ -411,7 +409,6 @@ def _collect_unit_result(
     *,
     plan: DraftPlan,
     unit: DraftUnitPlan,
-    final_command: tuple[str, ...],
     attempted_commands: tuple[tuple[str, ...], ...],
     subject_label: str | None,
     session_label: str | None,
@@ -448,16 +445,18 @@ def _collect_unit_result(
 
 
 def _find_latest_generated_file_since(root: Path, filename: str, started_at_ns: int) -> Path:
-    candidates = [
-        candidate
-        for candidate in root.rglob(filename)
-        if candidate.is_file() and candidate.stat().st_mtime_ns >= started_at_ns
-    ]
+    candidates: list[tuple[Path, int]] = []
+    for candidate in root.rglob(filename):
+        if not candidate.is_file():  # pragma: no cover
+            continue
+        mtime = candidate.stat().st_mtime_ns
+        if mtime >= started_at_ns:
+            candidates.append((candidate, mtime))
     if not candidates:
         raise HeudiconvDraftError(
             f"HeuDiConv draft generation did not produce {filename} under {root}."
         )
-    return max(candidates, key=lambda candidate: candidate.stat().st_mtime_ns)
+    return max(candidates, key=lambda item: item[1])[0]
 
 
 def _find_generated_dicominfo_files_since(root: Path, started_at_ns: int) -> tuple[Path, ...]:

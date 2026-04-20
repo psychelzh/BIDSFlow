@@ -267,6 +267,55 @@ def test_heudiconv_init_keeps_existing_sources_without_force(tmp_path: Path, inv
     assert [row["source_name"] for row in rows] == ["SUB001_SES01", "SUB002_SES01"]
 
 
+def test_heudiconv_init_refreshes_missing_sources_metadata_without_overwriting_table(
+    tmp_path: Path,
+    invoke_from,
+    runner,
+) -> None:
+    project_dir = init_project(tmp_path, runner)
+    source_root = make_source_dirs(project_dir, "SUB001_SES01")
+
+    first = invoke_from(project_dir, ["heudiconv", "init"])
+    assert first.exit_code == 0, first.output
+
+    (project_dir / "state" / "sources.json").unlink()
+    (source_root / "SUB002_SES01").mkdir(parents=True)
+
+    refreshed = invoke_from(project_dir, ["heudiconv", "init"])
+
+    assert refreshed.exit_code == 0, refreshed.output
+    assert "(metadata refreshed)" in refreshed.output
+    assert (project_dir / "state" / "sources.json").is_file()
+    rows = read_tsv_rows(project_dir / "state" / "sources.tsv")
+    assert [row["source_name"] for row in rows] == ["SUB001_SES01"]
+
+
+def test_heudiconv_init_rejects_invalid_existing_sources_table(tmp_path: Path, invoke_from, runner) -> None:
+    project_dir = init_project(tmp_path, runner)
+    make_source_dirs(project_dir, "SUB001_SES01")
+
+    first = invoke_from(project_dir, ["heudiconv", "init"])
+    assert first.exit_code == 0, first.output
+
+    sources_path = project_dir / "state" / "sources.tsv"
+    sources_path.write_text(
+        "\n".join(
+            (
+                "source_name\tsubject_label\tsession_label\tinclude\tstatus\tnotes",
+                "SUB001_SES01\t001\t01\tmaybe\tready\tbad include",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    result = invoke_from(project_dir, ["heudiconv", "init"])
+
+    assert result.exit_code == 2
+    assert "invalid include value" in result.output
+
+
 def test_sources_uses_configured_source_root(tmp_path: Path, invoke_from, runner) -> None:
     project_dir = init_project(tmp_path, runner)
 
@@ -280,6 +329,21 @@ def test_sources_uses_configured_source_root(tmp_path: Path, invoke_from, runner
     assert result.exit_code == 0, result.output
     state = json.loads((project_dir / "state" / "sources.json").read_text(encoding="utf-8"))
     assert state["source_root"] == str(source_root.resolve())
+
+
+def test_sources_preserves_symlink_child_name(tmp_path: Path, invoke_from, runner) -> None:
+    project_dir = init_project(tmp_path, runner)
+    source_root = project_dir / "sourcedata"
+    source_root.mkdir()
+    archive_target = tmp_path / "archive" / "SUB001"
+    archive_target.mkdir(parents=True)
+    (source_root / "siteA").symlink_to(archive_target, target_is_directory=True)
+
+    result = invoke_from(project_dir, ["heudiconv", "init"])
+
+    assert result.exit_code == 0, result.output
+    rows = read_tsv_rows(project_dir / "state" / "sources.tsv")
+    assert rows[0]["source_name"] == "siteA"
 
 
 def test_sources_rejects_mutually_exclusive_generation_config(tmp_path: Path, invoke_from, runner) -> None:

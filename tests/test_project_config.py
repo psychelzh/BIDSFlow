@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 import pytest
 
@@ -122,5 +123,5 @@ scheduler = "sge"
 def test_load_project_context_rejects_invalid_config(tmp_path: Path, body: str, message: str) -> None:
     config_path = _write_config(tmp_path / "bidsflow.toml", body)
 
-    with pytest.raises(ValueError, match=message.replace("[", r"\[").replace("]", r"\]")):
+    with pytest.raises(ValueError, match=re.escape(message)):
         load_project_context(config_path)

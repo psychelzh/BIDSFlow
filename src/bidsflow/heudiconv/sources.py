@@ -44,6 +44,9 @@ class SourcesError(Exception):
     pass
 
 
+SAFE_LABEL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
 def plan_sources(
     context: ProjectContext,
 ) -> SourcesPlan:
@@ -60,7 +63,7 @@ def plan_sources(
     source_units = tuple(
         sorted(
             (
-                candidate.resolve()
+                candidate
                 for candidate in resolved_source_root.iterdir()
                 if candidate.is_dir() and not candidate.name.startswith(".")
             ),
@@ -90,6 +93,18 @@ def plan_sources(
             )
         else:
             subject_label, session_label, notes = "", "", ""
+        subject_label = _validate_sources_label(
+            subject_label,
+            field_name="subject_label",
+            source_name=candidate.name,
+            error_cls=SourcesError,
+        )
+        session_label = _validate_sources_label(
+            session_label,
+            field_name="session_label",
+            source_name=candidate.name,
+            error_cls=SourcesError,
+        )
 
         entries.append(
             SourcesEntry(
@@ -223,6 +238,25 @@ def _derive_sources_labels_from_command(
     return subject_label, session_label, ""
 
 
+def _validate_sources_label(
+    label: str,
+    *,
+    field_name: str,
+    source_name: str,
+    error_cls: type[Exception],
+) -> str:
+    normalized = label.strip()
+    if not normalized:
+        return ""
+    if not SAFE_LABEL_PATTERN.fullmatch(normalized):
+        raise error_cls(
+            "BIDSFlow sources label contains unsafe characters: "
+            f"{field_name}={label!r} for source_name={source_name!r}. "
+            "Use ASCII letters, numbers, '.', '_' or '-' without path separators."
+        )
+    return normalized
+
+
 def _compute_sources_statuses(
     source_root: Path,
     entries: tuple[SourcesEntry, ...],
@@ -330,8 +364,18 @@ def _load_confirmed_sources(
             entries.append(
                 SourcesEntry(
                     source_name=source_name,
-                    subject_label=(row.get("subject_label") or "").strip(),
-                    session_label=(row.get("session_label") or "").strip(),
+                    subject_label=_validate_sources_label(
+                        row.get("subject_label") or "",
+                        field_name="subject_label",
+                        source_name=source_name,
+                        error_cls=HeudiconvRunError,
+                    ),
+                    session_label=_validate_sources_label(
+                        row.get("session_label") or "",
+                        field_name="session_label",
+                        source_name=source_name,
+                        error_cls=HeudiconvRunError,
+                    ),
                     include=include,
                     status="",
                     notes=(row.get("notes") or "").strip(),

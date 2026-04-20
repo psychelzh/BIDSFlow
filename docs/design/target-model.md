@@ -122,10 +122,10 @@ The public CLI should speak in terms of:
 - tasks at the top level
 - targets as the main object for `check`, `run`, and `status`
 
-That means:
+If this future task-first public layer is adopted, that means:
 
-- prefer `bidsflow run fmriprep`
-- prefer `bidsflow check curate`
+- prefer `bidsflow run fmriprep` over app-specific top-level commands
+- prefer `bidsflow check curate` over stage-specific top-level commands
 - avoid public `--stage` flags
 - avoid one top-level command per app
 

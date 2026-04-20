@@ -111,9 +111,13 @@ This separates fatal blockers from non-fatal caveats.
 class HandoffContract(BaseModel):
     from_target: str
     to_target: str
+    project_root: Path
     dataset_root: Path
     dataset_kind: str
     scope_units: list[str]
+    coverage: dict
+    modalities: list[str]
+    provenance: dict
     guarantees: dict
     blockers: list[str]
 ```

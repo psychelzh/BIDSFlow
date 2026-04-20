@@ -25,9 +25,7 @@ def init_project(
     scheduler: str = "none",
 ) -> Path:
     project_dir = tmp_path / name
-    init_args = ["init", str(project_dir)]
-    if scheduler != "none":
-        init_args.extend(["--scheduler", scheduler])
+    init_args = ["init", str(project_dir), "--scheduler", scheduler]
     init_result = runner.invoke(app, init_args)
     assert init_result.exit_code == 0, init_result.output
     return project_dir

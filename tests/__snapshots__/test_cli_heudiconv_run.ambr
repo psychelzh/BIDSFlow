@@ -162,6 +162,7 @@
       status=$?
   else
       status=$?
+      printf '[bidsflow] Failed to change to project root: %s (status %s)\n' <PROJECT> "$status" >&2
   fi
   finished_at="$(date -Is)"
   if [[ "$status" -eq 0 ]]; then

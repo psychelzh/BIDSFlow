@@ -10,15 +10,29 @@ The public question should be:
 - what do you want to do
 - and, if needed, which target do you want to do it to
 
-## 2. Command Grammar
+## 2. Current Command Surface
 
-The intended public grammar is:
+The current rebuilt slice ships a deliberately small surface:
+
+```bash
+bidsflow init [DIRECTORY]
+bidsflow heudiconv init
+bidsflow heudiconv draft <sample-path>...
+bidsflow heudiconv
+```
+
+This reflects the work implemented so far: project setup plus the
+managed HeuDiConv preparation and conversion flow.
+
+## 3. Future Command Grammar
+
+A future broader target model may use:
 
 ```text
 bidsflow <task> [target] [options]
 ```
 
-Examples:
+Possible future examples:
 
 ```bash
 bidsflow init .
@@ -27,23 +41,24 @@ bidsflow run fmriprep
 bidsflow status xcpd
 ```
 
-## 3. Top-level Commands
+These commands are design direction, not the shipped CLI in the current
+HeuDiConv slice.
 
-The initial top-level command set should stay small:
+## 4. Top-level Commands
+
+The current top-level command set is:
 
 - `init`
-- `check`
-- `run`
-- `status`
+- `heudiconv`
 
-This is enough to express project setup, readiness checks, execution,
-and state inspection.
+This is enough for project setup and managed HeuDiConv
+preparation/execution.
 
 Other task namespaces can be added later once they carry stable,
 non-trivial behavior. They should not appear in the first rebuilt CLI
 just to mirror an internal implementation detail.
 
-## 4. Why Targets Should Not Be Top-level Commands
+## 5. Why Targets Should Not Be Top-level Commands
 
 A CLI such as:
 
@@ -63,7 +78,11 @@ That is the wrong center of gravity for BIDSFlow because:
 Targets should be visible, but they should sit under tasks such as
 `check`, `run`, and `status`.
 
-## 5. How BIDS Apps Stay Visible
+This is a future CLI direction. The current `heudiconv` namespace is a
+managed workflow slice and should not be treated as the final target
+model.
+
+## 6. How BIDS Apps Stay Visible
 
 App-backed targets do not need to disappear.
 
@@ -79,7 +98,7 @@ names define the entire CLI tree.
 An `app` namespace can still exist later for inspection or metadata,
 but it is not needed for the main execution path.
 
-## 6. Parameter Style
+## 7. Parameter Style
 
 Public parameters should remain logistics-oriented.
 
@@ -97,7 +116,16 @@ Avoid exposing raw native tool flags directly in the public surface.
 Tool-specific details belong in adapters and configuration, not in the
 top-level BIDSFlow CLI.
 
-## 7. Example Flow
+## 8. Current Example Flow
+
+```bash
+bidsflow init .
+bidsflow heudiconv init
+bidsflow heudiconv draft sourcedata/SUB001_SES01
+bidsflow heudiconv
+```
+
+## 9. Possible Future Flow
 
 ```bash
 bidsflow init .
@@ -107,12 +135,14 @@ bidsflow run fmriprep --subject-label 041
 bidsflow status fmriprep
 ```
 
-## 8. Summary
+## 10. Summary
 
-BIDSFlow should own the verbs.
+BIDSFlow should eventually own the verbs.
 
 Targets, including BIDS Apps, should remain explicit as nouns under
 those verbs.
 
-The first rebuilt CLI should keep that verb set minimal: `init`,
-`check`, `run`, and `status`.
+The current rebuilt CLI keeps the shipped surface minimal: `init` and
+the managed `heudiconv` task flow. Broader task verbs such as `check`,
+`run`, and `status` should be added only when their runtime contracts are
+implemented.

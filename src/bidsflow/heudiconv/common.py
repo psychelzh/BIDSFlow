@@ -131,6 +131,12 @@ def _combine_process_output(stdout: str | None, stderr: str | None) -> str:
 
 
 def _append_log(log_path: Path, message: str) -> None:
+    """Append a single-writer log message without explicit cross-process locking.
+
+    BIDSFlow uses _append_log for local per-unit logs where each file has one
+    writer. Shared files that require coordination, such as scheduler results
+    tables, use their own locking.
+    """
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8", newline="\n") as log_handle:
         if log_handle.tell() > 0:

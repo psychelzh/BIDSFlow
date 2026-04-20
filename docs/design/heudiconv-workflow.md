@@ -226,7 +226,7 @@ Not implemented yet:
 
 - persisted `BIDSLayout` database construction after successful runs
 - additional identity-mapping helpers beyond `sources.tsv`
-- cluster submission and scheduler observation
+- scheduler observation after SGE submission
 - automatic participants bookkeeping beyond what HeuDiConv already
   handles
 

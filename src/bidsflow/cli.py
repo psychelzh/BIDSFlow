@@ -58,7 +58,19 @@ def _ensure_supported_platform() -> None:
 
 
 def _toml_string(value: str) -> str:
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    escape_map = {
+        "\\": "\\\\",
+        '"': '\\"',
+        "\n": "\\n",
+        "\r": "\\r",
+        "\t": "\\t",
+        "\b": "\\b",
+        "\f": "\\f",
+    }
+    escaped = "".join(
+        escape_map.get(character, f"\\u{ord(character):04X}" if ord(character) < 0x20 else character)
+        for character in value
+    )
     return f'"{escaped}"'
 
 

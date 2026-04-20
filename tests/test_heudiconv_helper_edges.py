@@ -169,3 +169,18 @@ def test_materialize_run_execution_view_error_paths(tmp_path: Path, monkeypatch)
     )
     with pytest.raises(h.HeudiconvRunError, match="junction failed"):
         h._materialize_run_execution_view(execution_path, source_path)
+
+    original_exists = Path.exists
+
+    def _fake_execution_path_exists(self):
+        if self == execution_path:
+            return True
+        return original_exists(self)
+
+    monkeypatch.setattr(Path, "exists", _fake_execution_path_exists)
+    monkeypatch.setattr(
+        h.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, "junction created", ""),
+    )
+    assert h._materialize_run_execution_view(execution_path, source_path) == "junction"

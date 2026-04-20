@@ -197,11 +197,21 @@ def init(
         for relative_path in DEFAULT_LAYOUT_DIRECTORIES:
             (target_directory / relative_path).mkdir(parents=True, exist_ok=True)
 
-    typer.echo(f"Initialized BIDSFlow project at {target_directory}")
-    typer.echo(f"Config: {config_path}")
-    typer.echo(scheduler_message)
+    typer.echo("Initialized BIDSFlow project.")
+    typer.echo("")
+    typer.echo("Project:")
+    typer.echo(f"  Root: {target_directory}")
+    typer.echo(f"  Config: {config_path}")
+    typer.echo(f"  {scheduler_message}")
+    directory_message = "created" if make_dirs else "not created (use --make-dirs to create them)"
+    typer.echo(f"  Layout directories: {directory_message}")
     if scheduler_warning is not None:
+        typer.echo("")
         typer.echo(scheduler_warning)
+    typer.echo("")
+    typer.echo("Next:")
+    typer.echo(f"  Review config: {config_path}")
+    typer.echo("  Prepare HeuDiConv: bidsflow heudiconv init")
 
 
 @heudiconv_app.callback(invoke_without_command=True)
@@ -272,47 +282,57 @@ def _run_heudiconv_init(
         raise typer.Exit(code=2) from exc
 
     typer.echo("Initialized HeuDiConv support files.")
-    typer.echo(f"Config: {config_path}")
-    typer.echo(f"Sources discovered: {len(result.entries)}")
-    typer.echo(f"Sources table: {result.sources_path} ({result.sources_action})")
-    typer.echo(f"Sources metadata: {result.sources_state_path} ({result.sources_action})")
-    typer.echo(f"HeuDiConv code root: {result.code_root}")
-    if result.heuristic_parent != result.code_root:
-        typer.echo(f"Heuristic directory: {result.heuristic_parent}")
-    typer.echo(f"Scheduler: {result.scheduler}")
-    if result.scheduler_script_path is None:
-        typer.echo("Scheduler script: not generated")
-    else:
-        typer.echo(
-            f"Scheduler script: {result.scheduler_script_path} ({result.scheduler_script_action})"
-        )
+    typer.echo("")
+    typer.echo("Project:")
+    typer.echo(f"  Config: {config_path}")
+    typer.echo(f"  HeuDiConv code root: {result.code_root}")
+    typer.echo(f"  Heuristic: {context.heudiconv.heuristic}")
+
+    typer.echo("")
+    typer.echo("Sources:")
+    typer.echo(f"  Sources discovered: {len(result.entries)}")
+    typer.echo(f"  Sources table: {result.sources_path} ({result.sources_action})")
+    typer.echo(f"  Sources metadata: {result.sources_state_path} ({result.sources_action})")
 
     if plan.sources_plan.pattern is not None:
-        typer.echo(f"Label generation: pattern={plan.sources_plan.pattern!r}")
+        typer.echo(f"  Label generation: pattern: {plan.sources_plan.pattern!r}")
     elif plan.sources_plan.command is not None:
-        typer.echo(f"Label generation used command: {format_command(plan.sources_plan.command)}")
-        typer.echo(
-            "Command contract: source_name is passed as the last argv item; "
-            "cwd is project_root; stdout line 1 is subject_label; "
-            "stdout line 2 is optional session_label."
-        )
+        typer.echo(f"  Label generation: command: {format_command(plan.sources_plan.command)}")
     else:
-        typer.echo("Label generation: no pattern or command configured; labels will be left blank.")
+        typer.echo("  Label generation: manual review; labels will be left blank.")
 
+    typer.echo("")
+    typer.echo("Scheduler:")
+    typer.echo(f"  Scheduler: {result.scheduler}")
+    if result.scheduler_script_path is None:
+        typer.echo("  Scheduler script: not generated")
+    else:
+        typer.echo(
+            f"  Scheduler script: {result.scheduler_script_path} ({result.scheduler_script_action})"
+        )
+
+    typer.echo("")
     typer.echo("Summary:")
     summary = summarize_sources_entries(result.entries)
     for key in ("total", "ready", "needs_review", "collision", "missing_source", "excluded"):
-        typer.echo(f"- {key}: {summary[key]}")
+        typer.echo(f"  - {key}: {summary[key]}")
     issues = list_sources_review_issues(result.entries)
     if issues:
+        typer.echo("")
         typer.echo("Review needed:")
         for issue in issues:
-            typer.echo(f"- {issue}")
+            typer.echo(f"  - {issue}")
 
-    typer.echo(
-        "Next: review sources.tsv, generate a heuristic with "
-        "`bidsflow heudiconv draft <sample-path>`, then run `bidsflow heudiconv`."
-    )
+    typer.echo("")
+    typer.echo("Next:")
+    typer.echo(f"  Review sources: {result.sources_path}")
+    typer.echo("  Draft heuristic: bidsflow heudiconv draft <sample-path>")
+    typer.echo(f"  Review heuristic: {context.heudiconv.heuristic}")
+    if result.scheduler_script_path is not None:
+        typer.echo(f"  Check scheduler script: {result.scheduler_script_path}")
+        typer.echo("    Look at SGE directives, site environment setup, and launcher/container use.")
+    typer.echo("  Preview conversion: bidsflow heudiconv --dry-run")
+    typer.echo("  Run conversion: bidsflow heudiconv")
 
 
 def _run_heudiconv_draft(

@@ -4,6 +4,7 @@ import json
 import sys
 from pathlib import Path
 
+from bidsflow.cli import app
 from helpers import (
     append_config,
     assert_lines_in_order,
@@ -25,7 +26,7 @@ def test_sources_writes_blank_review_table_by_default(tmp_path: Path, invoke_fro
     assert result.exit_code == 0, result.output
     assert "Initialized HeuDiConv support files." in result.output
     assert "Sources discovered: 2" in result.output
-    assert "Label generation: no pattern or command configured" in result.output
+    assert "Label generation: manual review" in result.output
     assert "Sources table:" in result.output
     assert str(project_dir / "state" / "sources.tsv") in result.output
     assert str(project_dir / "state" / "sources.json") in result.output
@@ -79,6 +80,23 @@ def test_sources_applies_configured_pattern(tmp_path: Path, invoke_from, runner)
     state = json.loads((project_dir / "state" / "sources.json").read_text(encoding="utf-8"))
     assert state["label_generation"]["pattern"] == "CAMP_SUB{subject}_VISIT{session}"
     assert state["label_generation"]["command"] is None
+
+
+def test_sources_ignores_raw_bids_output_child(tmp_path: Path, invoke_from, runner) -> None:
+    project_dir = tmp_path / "demo-project"
+    init_result = runner.invoke(app, ["init", str(project_dir), "--make-dirs", "--scheduler", "none"])
+    assert init_result.exit_code == 0, init_result.output
+
+    set_sources_pattern(project_dir / "bidsflow.toml", "SUB{subject}_SES{session}")
+    (project_dir / "sourcedata" / "SUB001_SES01").mkdir()
+
+    result = invoke_from(project_dir, ["heudiconv", "init"])
+
+    assert result.exit_code == 0, result.output
+    assert "Sources discovered: 1" in result.output
+
+    rows = read_tsv_rows(project_dir / "state" / "sources.tsv")
+    assert [row["source_name"] for row in rows] == ["SUB001_SES01"]
 
 
 def test_heudiconv_init_writes_sge_scheduler_script(tmp_path: Path, invoke_from, runner) -> None:
@@ -141,7 +159,7 @@ def test_heudiconv_init_reports_custom_heuristic_directory(tmp_path: Path, invok
     result = invoke_from(project_dir, ["heudiconv", "init"])
 
     assert result.exit_code == 0, result.output
-    assert f"Heuristic directory: {project_dir / 'code' / 'custom'}" in result.output
+    assert f"Heuristic: {project_dir / 'code' / 'custom' / 'heuristic.py'}" in result.output
 
 
 def test_sources_applies_configured_command(tmp_path: Path, invoke_from, runner) -> None:
@@ -177,12 +195,8 @@ def test_sources_applies_configured_command(tmp_path: Path, invoke_from, runner)
     result = invoke_from(project_dir, ["heudiconv", "init"])
 
     assert result.exit_code == 0, result.output
-    assert "Label generation used command:" in result.output
-    assert (
-        "Command contract: source_name is passed as the last argv item; cwd is project_root; "
-        "stdout line 1 is subject_label; stdout line 2 is optional session_label."
-        in result.output
-    )
+    assert "Label generation: command:" in result.output
+    assert "Command contract:" not in result.output
 
     rows = read_tsv_rows(project_dir / "state" / "sources.tsv")
     assert [row["subject_label"] for row in rows] == ["001", "001"]

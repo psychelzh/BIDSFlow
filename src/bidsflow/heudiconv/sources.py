@@ -51,6 +51,7 @@ def plan_sources(
     context: ProjectContext,
 ) -> SourcesPlan:
     resolved_source_root = context.paths.source_root.resolve()
+    resolved_raw_bids_root = context.paths.raw_bids_root.resolve()
     if not resolved_source_root.exists():
         raise SourcesError(
             f"Configured source root does not exist: {resolved_source_root}"
@@ -66,6 +67,7 @@ def plan_sources(
                 candidate
                 for candidate in resolved_source_root.iterdir()
                 if candidate.is_dir() and not candidate.name.startswith(".")
+                and candidate.resolve() != resolved_raw_bids_root
             ),
             key=lambda candidate: candidate.name.lower(),
         )

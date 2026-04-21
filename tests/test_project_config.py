@@ -72,7 +72,6 @@ scheduler = "sge"
     assert context.project_root == project_root.resolve()
     assert context.paths.source_root == source_root.resolve()
     assert context.paths.raw_bids_root == project_root / "sourcedata" / "raw"
-    assert context.execution.scheduler_template == "code/bidsflow/{{ scheduler }}/{{ target }}.sh"
     assert context.execution.submit_command == ("qsub", "-terse")
     assert context.heudiconv.launcher == ("heudiconv",)
 
@@ -103,13 +102,6 @@ scheduler = "sge"
         (
             _minimal_config().replace('scheduler = "none"', 'scheduler = "slurm"'),
             "[execution].scheduler must be one of: none, sge.",
-        ),
-        (
-            _minimal_config().replace(
-                'scheduler = "none"',
-                'scheduler = "none"\nscheduler_template = 1',
-            ),
-            "[execution].scheduler_template must be a string path template.",
         ),
         (
             _minimal_config().replace(

@@ -16,7 +16,6 @@ from helpers import (
     read_key_value_file,
     read_tsv_rows,
     ready_heudiconv_project,
-    replace_config,
     set_launcher,
     set_sources_pattern,
     set_submit_command,
@@ -248,7 +247,7 @@ def test_sge_submit_command_not_found(tmp_path: Path, invoke_from, runner) -> No
     assert "Failed to start SGE submit command" in result.output
 
 
-def test_sge_rejects_missing_and_unsupported_scheduler_template(
+def test_sge_rejects_missing_and_unsupported_scheduler_script_template(
     tmp_path: Path,
     invoke_from,
     runner,
@@ -259,7 +258,7 @@ def test_sge_rejects_missing_and_unsupported_scheduler_template(
 
     missing = invoke_from(project_dir, ["heudiconv"])
     assert missing.exit_code == 2
-    assert "SGE scheduler template does not exist" in missing.output
+    assert "SGE scheduler script does not exist" in missing.output
 
     script_path.write_text("{{ unsupported }}\n", encoding="utf-8", newline="\n")
     unsupported = invoke_from(project_dir, ["heudiconv"])
@@ -290,52 +289,11 @@ def test_run_rejects_execution_view_cleanup_failure(
 
 def test_scheduler_path_and_project_ownership_helpers(tmp_path: Path, runner) -> None:
     project_dir = init_project(tmp_path, runner, name="scheduler-path", scheduler="sge")
-    absolute_template = tmp_path / "absolute" / "heudiconv.sh"
-    replace_config(
-        project_dir / "bidsflow.toml",
-        'scheduler_template = "code/bidsflow/{{ scheduler }}/{{ target }}.sh"',
-        f'scheduler_template = "{absolute_template.as_posix()}"',
-    )
     context = load_context(project_dir)
 
-    assert heudiconv_common._resolve_scheduler_script_path(context, target="heudiconv") == absolute_template.resolve()
+    assert heudiconv_common._resolve_scheduler_script_path(context, target="heudiconv") == (
+        project_dir / "code" / "bidsflow" / "sge" / "heudiconv.sh"
+    ).resolve()
 
     with pytest.raises(h.HeudiconvInitError, match="outside the project root"):
         heudiconv_common._ensure_project_owned_path(project_dir, tmp_path / "outside.sh")
-
-
-def test_scheduler_template_path_rejects_unsupported_placeholder(
-    tmp_path: Path,
-    invoke_from,
-    runner,
-) -> None:
-    project_dir = init_project(tmp_path, runner, name="bad-template-path", scheduler="sge")
-    replace_config(
-        project_dir / "bidsflow.toml",
-        'scheduler_template = "code/bidsflow/{{ scheduler }}/{{ target }}.sh"',
-        'scheduler_template = "code/{{ site }}/{{ target }}.sh"',
-    )
-    context = load_context(project_dir)
-
-    with pytest.raises(h.HeudiconvInitError, match="supports only"):
-        heudiconv_common._resolve_scheduler_script_path(context, target="heudiconv")
-
-    make_source_dirs(project_dir, "SUB001_SES01")
-    (project_dir / "state").mkdir()
-    (project_dir / "state" / "sources.tsv").write_text(
-        "\n".join(
-            (
-                "source_name\tsubject_label\tsession_label\tinclude\tstatus\tnotes",
-                "SUB001_SES01\t001\t01\ttrue\tready\tmanual",
-            )
-        )
-        + "\n",
-        encoding="utf-8",
-        newline="\n",
-    )
-    write_minimal_heuristic(project_dir)
-
-    result = invoke_from(project_dir, ["heudiconv"])
-
-    assert result.exit_code == 2
-    assert "supports only" in result.output

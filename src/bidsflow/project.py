@@ -21,7 +21,6 @@ class SourcesConfig:
 @dataclass(frozen=True)
 class ExecutionConfig:
     scheduler: str
-    scheduler_template: str | None
     submit_command: tuple[str, ...] | None
 
 
@@ -177,15 +176,12 @@ def _load_execution_config(
     execution_section: dict[str, Any],
 ) -> ExecutionConfig:
     scheduler = execution_section.get("scheduler", "none")
-    scheduler_template = execution_section.get("scheduler_template")
     submit_command = execution_section.get("submit_command")
 
     if not isinstance(scheduler, str):
         raise ValueError("[execution].scheduler must be a string.")
     if scheduler not in {"none", "sge"}:
         raise ValueError("[execution].scheduler must be one of: none, sge.")
-    if scheduler_template is not None and not isinstance(scheduler_template, str):
-        raise ValueError("[execution].scheduler_template must be a string path template.")
     if submit_command is not None and (
         not isinstance(submit_command, list)
         or not submit_command
@@ -194,14 +190,11 @@ def _load_execution_config(
         raise ValueError("[execution].submit_command must be a non-empty list of strings.")
 
     if scheduler == "sge":
-        scheduler_template = scheduler_template or "code/bidsflow/{{ scheduler }}/{{ target }}.sh"
         submit_command = submit_command or ["qsub", "-terse"]
     else:
-        scheduler_template = None
         submit_command = None
 
     return ExecutionConfig(
         scheduler=scheduler,
-        scheduler_template=scheduler_template,
         submit_command=tuple(submit_command) if submit_command is not None else None,
     )

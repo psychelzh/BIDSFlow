@@ -78,14 +78,13 @@ def _render_execution_section(scheduler: str) -> str:
     if scheduler == "sge":
         return """[execution]
 scheduler = "sge"
-scheduler_template = "code/bidsflow/{{ scheduler }}/{{ target }}.sh"
 submit_command = ["qsub", "-terse"]
 """
     return """[execution]
 scheduler = "none"
 
-# Uncomment and configure these when you want scheduled execution.
-# scheduler_template = "code/bidsflow/{{ scheduler }}/{{ target }}.sh"
+# Uncomment and configure these when you want SGE execution.
+# scheduler = "sge"
 # submit_command = ["qsub", "-terse"]
 """
 

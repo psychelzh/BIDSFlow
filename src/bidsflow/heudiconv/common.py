@@ -30,26 +30,13 @@ def format_command(argv: tuple[str, ...]) -> str:
 
 
 def _resolve_scheduler_script_path(context: ProjectContext, target: str) -> Path:
-    scheduler_template = context.execution.scheduler_template
-    if scheduler_template is None:  # pragma: no cover
-        raise HeudiconvInitError(
-            f"[execution].scheduler_template is required when scheduler is {context.execution.scheduler!r}."
-        )
-
-    rendered = (
-        scheduler_template.replace("{{ scheduler }}", context.execution.scheduler)
-        .replace("{{ target }}", target)
-    )
-    if "{{" in rendered or "}}" in rendered:
-        raise HeudiconvInitError(
-            "[execution].scheduler_template currently supports only "
-            "{{ scheduler }} and {{ target }} placeholders."
-        )
-
-    candidate = Path(rendered)
-    if candidate.is_absolute():
-        return candidate.resolve()
-    return (context.project_root / candidate).resolve()
+    return (
+        context.project_root
+        / "code"
+        / "bidsflow"
+        / context.execution.scheduler
+        / f"{target}.sh"
+    ).resolve()
 
 
 def _render_sge_heudiconv_script() -> str:

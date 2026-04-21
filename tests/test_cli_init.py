@@ -51,9 +51,8 @@ def test_init_writes_config_without_materializing_layout_by_default(
 
     config_text = (project_dir / "bidsflow.toml").read_text(encoding="utf-8")
     assert 'scheduler = "none"' in config_text
-    assert '# scheduler_template = "code/bidsflow/{{ scheduler }}/{{ target }}.sh"' in config_text
+    assert '# scheduler = "sge"' in config_text
     assert '# submit_command = ["qsub", "-terse"]' in config_text
-    assert '\nscheduler_template = "code/bidsflow/{{ scheduler }}/{{ target }}.sh"' not in config_text
     assert '\nsubmit_command = ["qsub", "-terse"]' not in config_text
     assert_lines_in_order(config_text, ["[paths]", "# [sources]", "[execution]", "[heudiconv]"])
     assert config_text == snapshot(name="init_default_bidsflow_toml")
@@ -83,7 +82,6 @@ def test_init_scheduler_auto_detects_sge(tmp_path: Path, monkeypatch, runner) ->
     assert result.exit_code == 0, result.output
     config_text = (project_dir / "bidsflow.toml").read_text(encoding="utf-8")
     assert 'scheduler = "sge"' in config_text
-    assert 'scheduler_template = "code/bidsflow/{{ scheduler }}/{{ target }}.sh"' in config_text
     assert 'submit_command = ["qsub", "-terse"]' in config_text
     assert "Scheduler: sge (detected qsub)" in result.output
 
@@ -110,7 +108,6 @@ def test_init_scheduler_sge_writes_config_even_when_qsub_is_missing(tmp_path: Pa
     assert result.exit_code == 0, result.output
     config_text = (project_dir / "bidsflow.toml").read_text(encoding="utf-8")
     assert 'scheduler = "sge"' in config_text
-    assert 'scheduler_template = "code/bidsflow/{{ scheduler }}/{{ target }}.sh"' in config_text
     assert 'submit_command = ["qsub", "-terse"]' in config_text
     assert "Scheduler: sge" in result.output
     assert "Warning: qsub was not found on PATH" in result.output

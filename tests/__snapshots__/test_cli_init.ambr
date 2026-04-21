@@ -34,8 +34,8 @@
   [execution]
   scheduler = "none"
   
-  # Uncomment and configure these when you want scheduled execution.
-  # scheduler_template = "code/bidsflow/{{ scheduler }}/{{ target }}.sh"
+  # Uncomment and configure these when you want SGE execution.
+  # scheduler = "sge"
   # submit_command = ["qsub", "-terse"]
   
   [heudiconv]

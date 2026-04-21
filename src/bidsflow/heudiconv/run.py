@@ -246,21 +246,21 @@ def _build_sge_run_plan(
         )
 
     try:
-        scheduler_template_path = _resolve_scheduler_script_path(
+        scheduler_script_template_path = _resolve_scheduler_script_path(
             context,
             target="heudiconv",
         )
     except HeudiconvInitError as exc:
         raise HeudiconvRunError(str(exc)) from exc
-    if not scheduler_template_path.is_file():
+    if not scheduler_script_template_path.is_file():
         raise HeudiconvRunError(
-            "SGE scheduler template does not exist: "
-            f"{scheduler_template_path}. Run `bidsflow heudiconv init` first."
+            "SGE scheduler script does not exist: "
+            f"{scheduler_script_template_path}. Run `bidsflow heudiconv init` first."
         )
 
     scheduler_root = execution_view_root / ".bidsflow" / "scheduler" / "sge"
     return SgeRunPlan(
-        template_path=scheduler_template_path,
+        template_path=scheduler_script_template_path,
         script_path=scheduler_root / "heudiconv.sh",
         unit_list_path=scheduler_root / "units.tsv",
         scheduler_log_dir=log_dir,
@@ -688,7 +688,7 @@ def _write_sge_run_files(
     )
     if "{{" in rendered or "}}" in rendered:
         raise HeudiconvRunError(
-            "SGE scheduler template contains unsupported placeholders. "
+            "SGE scheduler script contains unsupported placeholders. "
             "Supported run placeholders are {{ job_name }}, {{ task_count }}, "
             "{{ attempt_label }}, {{ scheduler_log_dir }}, {{ unit_list_path }}, "
             "{{ results_table_path }}, {{ shell_unit_list_path }}, "
@@ -1103,7 +1103,7 @@ def _build_run_artifacts(
     if scheduler is not None:
         artifacts.update(
             {
-                "scheduler_template": scheduler["template_path"],
+                "scheduler_script_template": scheduler["template_path"],
                 "scheduler_script": scheduler["script_path"],
                 "scheduler_unit_list": scheduler["unit_list_path"],
                 "scheduler_log_dir": scheduler["scheduler_log_dir"],

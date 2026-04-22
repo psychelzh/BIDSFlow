@@ -28,7 +28,7 @@ def test_low_level_run_helpers_cover_status_paths(tmp_path: Path, monkeypatch) -
         claim_path=tmp_path / "claims" / "sub-001.running",
     )
 
-    assert not heudiconv_run._unit_status_is_succeeded(unit.status_path)
+    assert heudiconv_run._unit_status_value(unit.status_path) == ""
     heudiconv_run._write_unit_status(
         unit,
         status="succeeded",
@@ -42,7 +42,7 @@ def test_low_level_run_helpers_cover_status_paths(tmp_path: Path, monkeypatch) -
         scheduler_task_id=None,
         error="multi\nline\rerror",
     )
-    assert heudiconv_run._unit_status_is_succeeded(unit.status_path)
+    assert heudiconv_run._unit_status_value(unit.status_path) == "succeeded"
     payload = read_key_value_file(unit.status_path)
     assert payload["task_id"] == ""
     assert payload["error"] == "multi line error"
@@ -55,7 +55,7 @@ def test_low_level_run_helpers_cover_status_paths(tmp_path: Path, monkeypatch) -
         return original_read_text(path, *args, **kwargs)
 
     monkeypatch.setattr(Path, "read_text", _raise_os_error)
-    assert not heudiconv_run._unit_status_is_succeeded(unit.status_path)
+    assert heudiconv_run._unit_status_value(unit.status_path) == ""
     monkeypatch.undo()
 
     heudiconv_run._release_unit_claim(unit)

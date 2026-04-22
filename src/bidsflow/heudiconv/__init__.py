@@ -35,6 +35,7 @@ from .sources import (
     run_sources,
     summarize_sources_entries,
 )
+from .status import HeudiconvStatus, HeudiconvUnitStatus, get_heudiconv_status
 
 __all__ = [
     "DraftPlan",
@@ -44,6 +45,8 @@ __all__ = [
     "HeudiconvDraftError",
     "HeudiconvInitError",
     "HeudiconvRunError",
+    "HeudiconvStatus",
+    "HeudiconvUnitStatus",
     "InitPlan",
     "InitResult",
     "RunPlan",
@@ -56,6 +59,7 @@ __all__ = [
     "SourcesPlan",
     "SourcesResult",
     "format_command",
+    "get_heudiconv_status",
     "list_sources_review_issues",
     "plan_draft",
     "plan_heudiconv_init",

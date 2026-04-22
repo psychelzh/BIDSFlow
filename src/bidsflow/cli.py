@@ -15,6 +15,7 @@ from .heudiconv import (
     RunResult,
     SourcesError,
     format_command,
+    get_heudiconv_status,
     list_sources_review_issues,
     plan_draft,
     plan_heudiconv_init,
@@ -221,6 +222,11 @@ def heudiconv(
         "--dry-run",
         help="Show planned conversion commands and outputs without running HeuDiConv.",
     ),
+    include_failed: bool = typer.Option(
+        False,
+        "--include-failed",
+        help="Retry units whose latest status is failed.",
+    ),
     clean_workdir: bool = typer.Option(
         True,
         "--clean-workdir/--keep-workdir",
@@ -230,7 +236,11 @@ def heudiconv(
     """Run managed HeuDiConv conversion when no subcommand is provided."""
     if ctx.invoked_subcommand is not None:
         return
-    _run_heudiconv_default(dry_run=dry_run, clean_workdir=clean_workdir)
+    _run_heudiconv_default(
+        dry_run=dry_run,
+        clean_workdir=clean_workdir,
+        include_failed=include_failed,
+    )
 
 
 @heudiconv_app.command("init")
@@ -265,6 +275,12 @@ def heudiconv_draft(
 ) -> None:
     """Generate a draft HeuDiConv heuristic from representative sample paths."""
     _run_heudiconv_draft(sample_paths, force=force, dry_run=dry_run)
+
+
+@heudiconv_app.command("status")
+def heudiconv_status() -> None:
+    """Show current HeuDiConv project state without changing files."""
+    _run_heudiconv_status()
 
 
 def _run_heudiconv_init(
@@ -400,6 +416,7 @@ def _run_heudiconv_default(
     *,
     dry_run: bool,
     clean_workdir: bool,
+    include_failed: bool,
 ) -> None:
     try:
         config_path = find_project_config(Path.cwd())
@@ -410,11 +427,21 @@ def _run_heudiconv_default(
         raise typer.Exit(code=2) from exc
 
     if dry_run:
-        _echo_heudiconv_dry_run(config_path, plan, clean_workdir=clean_workdir)
+        _echo_heudiconv_dry_run(
+            config_path,
+            plan,
+            clean_workdir=clean_workdir,
+            include_failed=include_failed,
+        )
         return
 
     try:
-        result = run_heudiconv(context, plan, cleanup_workdir=clean_workdir)
+        result = run_heudiconv(
+            context,
+            plan,
+            cleanup_workdir=clean_workdir,
+            include_failed=include_failed,
+        )
     except HeudiconvRunError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
@@ -422,13 +449,98 @@ def _run_heudiconv_default(
     _echo_heudiconv_run_result(result, plan, clean_workdir=clean_workdir)
 
 
+def _run_heudiconv_status() -> None:
+    try:
+        config_path = find_project_config(Path.cwd())
+        context = load_project_context(config_path)
+        status = get_heudiconv_status(context)
+    except (HeudiconvRunError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+    typer.echo("HeuDiConv status.")
+    typer.echo("")
+    typer.echo("Project:")
+    typer.echo(f"  Config: {config_path}")
+    typer.echo(f"  Sources table: {status.sources_path}")
+    typer.echo(f"  Heuristic: {status.heuristic_path}")
+
+    typer.echo("")
+    typer.echo("Sources:")
+    if not status.sources_exists:
+        typer.echo("  State: not initialized")
+    else:
+        for key in ("total", "ready", "needs_review", "collision", "missing_source", "excluded"):
+            typer.echo(f"  - {key}: {status.sources_summary[key]}")
+    if not status.heuristic_exists:
+        typer.echo("  Heuristic: missing")
+
+    typer.echo("")
+    typer.echo("Run:")
+    typer.echo(f"  Latest run state: {status.run_record_state or 'none'}")
+    typer.echo(f"  Results rows: {status.results_count}")
+    for key in ("total", "not_run", "succeeded", "failed", "active", "other"):
+        typer.echo(f"  - {key}: {status.unit_counts[key]}")
+
+    if status.sources_issues:
+        typer.echo("")
+        typer.echo("Sources needing review:")
+        for issue in status.sources_issues:
+            typer.echo(f"  - {issue}")
+
+    failed_units = tuple(unit for unit in status.units if unit.status == "failed")
+    if failed_units:
+        typer.echo("")
+        typer.echo("Failed units:")
+        for unit in failed_units[:10]:
+            suffix = f" ({unit.error})" if unit.error else ""
+            typer.echo(f"  - {unit.unit_name}: source={unit.source_name}{suffix}")
+            if unit.log_path is not None:
+                typer.echo(f"    log: {unit.log_path}")
+            elif unit.log_dir is not None:
+                typer.echo(f"    logs: {unit.log_dir}")
+        if len(failed_units) > 10:
+            typer.echo(f"  - additional failed units omitted: {len(failed_units) - 10}")
+
+    active_units = tuple(unit for unit in status.units if unit.active_claim)
+    if active_units:
+        typer.echo("")
+        typer.echo("Active claims:")
+        for unit in active_units[:10]:
+            typer.echo(f"  - {unit.unit_name}: {unit.claim_path}")
+        if len(active_units) > 10:
+            typer.echo(f"  - additional active claims omitted: {len(active_units) - 10}")
+
+    typer.echo("")
+    typer.echo("Next:")
+    if not status.sources_exists:
+        typer.echo("  Initialize HeuDiConv: bidsflow heudiconv init")
+    elif status.sources_issues:
+        typer.echo(f"  Review sources: {status.sources_path}")
+    elif not status.heuristic_exists:
+        typer.echo("  Draft heuristic: bidsflow heudiconv draft <sample-path>")
+    elif failed_units:
+        typer.echo("  Inspect failed unit logs and sources.tsv; retry with:")
+        typer.echo("    bidsflow heudiconv --include-failed")
+    elif status.unit_counts["not_run"]:
+        typer.echo("  Run pending units: bidsflow heudiconv")
+    elif status.unit_counts["active"]:
+        typer.echo("  Wait for active scheduler/local work to finish, then run status again.")
+    else:
+        typer.echo("  No immediate action.")
+
+
 def _echo_heudiconv_dry_run(
     config_path: Path,
     plan: RunPlan,
     *,
     clean_workdir: bool,
+    include_failed: bool,
 ) -> None:
-    runnable_units, unit_counts = preview_run_unit_selection(plan)
+    runnable_units, unit_counts = preview_run_unit_selection(
+        plan,
+        include_failed=include_failed,
+    )
     typer.echo("Planned `bidsflow heudiconv` execution.")
     typer.echo("Dry run only; no files or directories were created.")
     typer.echo(f"Config: {config_path}")
@@ -450,10 +562,14 @@ def _echo_heudiconv_dry_run(
     typer.echo(f"Cleanup: {cleanup_summary}")
     typer.echo(f"Ready units in sources.tsv: {unit_counts['total']}")
     typer.echo(f"Runnable units now: {unit_counts['selected']}")
+    if include_failed:
+        typer.echo("Failed units: included")
     if unit_counts["skipped"]:
         typer.echo(f"Skipped units: {unit_counts['skipped']}")
     if unit_counts["skipped_succeeded"]:
         typer.echo(f"- already succeeded: {unit_counts['skipped_succeeded']}")
+    if unit_counts["skipped_failed"]:
+        typer.echo(f"- failed; use --include-failed to retry: {unit_counts['skipped_failed']}")
     if unit_counts["skipped_active_claim"]:
         typer.echo(f"- active claim: {unit_counts['skipped_active_claim']}")
     if not runnable_units:
@@ -486,6 +602,8 @@ def _echo_heudiconv_run_result(
         typer.echo(f"Skipped units: {result.skipped_units}")
         if result.skipped_succeeded:
             typer.echo(f"- already succeeded: {result.skipped_succeeded}")
+        if result.skipped_failed:
+            typer.echo(f"- failed; use --include-failed to retry: {result.skipped_failed}")
         if result.skipped_active_claim:
             typer.echo(f"- active claim: {result.skipped_active_claim}")
         return
@@ -494,6 +612,8 @@ def _echo_heudiconv_run_result(
     typer.echo(f"Run units: {len(result.unit_results)}")
     if result.skipped_units:
         typer.echo(f"Skipped units: {result.skipped_units}")
+    if result.skipped_failed:
+        typer.echo(f"- failed; use --include-failed to retry: {result.skipped_failed}")
     typer.echo(f"Raw BIDS root: {result.raw_bids_root}")
     typer.echo(f"State: {result.state_path}")
     typer.echo(f"Results table: {result.results_path}")

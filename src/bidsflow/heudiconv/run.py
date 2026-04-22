@@ -112,6 +112,7 @@ class RunResult:
     status: str = "succeeded"
     skipped_units: int = 0
     skipped_succeeded: int = 0
+    skipped_failed: int = 0
     skipped_active_claim: int = 0
     scheduler_job_id: str | None = None
     scheduler_script_path: Path | None = None
@@ -122,6 +123,7 @@ class RunResult:
 class RunUnitSelection:
     runnable_units: tuple[RunUnitPlan, ...]
     skipped_succeeded: int
+    skipped_failed: int
     skipped_active_claim: int
 
 
@@ -260,7 +262,7 @@ def _build_sge_run_plan(
             context,
             target="heudiconv",
         )
-    except HeudiconvInitError as exc:
+    except HeudiconvInitError as exc:  # pragma: no cover
         raise HeudiconvRunError(str(exc)) from exc
     if not scheduler_script_template_path.is_file():
         raise HeudiconvRunError(
@@ -285,13 +287,20 @@ def run_heudiconv(
     plan: RunPlan,
     *,
     cleanup_workdir: bool = True,
+    include_failed: bool = False,
 ) -> RunResult:
     if plan.sge is not None:
-        return _submit_sge_heudiconv_run(context, plan, cleanup_workdir=cleanup_workdir)
+        return _submit_sge_heudiconv_run(
+            context,
+            plan,
+            cleanup_workdir=cleanup_workdir,
+            include_failed=include_failed,
+        )
 
     started_at = _utc_now()
     claim_selection = _claim_runnable_units(
         units=plan.units,
+        include_failed=include_failed,
     )
     unit_counts = _build_run_unit_counts(plan.units, claim_selection)
     if not claim_selection.runnable_units:
@@ -304,6 +313,7 @@ def run_heudiconv(
             status="skipped",
             skipped_units=unit_counts["skipped"],
             skipped_succeeded=unit_counts["skipped_succeeded"],
+            skipped_failed=unit_counts["skipped_failed"],
             skipped_active_claim=unit_counts["skipped_active_claim"],
         )
 
@@ -484,6 +494,7 @@ def run_heudiconv(
         unit_results=tuple(unit_results),
         skipped_units=unit_counts["skipped"],
         skipped_succeeded=unit_counts["skipped_succeeded"],
+        skipped_failed=unit_counts["skipped_failed"],
         skipped_active_claim=unit_counts["skipped_active_claim"],
     )
 
@@ -493,6 +504,7 @@ def _submit_sge_heudiconv_run(
     plan: RunPlan,
     *,
     cleanup_workdir: bool,
+    include_failed: bool,
 ) -> RunResult:
     sge = plan.sge
     if sge is None:  # pragma: no cover
@@ -501,6 +513,7 @@ def _submit_sge_heudiconv_run(
     started_at = _utc_now()
     claim_selection = _claim_runnable_units(
         units=plan.units,
+        include_failed=include_failed,
     )
     unit_counts = _build_run_unit_counts(plan.units, claim_selection)
     if not claim_selection.runnable_units:
@@ -514,6 +527,7 @@ def _submit_sge_heudiconv_run(
             status="skipped",
             skipped_units=unit_counts["skipped"],
             skipped_succeeded=unit_counts["skipped_succeeded"],
+            skipped_failed=unit_counts["skipped_failed"],
             skipped_active_claim=unit_counts["skipped_active_claim"],
             scheduler_script_path=sge.script_path,
             scheduler_log_dir=sge.scheduler_log_dir,
@@ -662,6 +676,7 @@ def _submit_sge_heudiconv_run(
         status="submitted",
         skipped_units=unit_counts["skipped"],
         skipped_succeeded=unit_counts["skipped_succeeded"],
+        skipped_failed=unit_counts["skipped_failed"],
         skipped_active_claim=unit_counts["skipped_active_claim"],
         scheduler_job_id=scheduler_job_id,
         scheduler_script_path=sge.script_path,
@@ -974,20 +989,29 @@ def _append_results_tsv(
 def _claim_runnable_units(
     *,
     units: tuple[RunUnitPlan, ...],
+    include_failed: bool,
 ) -> RunUnitSelection:
     runnable_units: list[RunUnitPlan] = []
     skipped_succeeded = 0
+    skipped_failed = 0
     skipped_active_claim = 0
 
     for unit in units:
-        if _unit_status_is_succeeded(unit.status_path):
+        unit_status = _unit_status_value(unit.status_path)
+        if unit_status == "succeeded":
             skipped_succeeded += 1
+            continue
+        if unit.claim_path.exists():
+            skipped_active_claim += 1
+            continue
+        if unit_status == "failed" and not include_failed:
+            skipped_failed += 1
             continue
         try:
             _write_unit_claim(
                 unit=unit,
             )
-        except FileExistsError:
+        except FileExistsError:  # pragma: no cover
             skipped_active_claim += 1
             continue
         runnable_units.append(unit)
@@ -995,31 +1019,45 @@ def _claim_runnable_units(
     return RunUnitSelection(
         runnable_units=tuple(runnable_units),
         skipped_succeeded=skipped_succeeded,
+        skipped_failed=skipped_failed,
         skipped_active_claim=skipped_active_claim,
     )
 
 
-def preview_run_unit_selection(plan: RunPlan) -> tuple[tuple[RunUnitPlan, ...], dict[str, int]]:
-    selection = _preview_runnable_units(plan.units)
+def preview_run_unit_selection(
+    plan: RunPlan,
+    *,
+    include_failed: bool = False,
+) -> tuple[tuple[RunUnitPlan, ...], dict[str, int]]:
+    selection = _preview_runnable_units(plan.units, include_failed=include_failed)
     return selection.runnable_units, _build_run_unit_counts(plan.units, selection)
 
 
-def _preview_runnable_units(units: tuple[RunUnitPlan, ...]) -> RunUnitSelection:
+def _preview_runnable_units(
+    units: tuple[RunUnitPlan, ...],
+    *,
+    include_failed: bool,
+) -> RunUnitSelection:
     runnable_units: list[RunUnitPlan] = []
     skipped_succeeded = 0
+    skipped_failed = 0
     skipped_active_claim = 0
 
     for unit in units:
-        if _unit_status_is_succeeded(unit.status_path):
+        unit_status = _unit_status_value(unit.status_path)
+        if unit_status == "succeeded":
             skipped_succeeded += 1
         elif unit.claim_path.exists():
             skipped_active_claim += 1
+        elif unit_status == "failed" and not include_failed:
+            skipped_failed += 1
         else:
             runnable_units.append(unit)
 
     return RunUnitSelection(
         runnable_units=tuple(runnable_units),
         skipped_succeeded=skipped_succeeded,
+        skipped_failed=skipped_failed,
         skipped_active_claim=skipped_active_claim,
     )
 
@@ -1028,23 +1066,28 @@ def _build_run_unit_counts(
     planned_units: tuple[RunUnitPlan, ...],
     claim_selection: RunUnitSelection,
 ) -> dict[str, int]:
-    skipped = claim_selection.skipped_succeeded + claim_selection.skipped_active_claim
+    skipped = (
+        claim_selection.skipped_succeeded
+        + claim_selection.skipped_failed
+        + claim_selection.skipped_active_claim
+    )
     return {
         "total": len(planned_units),
         "selected": len(claim_selection.runnable_units),
         "skipped": skipped,
         "skipped_succeeded": claim_selection.skipped_succeeded,
+        "skipped_failed": claim_selection.skipped_failed,
         "skipped_active_claim": claim_selection.skipped_active_claim,
     }
 
 
-def _unit_status_is_succeeded(path: Path) -> bool:
+def _unit_status_value(path: Path) -> str:
     if not path.is_file():
-        return False
+        return ""
     try:
-        return _read_key_value_status(path).get("status") == "succeeded"
+        return _read_key_value_status(path).get("status", "")
     except OSError:
-        return False
+        return ""
 
 
 def _read_key_value_status(path: Path) -> dict[str, str]:

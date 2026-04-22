@@ -170,6 +170,52 @@ def test_heudiconv_status_reports_pending_active_and_succeeded_units(
     assert "No immediate action." in succeeded.output
 
 
+def test_heudiconv_status_limits_failed_and_active_details(
+    tmp_path: Path,
+    invoke_from,
+    runner,
+) -> None:
+    project_dir = init_project(tmp_path, runner, name="status-many-units")
+    config_path = project_dir / "bidsflow.toml"
+    set_sources_pattern(config_path, "SUB{subject}")
+    source_names = tuple(f"SUB{index:03d}" for index in range(1, 13))
+    make_source_dirs(project_dir, *source_names)
+    init_heudiconv = invoke_from(project_dir, ["heudiconv", "init"])
+    assert init_heudiconv.exit_code == 0, init_heudiconv.output
+
+    unit_status_dir = project_dir / "state" / "heudiconv" / "units"
+    claim_dir = project_dir / "state" / "heudiconv" / "claims"
+    scheduler_log_dir = project_dir / "logs" / "heudiconv" / "sge" / "run-1"
+    for index in range(1, 13):
+        unit_name = f"sub-{index:03d}"
+        unit_status_dir.mkdir(parents=True, exist_ok=True)
+        claim_dir.mkdir(parents=True, exist_ok=True)
+        (unit_status_dir / f"{unit_name}.status").write_text(
+            "\n".join(
+                (
+                    "status=failed",
+                    f"unit={unit_name}",
+                    f"source=SUB{index:03d}",
+                    "backend=sge",
+                    f"log_dir={scheduler_log_dir}",
+                    "error=data problem",
+                )
+            )
+            + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        (claim_dir / f"{unit_name}.running").touch()
+
+    result = invoke_from(project_dir, ["heudiconv", "status"])
+
+    assert result.exit_code == 0, result.output
+    assert f"logs: {scheduler_log_dir}" in result.output
+    assert "additional failed units omitted: 2" in result.output
+    assert "additional active claims omitted: 2" in result.output
+    assert "Draft heuristic: bidsflow heudiconv draft <sample-path>" in result.output
+
+
 def test_heudiconv_run_recomputes_sources_status_from_manual_edits(
     tmp_path: Path,
     invoke_from,
@@ -400,6 +446,42 @@ def test_heudiconv_run_reports_partially_skipped_units(
     assert "Completed `bidsflow heudiconv` execution." in result.output
     assert "Run units: 1" in result.output
     assert "Skipped units: 1" in result.output
+
+
+def test_heudiconv_run_reports_failed_skips_when_other_units_run(
+    tmp_path: Path,
+    invoke_from,
+    runner,
+) -> None:
+    project_dir = init_project(tmp_path, runner, name="failed-skip-with-run")
+    config_path = project_dir / "bidsflow.toml"
+    set_sources_pattern(config_path, "SUB{subject}")
+    make_source_dirs(project_dir, "SUB001", "SUB002")
+    init_heudiconv = invoke_from(project_dir, ["heudiconv", "init"])
+    assert init_heudiconv.exit_code == 0, init_heudiconv.output
+    write_minimal_heuristic(project_dir)
+
+    fake_launcher = _write_successful_run_launcher(project_dir)
+    set_launcher(
+        config_path,
+        f'launcher = ["{sys.executable}", "{fake_launcher.as_posix()}"]',
+    )
+
+    unit_status_dir = project_dir / "state" / "heudiconv" / "units"
+    unit_status_dir.mkdir(parents=True)
+    (unit_status_dir / "sub-001.status").write_text(
+        "status=failed\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    result = invoke_from(project_dir, ["heudiconv"])
+
+    assert result.exit_code == 0, result.output
+    assert "Completed `bidsflow heudiconv` execution." in result.output
+    assert "Run units: 1" in result.output
+    assert "Skipped units: 1" in result.output
+    assert "- failed; use --include-failed to retry: 1" in result.output
 
 
 def test_heudiconv_run_with_sge_generates_array_artifacts_and_submits(

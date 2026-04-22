@@ -7,8 +7,9 @@ from pathlib import Path
 import pytest
 
 import bidsflow.heudiconv as h
-import bidsflow.heudiconv.common as heudiconv_common
+import bidsflow.heudiconv.init as heudiconv_init
 import bidsflow.heudiconv.run as heudiconv_run_module
+import bidsflow.schedulers as scheduler_module
 from helpers import (
     init_project,
     load_context,
@@ -265,6 +266,15 @@ def test_sge_rejects_missing_and_unsupported_scheduler_script_template(
     assert unsupported.exit_code == 2
     assert "unsupported placeholders" in unsupported.output
 
+    script_path.write_text(
+        "unit_list_path={{ shell_unit_list_path }}\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    outdated = invoke_from(project_dir, ["heudiconv"])
+    assert outdated.exit_code == 2
+    assert "older BIDSFlow version" in outdated.output
+
 
 @pytest.mark.parametrize("scheduler", ["none", "sge"])
 def test_run_rejects_execution_view_cleanup_failure(
@@ -291,9 +301,9 @@ def test_scheduler_path_and_project_ownership_helpers(tmp_path: Path, runner) ->
     project_dir = init_project(tmp_path, runner, name="scheduler-path", scheduler="sge")
     context = load_context(project_dir)
 
-    assert heudiconv_common._resolve_scheduler_script_path(context, target="heudiconv") == (
+    assert scheduler_module._resolve_scheduler_script_path(context, target="heudiconv") == (
         project_dir / "code" / "bidsflow" / "sge" / "heudiconv.sh"
     ).resolve()
 
     with pytest.raises(h.HeudiconvInitError, match="outside the project root"):
-        heudiconv_common._ensure_project_owned_path(project_dir, tmp_path / "outside.sh")
+        heudiconv_init._ensure_project_owned_path(project_dir, tmp_path / "outside.sh")

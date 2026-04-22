@@ -4,13 +4,11 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ..project import ProjectContext
-from .common import (
-    HeudiconvInitError,
-    HeudiconvRunError,
-    _ensure_project_owned_path,
-    _render_sge_heudiconv_script,
+from ..schedulers import (
+    _render_sge_array_wrapper_script,
     _resolve_scheduler_script_path,
 )
+from .errors import HeudiconvInitError, HeudiconvRunError
 from .sources import (
     SourcesEntry,
     SourcesError,
@@ -20,6 +18,15 @@ from .sources import (
     plan_sources,
     run_sources,
 )
+
+
+def _ensure_project_owned_path(project_root: Path, path: Path) -> None:
+    resolved_root = project_root.resolve()
+    resolved_path = path.resolve()
+    if not resolved_path.is_relative_to(resolved_root):
+        raise HeudiconvInitError(
+            f"Refusing to write HeuDiConv init file outside the project root: {resolved_path}"
+        )
 
 
 @dataclass(frozen=True)
@@ -53,7 +60,7 @@ def plan_heudiconv_init(context: ProjectContext) -> InitPlan:
 
     if scheduler == "sge":
         scheduler_script_path = _resolve_scheduler_script_path(context, target="heudiconv")
-        scheduler_script_content = _render_sge_heudiconv_script()
+        scheduler_script_content = _render_sge_array_wrapper_script()
     elif scheduler != "none":  # pragma: no cover
         raise HeudiconvInitError(f"Unsupported scheduler for HeuDiConv init: {scheduler}")
 

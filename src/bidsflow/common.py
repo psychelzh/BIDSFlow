@@ -10,16 +10,6 @@ import shutil
 import subprocess
 import time
 
-from ..project import ProjectContext
-
-
-class HeudiconvInitError(Exception):
-    pass
-
-
-class HeudiconvRunError(Exception):
-    pass
-
 
 def _make_executable(path: Path) -> None:
     path.chmod(path.stat().st_mode | 0o111)
@@ -29,31 +19,12 @@ def format_command(argv: tuple[str, ...]) -> str:
     return subprocess.list2cmdline(list(argv))
 
 
-def _resolve_scheduler_script_path(context: ProjectContext, target: str) -> Path:
-    return (
-        context.project_root
-        / "code"
-        / "bidsflow"
-        / context.execution.scheduler
-        / f"{target}.sh"
-    ).resolve()
-
-
-def _render_sge_heudiconv_script() -> str:
+def _read_template(*path_parts: str) -> str:
     return (
         resources.files("bidsflow")
-        .joinpath("templates", "sge", "heudiconv.sh.template")
+        .joinpath("templates", *path_parts)
         .read_text(encoding="utf-8")
     )
-
-
-def _ensure_project_owned_path(project_root: Path, path: Path) -> None:
-    resolved_root = project_root.resolve()
-    resolved_path = path.resolve()
-    if not resolved_path.is_relative_to(resolved_root):
-        raise HeudiconvInitError(
-            f"Refusing to write HeuDiConv init file outside the project root: {resolved_path}"
-        )
 
 
 def _compute_input_signature(parts: dict[str, str | bytes]) -> str:
@@ -118,12 +89,8 @@ def _combine_process_output(stdout: str | None, stderr: str | None) -> str:
 
 
 def _append_log(log_path: Path, message: str) -> None:
-    """Append a single-writer log message without explicit cross-process locking.
+    """Append a single-writer log message without explicit cross-process locking."""
 
-    BIDSFlow uses _append_log for local per-unit logs where each file has one
-    writer. Shared files that require coordination, such as scheduler results
-    tables, use their own locking.
-    """
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8", newline="\n") as log_handle:
         if log_handle.tell() > 0:

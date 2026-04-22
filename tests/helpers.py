@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import re
+import shlex
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
@@ -141,14 +142,12 @@ def normalize_generated_text(
     return normalized
 
 
-def assert_rendered_sge_script(
+def assert_rendered_sge_wrapper(
     text: str,
     *,
     task_count: int,
     scheduler_log_dir: Path,
-    unit_list_path: Path,
-    results_path: Path,
-    cleanup_workdir: bool,
+    runtime_script_path: Path,
 ) -> None:
     assert_lines_in_order(
         text,
@@ -161,18 +160,65 @@ def assert_rendered_sge_script(
             f"#$ -o {scheduler_log_dir}",
         ],
     )
+    assert "Site-specific scheduler settings can be enabled here." in text
+    assert "Site-specific environment setup goes here." in text
+    assert 'export BIDSFLOW_SCHEDULER="sge"' in text
+    assert "BIDSFLOW_SCHEDULER_JOB_ID" in text
+    assert "BIDSFLOW_TASK_ID" in text
+    assert f"exec bash {shlex.quote(str(runtime_script_path))}" in text
+    assert "write_unit_status" not in text
+    assert "append_final_result" not in text
+    assert "unit_row=" not in text
+    assert "results_table_path" not in text
+    assert "{{" not in text
+
+
+def assert_rendered_sge_runtime_script(
+    text: str,
+    *,
+    common_runtime_script_path: Path,
+) -> None:
+    assert "#$ -S /bin/bash" not in text
+    assert "SGE_TASK_ID" not in text
+    assert "${JOB_ID" not in text
+    assert f"source {shlex.quote(str(common_runtime_script_path))}" in text
+    assert "Scheduler job/task:" in text
+    assert "run_error_message=" in text
+    assert "Command failed with exit status" in text
+    assert "set +e" in text
+    assert "launcher=(" in text
+    assert "bidsflow_write_unit_status" in text
+    assert "bidsflow_finish_unit" in text
+    assert "unit_row=" not in text
+    assert "results_table_path" not in text
+    assert "append_final_result" not in text
+    assert "{{" not in text
+
+
+def assert_rendered_array_common_script(
+    text: str,
+    *,
+    unit_list_path: Path,
+    results_path: Path,
+    cleanup_workdir: bool,
+) -> None:
+    assert "#$ -S /bin/bash" not in text
+    assert "SGE_TASK_ID" not in text
+    assert "${JOB_ID" not in text
+    assert 'task_id="${BIDSFLOW_TASK_ID:?BIDSFLOW_TASK_ID is required.}"' in text
     assert f"unit_list_path={unit_list_path}" in text
     assert f"results_table_path={results_path}" in text
-    assert "launcher=(" in text
     assert "unit_row=" in text
-    assert "write_unit_status" in text
-    assert "append_final_result" in text
-    assert "cleanup_results_table_lock" in text
+    assert "bidsflow_write_unit_status" in text
+    assert "bidsflow_append_final_result" in text
+    assert "bidsflow_cleanup_results_table_lock" in text
+    assert "bidsflow_finish_unit" in text
     assert "Timed out waiting for results table lock" in text
     assert 'rm -f -- "$claim_path"' in text
     if cleanup_workdir:
-        assert 'if [[ "true" == "true" ]]; then' in text
+        assert 'cleanup_workdir="true"' in text
+        assert 'if [[ "$cleanup_workdir" == "true" ]]; then' in text
         assert 'rm -f -- "$execution_path"' in text
     else:
-        assert 'if [[ "false" == "true" ]]; then' in text
+        assert 'cleanup_workdir="false"' in text
     assert "{{" not in text

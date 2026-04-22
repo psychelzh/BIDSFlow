@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
+import bidsflow.common as bidsflow_common
 import bidsflow.heudiconv as h
-import bidsflow.heudiconv.common as heudiconv_common
 import bidsflow.heudiconv.draft as heudiconv_draft
 import bidsflow.heudiconv.run as heudiconv_run
 import bidsflow.heudiconv.sources as heudiconv_sources
@@ -84,16 +84,16 @@ def test_low_level_path_and_scheduler_helpers(tmp_path: Path) -> None:
 
     assert not heudiconv_run._cleanup_run_execution_view(project_root, outside_path)
     with pytest.raises(ValueError, match="outside the project root"):
-        heudiconv_common._remove_project_path(project_root, outside_path)
+        bidsflow_common._remove_project_path(project_root, outside_path)
     with pytest.raises(h.HeudiconvRunError, match="must name an immediate child directory"):
         heudiconv_sources._resolve_sources_source_path(project_root, "../SUB001")
 
     log_path = project_root / "logs" / "unit.log"
-    heudiconv_common._append_log(log_path, "first")
-    heudiconv_common._append_log(log_path, "second")
+    bidsflow_common._append_log(log_path, "first")
+    bidsflow_common._append_log(log_path, "second")
     assert log_path.read_text(encoding="utf-8") == "first\n\nsecond\n"
 
-    assert heudiconv_common._combine_process_output("out\n", "err\n") == "out\nerr"
+    assert bidsflow_common._combine_process_output("out\n", "err\n") == "out\nerr"
     assert heudiconv_run._parse_sge_job_id(None) == ""
     assert heudiconv_run._parse_sge_job_id("123.1 first line\nignored") == "123.1 first line"
 
@@ -135,7 +135,7 @@ def test_make_executable_sets_posix_execute_bit(tmp_path: Path) -> None:
     executable = tmp_path / "script.sh"
     executable.write_text("#!/bin/sh\n", encoding="utf-8", newline="\n")
 
-    heudiconv_common._make_executable(executable)
+    bidsflow_common._make_executable(executable)
 
     assert executable.stat().st_mode & 0o111
 

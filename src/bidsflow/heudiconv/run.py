@@ -7,28 +7,36 @@ from pathlib import Path
 import shlex
 import subprocess
 
-from ..project import ProjectContext
-from .common import (
-    HeudiconvInitError,
-    HeudiconvRunError,
+from ..common import (
     _append_log,
     _combine_process_output,
     _compute_input_signature,
     _format_attempt_label,
     _make_executable,
     _remove_project_path,
-    _resolve_scheduler_script_path,
+    _read_template,
     _utc_now,
     _write_json,
     _write_key_value_status_atomic,
     format_command,
 )
+from ..project import ProjectContext
+from ..schedulers import _resolve_scheduler_script_path
+from .errors import HeudiconvInitError, HeudiconvRunError
 from .sources import (
     SourcesEntry,
     _load_confirmed_sources,
     _resolve_sources_source_path,
     list_sources_review_issues,
 )
+
+
+def _render_heudiconv_array_runtime_script() -> str:
+    return _read_template("heudiconv", "array-runtime.sh.template")
+
+
+def _render_array_common_runtime_script() -> str:
+    return _read_template("runtime", "array-common.sh.template")
 
 
 @dataclass(frozen=True)
@@ -50,6 +58,8 @@ class RunUnitPlan:
 class SgeRunPlan:
     template_path: Path
     script_path: Path
+    common_runtime_script_path: Path
+    runtime_script_path: Path
     unit_list_path: Path
     scheduler_log_dir: Path
     submit_command: tuple[str, ...]
@@ -262,6 +272,8 @@ def _build_sge_run_plan(
     return SgeRunPlan(
         template_path=scheduler_script_template_path,
         script_path=scheduler_root / "heudiconv.sh",
+        common_runtime_script_path=scheduler_root / "array-common.sh",
+        runtime_script_path=scheduler_root / "runtime.sh",
         unit_list_path=scheduler_root / "units.tsv",
         scheduler_log_dir=log_dir,
         submit_command=context.execution.submit_command,
@@ -669,32 +681,58 @@ def _write_sge_run_files(
         raise HeudiconvRunError("SGE run plan is missing.")
 
     _write_sge_unit_list(sge.unit_list_path, units)
+    common_template = _render_array_common_runtime_script()
+    common_rendered = (
+        common_template.replace("{{ attempt_label }}", plan.attempt_label)
+        .replace("{{ shell_unit_list_path }}", shlex.quote(str(sge.unit_list_path)))
+        .replace("{{ shell_results_table_path }}", shlex.quote(str(plan.results_path)))
+        .replace("{{ shell_scheduler_log_dir }}", shlex.quote(str(sge.scheduler_log_dir)))
+        .replace("{{ shell_project_root }}", shlex.quote(str(context.project_root)))
+        .replace("{{ cleanup_workdir }}", "true" if cleanup_workdir else "false")
+    )
+    if "{{" in common_rendered or "}}" in common_rendered:  # pragma: no cover
+        raise HeudiconvRunError(
+            "Bundled array common runtime script contains unsupported placeholders."
+        )
+    sge.common_runtime_script_path.write_text(
+        common_rendered,
+        encoding="utf-8",
+        newline="\n",
+    )
+    _make_executable(sge.common_runtime_script_path)
+
+    runtime_template = _render_heudiconv_array_runtime_script()
+    runtime_rendered = (
+        runtime_template.replace(
+            "{{ common_runtime_script }}",
+            shlex.quote(str(sge.common_runtime_script_path)),
+        )
+        .replace("{{ shell_raw_bids_root }}", shlex.quote(str(plan.raw_bids_root)))
+        .replace("{{ shell_heuristic_path }}", shlex.quote(str(plan.heuristic_path)))
+        .replace("{{ shell_launcher_items }}", _format_shell_array_items(plan.launcher))
+    )
+    if "{{" in runtime_rendered or "}}" in runtime_rendered:  # pragma: no cover
+        raise HeudiconvRunError(
+            "Bundled HeuDiConv array runtime script contains unsupported placeholders."
+        )
+    sge.runtime_script_path.write_text(runtime_rendered, encoding="utf-8", newline="\n")
+    _make_executable(sge.runtime_script_path)
+
     template = sge.template_path.read_text(encoding="utf-8")
     rendered = (
         template.replace("{{ job_name }}", "bidsflow-heudiconv")
         .replace("{{ task_count }}", str(len(units)))
         .replace("{{ attempt_label }}", plan.attempt_label)
         .replace("{{ scheduler_log_dir }}", str(sge.scheduler_log_dir))
-        .replace("{{ unit_list_path }}", str(sge.unit_list_path))
-        .replace("{{ results_table_path }}", str(plan.results_path))
-        .replace("{{ shell_unit_list_path }}", shlex.quote(str(sge.unit_list_path)))
-        .replace("{{ shell_results_table_path }}", shlex.quote(str(plan.results_path)))
-        .replace("{{ shell_scheduler_log_dir }}", shlex.quote(str(sge.scheduler_log_dir)))
-        .replace("{{ shell_project_root }}", shlex.quote(str(context.project_root)))
-        .replace("{{ shell_raw_bids_root }}", shlex.quote(str(plan.raw_bids_root)))
-        .replace("{{ shell_heuristic_path }}", shlex.quote(str(plan.heuristic_path)))
-        .replace("{{ shell_launcher_items }}", _format_shell_array_items(plan.launcher))
-        .replace("{{ cleanup_workdir }}", "true" if cleanup_workdir else "false")
+        .replace("{{ runtime_script }}", shlex.quote(str(sge.runtime_script_path)))
     )
     if "{{" in rendered or "}}" in rendered:
         raise HeudiconvRunError(
-            "SGE scheduler script contains unsupported placeholders. "
-            "Supported run placeholders are {{ job_name }}, {{ task_count }}, "
-            "{{ attempt_label }}, {{ scheduler_log_dir }}, {{ unit_list_path }}, "
-            "{{ results_table_path }}, {{ shell_unit_list_path }}, "
-            "{{ shell_results_table_path }}, {{ shell_scheduler_log_dir }}, "
-            "{{ shell_project_root }}, {{ shell_raw_bids_root }}, {{ shell_heuristic_path }}, "
-            "{{ shell_launcher_items }}, and {{ cleanup_workdir }}."
+            "SGE scheduler wrapper contains unsupported placeholders. "
+            "Supported wrapper placeholders are {{ job_name }}, {{ task_count }}, "
+            "{{ attempt_label }}, {{ scheduler_log_dir }}, and {{ runtime_script }}. "
+            "If this wrapper was generated by an older BIDSFlow version, run "
+            "`bidsflow heudiconv init --force` and reapply site-specific scheduler settings."
         )
     sge.script_path.write_text(rendered, encoding="utf-8", newline="\n")
     _make_executable(sge.script_path)
@@ -774,6 +812,8 @@ def _build_sge_run_metadata(
         "array_range": f"1-{len(planned_units)}" if planned_units else "",
         "template_path": str(sge.template_path),
         "script_path": str(sge.script_path),
+        "common_runtime_script_path": str(sge.common_runtime_script_path),
+        "runtime_script_path": str(sge.runtime_script_path),
         "unit_list_path": str(sge.unit_list_path),
         "scheduler_log_dir": str(sge.scheduler_log_dir),
         "submit_command": list(sge.submit_command),
@@ -1105,6 +1145,10 @@ def _build_run_artifacts(
             {
                 "scheduler_script_template": scheduler["template_path"],
                 "scheduler_script": scheduler["script_path"],
+                "scheduler_common_runtime_script": scheduler[
+                    "common_runtime_script_path"
+                ],
+                "scheduler_runtime_script": scheduler["runtime_script_path"],
                 "scheduler_unit_list": scheduler["unit_list_path"],
                 "scheduler_log_dir": scheduler["scheduler_log_dir"],
             }

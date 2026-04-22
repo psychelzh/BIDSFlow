@@ -9,8 +9,9 @@ import re
 from string import Formatter
 import subprocess
 
+from ..common import _remove_project_path
 from ..project import ProjectContext
-from .common import HeudiconvRunError, _remove_project_path
+from .errors import HeudiconvRunError
 
 
 @dataclass(frozen=True)

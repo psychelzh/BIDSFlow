@@ -9,7 +9,9 @@ from pathlib import Path
 from syrupy.assertion import SnapshotAssertion
 
 from helpers import (
-    assert_rendered_sge_script,
+    assert_rendered_array_common_script,
+    assert_rendered_sge_runtime_script,
+    assert_rendered_sge_wrapper,
     init_project,
     make_source_dirs,
     normalize_generated_text,
@@ -42,6 +44,16 @@ def _write_successful_run_launcher(project_dir: Path) -> Path:
             "target.mkdir(parents=True, exist_ok=True)",
             "(target / 'marker.txt').write_text(str(files_path), encoding='utf-8')",
             "print('run ok')",
+        ),
+    )
+
+
+def _write_failing_run_launcher(project_dir: Path) -> Path:
+    return write_python_script(
+        project_dir / "fake_heudiconv_fails.py",
+        (
+            "print('failing heudiconv')",
+            "raise SystemExit(42)",
         ),
     )
 
@@ -338,12 +350,16 @@ def test_heudiconv_run_with_sge_generates_array_artifacts_and_submits(
     assert state["planned_units"]["skipped"] == 0
 
     scheduler_script = Path(state["artifacts"]["scheduler_script"])
+    common_runtime_script = Path(state["artifacts"]["scheduler_common_runtime_script"])
+    runtime_script = Path(state["artifacts"]["scheduler_runtime_script"])
     unit_list_path = Path(state["artifacts"]["scheduler_unit_list"])
     scheduler_log_dir = Path(state["artifacts"]["scheduler_log_dir"])
     claim_dir = Path(state["artifacts"]["claim_dir"])
     unit_status_dir = Path(state["artifacts"]["unit_status_dir"])
 
     assert scheduler_script.is_file()
+    assert common_runtime_script.is_file()
+    assert runtime_script.is_file()
     assert unit_list_path.is_file()
     assert scheduler_log_dir.is_dir()
     assert claim_dir.is_dir()
@@ -358,11 +374,35 @@ def test_heudiconv_run_with_sge_generates_array_artifacts_and_submits(
         replacements={str(project_dir): "<PROJECT>", sys.executable: "<PYTHON>"},
         drop_blank_lines=True,
     )
-    assert normalized_script == snapshot(name="heudiconv_sge_rendered_script")
-    assert_rendered_sge_script(
+    assert normalized_script == snapshot(name="heudiconv_sge_rendered_wrapper")
+    assert_rendered_sge_wrapper(
         script_text,
         task_count=2,
         scheduler_log_dir=scheduler_log_dir,
+        runtime_script_path=runtime_script,
+    )
+
+    runtime_text = runtime_script.read_text(encoding="utf-8")
+    normalized_runtime = normalize_generated_text(
+        runtime_text,
+        replacements={str(project_dir): "<PROJECT>", sys.executable: "<PYTHON>"},
+        drop_blank_lines=True,
+    )
+    assert normalized_runtime == snapshot(name="heudiconv_sge_runtime_script")
+    assert_rendered_sge_runtime_script(
+        runtime_text,
+        common_runtime_script_path=common_runtime_script,
+    )
+
+    common_runtime_text = common_runtime_script.read_text(encoding="utf-8")
+    normalized_common_runtime = normalize_generated_text(
+        common_runtime_text,
+        replacements={str(project_dir): "<PROJECT>", sys.executable: "<PYTHON>"},
+        drop_blank_lines=True,
+    )
+    assert normalized_common_runtime == snapshot(name="heudiconv_sge_common_runtime_script")
+    assert_rendered_array_common_script(
+        common_runtime_text,
         unit_list_path=unit_list_path,
         results_path=results_path,
         cleanup_workdir=True,
@@ -420,6 +460,68 @@ def test_heudiconv_run_with_sge_generates_array_artifacts_and_submits(
     second_state = json.loads(state_path.read_text(encoding="utf-8"))
     assert second_state["record_state"] == "submitted"
     assert second_state["execution"]["job_id"] == "12345"
+
+
+def test_sge_array_task_records_command_failure(
+    tmp_path: Path,
+    invoke_from,
+    runner,
+) -> None:
+    project_dir = init_project(tmp_path, runner, name="sge-command-failure", scheduler="sge")
+    config_path = project_dir / "bidsflow.toml"
+    set_sources_pattern(config_path, "SUB{subject}_SES{session}")
+
+    fake_qsub = project_dir / "fake_qsub.py"
+    write_python_script(fake_qsub, ("print('12345')",))
+    set_submit_command(
+        config_path,
+        f'submit_command = ["{sys.executable}", "{fake_qsub.as_posix()}"]',
+    )
+
+    make_source_dirs(project_dir, "SUB001_SES01")
+    init_heudiconv = invoke_from(project_dir, ["heudiconv", "init"])
+    assert init_heudiconv.exit_code == 0, init_heudiconv.output
+    write_minimal_heuristic(project_dir)
+    failing_launcher = _write_failing_run_launcher(project_dir)
+    set_launcher(
+        config_path,
+        f'launcher = ["{sys.executable}", "{failing_launcher.as_posix()}"]',
+    )
+
+    submitted = invoke_from(project_dir, ["heudiconv"])
+    assert submitted.exit_code == 0, submitted.output
+
+    state = json.loads((project_dir / "state" / "heudiconv" / "run.json").read_text(encoding="utf-8"))
+    scheduler_script = Path(state["artifacts"]["scheduler_script"])
+    unit_status_dir = Path(state["artifacts"]["unit_status_dir"])
+    claim_dir = Path(state["artifacts"]["claim_dir"])
+
+    completed_task = subprocess.run(
+        ["bash", str(scheduler_script)],
+        cwd=project_dir,
+        env={**os.environ, "JOB_ID": "12345", "SGE_TASK_ID": "1"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed_task.returncode == 42
+    assert "Command failed with exit status 42" in completed_task.stdout + completed_task.stderr
+
+    status_payload = read_key_value_file(next(unit_status_dir.glob("*.status")))
+    assert status_payload["status"] == "failed"
+    assert status_payload["exit_code"] == "42"
+    assert status_payload["error"] == "Command failed with exit status 42"
+    assert list(claim_dir.glob("*.running")) == []
+
+    rows = read_tsv_rows(project_dir / "state" / "heudiconv" / "results.tsv")
+    assert len(rows) == 1
+    assert rows[0]["status"] == "failed"
+    assert rows[0]["exit_code"] == "42"
+    assert rows[0]["scheduler"] == "sge"
+    assert rows[0]["scheduler_job_id"] == "12345"
+    assert rows[0]["scheduler_task_id"] == "1"
+    assert rows[0]["notes"] == "Command failed with exit status 42"
 
 
 def test_heudiconv_run_rejects_sources_that_still_needs_review(tmp_path: Path, invoke_from, runner) -> None:

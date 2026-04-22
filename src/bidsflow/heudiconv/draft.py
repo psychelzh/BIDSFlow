@@ -7,8 +7,7 @@ import shutil
 import subprocess
 import time
 
-from ..project import ProjectContext
-from .common import (
+from ..common import (
     _append_log,
     _combine_process_output,
     _format_attempt_label,
@@ -17,6 +16,7 @@ from .common import (
     _write_json,
     format_command,
 )
+from ..project import ProjectContext
 
 
 @dataclass(frozen=True)

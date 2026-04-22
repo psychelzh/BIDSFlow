@@ -1,3 +1,5 @@
+"""Shared filesystem, JSON, template, and command helpers for BIDSFlow."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -16,6 +18,7 @@ def _make_executable(path: Path) -> None:
 
 
 def format_command(argv: tuple[str, ...]) -> str:
+    """Return a display string for command arguments."""
     return subprocess.list2cmdline(list(argv))
 
 

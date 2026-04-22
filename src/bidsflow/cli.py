@@ -1,3 +1,5 @@
+"""Command-line interface for BIDSFlow project and HeuDiConv workflows."""
+
 from __future__ import annotations
 
 import os

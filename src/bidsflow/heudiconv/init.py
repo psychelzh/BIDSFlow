@@ -1,3 +1,5 @@
+"""HeuDiConv target initialization planning and file generation."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
@@ -21,6 +23,8 @@ from .sources import (
 
 
 def _ensure_project_owned_path(project_root: Path, path: Path) -> None:
+    """Reject init outputs that would escape the project root."""
+
     resolved_root = project_root.resolve()
     resolved_path = path.resolve()
     if not resolved_path.is_relative_to(resolved_root):
@@ -31,6 +35,8 @@ def _ensure_project_owned_path(project_root: Path, path: Path) -> None:
 
 @dataclass(frozen=True)
 class InitPlan:
+    """Planned HeuDiConv initialization artifacts for a project."""
+
     sources_plan: SourcesPlan
     code_root: Path
     heuristic_parent: Path
@@ -41,6 +47,8 @@ class InitPlan:
 
 @dataclass(frozen=True)
 class InitResult:
+    """Files and actions produced by heudiconv init."""
+
     sources_path: Path
     sources_state_path: Path
     entries: tuple[SourcesEntry, ...]
@@ -53,6 +61,8 @@ class InitResult:
 
 
 def plan_heudiconv_init(context: ProjectContext) -> InitPlan:
+    """Plan source discovery, code directories, and scheduler wrapper setup."""
+
     sources_plan = plan_sources(context)
     scheduler = context.execution.scheduler
     scheduler_script_path: Path | None = None
@@ -75,6 +85,8 @@ def plan_heudiconv_init(context: ProjectContext) -> InitPlan:
 
 
 def run_heudiconv_init(context: ProjectContext, plan: InitPlan, force: bool) -> InitResult:
+    """Materialize HeuDiConv init artifacts while preserving reviewed files by default."""
+
     sources_table_exists = plan.sources_plan.sources_path.exists()
     sources_state_exists = plan.sources_plan.sources_state_path.exists()
     sources_exist = sources_table_exists or sources_state_exists
@@ -125,6 +137,8 @@ def run_heudiconv_init(context: ProjectContext, plan: InitPlan, force: bool) -> 
 
 
 def _load_existing_sources_entries(plan: SourcesPlan) -> tuple[SourcesEntry, ...]:
+    """Reload reviewed source rows when init preserves an existing table."""
+
     try:
         return _load_confirmed_sources(plan.source_root, plan.sources_path)
     except HeudiconvRunError as exc:

@@ -1,3 +1,5 @@
+"""Read-only status summaries for the managed HeuDiConv workflow."""
+
 from __future__ import annotations
 
 import csv
@@ -17,6 +19,8 @@ from .sources import (
 
 @dataclass(frozen=True)
 class HeudiconvUnitStatus:
+    """Current status view for one ready HeuDiConv unit."""
+
     unit_name: str
     source_name: str
     subject_label: str
@@ -32,6 +36,8 @@ class HeudiconvUnitStatus:
 
 @dataclass(frozen=True)
 class HeudiconvStatus:
+    """Project-level HeuDiConv status assembled from state files."""
+
     sources_path: Path
     sources_exists: bool
     sources_summary: dict[str, int]
@@ -49,6 +55,8 @@ class HeudiconvStatus:
 
 
 def get_heudiconv_status(context: ProjectContext) -> HeudiconvStatus:
+    """Read HeuDiConv sources, run state, results, unit status, and claims."""
+
     sources_path = context.paths.state_root / "sources.tsv"
     state_root = context.paths.state_root / "heudiconv"
     run_state_path = state_root / "run.json"

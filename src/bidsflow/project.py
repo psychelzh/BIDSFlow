@@ -1,3 +1,5 @@
+"""Project configuration loading and path resolution for BIDSFlow."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -8,24 +10,32 @@ import tomllib
 
 @dataclass(frozen=True)
 class HeudiconvConfig:
+    """Resolved HeuDiConv command and heuristic settings for a project."""
+
     launcher: tuple[str, ...]
     heuristic: Path
 
 
 @dataclass(frozen=True)
 class SourcesConfig:
+    """Source-label derivation settings from the project config."""
+
     pattern: str | None
     command: tuple[str, ...] | None
 
 
 @dataclass(frozen=True)
 class ExecutionConfig:
+    """Execution backend settings resolved from the project config."""
+
     scheduler: str
     submit_command: tuple[str, ...] | None
 
 
 @dataclass(frozen=True)
 class ProjectPaths:
+    """Resolved project paths used by BIDSFlow workflows."""
+
     source_root: Path
     raw_bids_root: Path
     derivatives_root: Path
@@ -36,6 +46,8 @@ class ProjectPaths:
 
 @dataclass(frozen=True)
 class ProjectContext:
+    """Fully resolved project configuration passed to workflow planners."""
+
     config_path: Path
     project_root: Path
     paths: ProjectPaths
@@ -45,6 +57,8 @@ class ProjectContext:
 
 
 def find_project_config(start_dir: Path) -> Path:
+    """Return the nearest bidsflow.toml at or above start_dir."""
+
     current = start_dir.resolve()
     for directory in (current, *current.parents):
         candidate = directory / "bidsflow.toml"
@@ -58,6 +72,8 @@ def find_project_config(start_dir: Path) -> Path:
 
 
 def load_project_context(config_path: Path) -> ProjectContext:
+    """Load bidsflow.toml into a resolved project context."""
+
     raw_config = tomllib.loads(config_path.read_text(encoding="utf-8"))
 
     project_section = _require_table(raw_config, "project")
@@ -84,6 +100,8 @@ def load_project_context(config_path: Path) -> ProjectContext:
 
 
 def _require_table(config: dict[str, Any], key: str) -> dict[str, Any]:
+    """Return a TOML table value or an empty table when the key is absent."""
+
     value = config.get(key)
     if value is None:
         return {}
@@ -93,6 +111,8 @@ def _require_table(config: dict[str, Any], key: str) -> dict[str, Any]:
 
 
 def _resolve_from_config_dir(config_path: Path, candidate: Path) -> Path:
+    """Resolve a path relative to the directory that contains bidsflow.toml."""
+
     if candidate.is_absolute():
         return candidate.resolve()
     return (config_path.parent / candidate).resolve()
@@ -105,6 +125,8 @@ def _resolve_config_path(
     key: str,
     default: str,
 ) -> Path:
+    """Resolve a path-valued config key relative to the project root."""
+
     value = section.get(key, default)
     if not isinstance(value, str):
         raise ValueError(f"[{section_name}].{key} must be a string path.")
@@ -115,6 +137,8 @@ def _resolve_config_path(
 
 
 def _load_project_paths(project_root: Path, paths_section: dict[str, Any]) -> ProjectPaths:
+    """Load the configured project directory layout."""
+
     return ProjectPaths(
         source_root=_resolve_config_path(project_root, paths_section, "paths", "source_root", "sourcedata"),
         raw_bids_root=_resolve_config_path(project_root, paths_section, "paths", "raw_bids_root", "sourcedata/raw"),
@@ -126,6 +150,8 @@ def _load_project_paths(project_root: Path, paths_section: dict[str, Any]) -> Pr
 
 
 def _load_heudiconv_config(project_root: Path, heudiconv_section: dict[str, Any]) -> HeudiconvConfig:
+    """Load HeuDiConv launcher and heuristic configuration."""
+
     heuristic = _resolve_config_path(
         project_root,
         heudiconv_section,
@@ -150,6 +176,8 @@ def _load_heudiconv_config(project_root: Path, heudiconv_section: dict[str, Any]
 def _load_sources_config(
     sources_section: dict[str, Any],
 ) -> SourcesConfig:
+    """Load source label derivation configuration."""
+
     pattern = sources_section.get("pattern")
     command = sources_section.get("command")
 
@@ -175,6 +203,8 @@ def _load_sources_config(
 def _load_execution_config(
     execution_section: dict[str, Any],
 ) -> ExecutionConfig:
+    """Load scheduler selection and submit command configuration."""
+
     scheduler = execution_section.get("scheduler", "none")
     submit_command = execution_section.get("submit_command")
 

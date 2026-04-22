@@ -1,3 +1,5 @@
+"""Public HeuDiConv workflow API for BIDSFlow."""
+
 from __future__ import annotations
 
 from ..common import format_command

@@ -1,3 +1,5 @@
+"""Source discovery and review-table handling for the HeuDiConv workflow."""
+
 from __future__ import annotations
 
 import csv
@@ -16,6 +18,8 @@ from .errors import HeudiconvRunError
 
 @dataclass(frozen=True)
 class SourcesEntry:
+    """One row in the editable sources.tsv review table."""
+
     source_name: str
     subject_label: str
     session_label: str
@@ -26,6 +30,8 @@ class SourcesEntry:
 
 @dataclass(frozen=True)
 class SourcesPlan:
+    """Planned source discovery outputs for heudiconv init."""
+
     source_root: Path
     sources_path: Path
     sources_state_path: Path
@@ -36,12 +42,16 @@ class SourcesPlan:
 
 @dataclass(frozen=True)
 class SourcesResult:
+    """Files and entries produced by source discovery."""
+
     sources_path: Path
     sources_state_path: Path
     entries: tuple[SourcesEntry, ...]
 
 
 class SourcesError(Exception):
+    """Raised when source discovery or review-table refresh fails."""
+
     pass
 
 
@@ -51,6 +61,8 @@ SAFE_LABEL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 def plan_sources(
     context: ProjectContext,
 ) -> SourcesPlan:
+    """Build the sources.tsv plan from the current project source root."""
+
     resolved_source_root = context.paths.source_root.resolve()
     resolved_raw_bids_root = context.paths.raw_bids_root.resolve()
     if not resolved_source_root.exists():
@@ -133,6 +145,8 @@ def plan_sources(
 
 
 def run_sources(context: ProjectContext, plan: SourcesPlan, reset: bool) -> SourcesResult:
+    """Write sources.tsv and sources.json for a planned source discovery run."""
+
     _guard_sources_reset_requirement(plan, reset)
     _prepare_sources_directories(plan)
 
@@ -151,6 +165,8 @@ def run_sources(context: ProjectContext, plan: SourcesPlan, reset: bool) -> Sour
 
 
 def _compile_sources_pattern(pattern: str) -> re.Pattern[str]:
+    """Compile the configured source-name pattern into a strict regex."""
+
     pattern_parts: list[str] = ["^"]
     fields: list[str] = []
 
@@ -189,6 +205,8 @@ def _derive_sources_labels_from_pattern(
     source_name_pattern: re.Pattern[str],
     source_name: str,
 ) -> tuple[str, str, str]:
+    """Derive subject/session labels from a source directory name."""
+
     match = source_name_pattern.fullmatch(source_name)
     if match is None:
         return "", "", "sources pattern did not match source_name"
@@ -203,6 +221,8 @@ def _derive_sources_labels_from_command(
     command: tuple[str, ...],
     source_name: str,
 ) -> tuple[str, str, str]:
+    """Derive source labels by running the configured project command."""
+
     invocation = [*command, source_name]
     try:
         completed = subprocess.run(
@@ -248,6 +268,8 @@ def _validate_sources_label(
     source_name: str,
     error_cls: type[Exception],
 ) -> str:
+    """Validate one subject or session label from source discovery."""
+
     normalized = label.strip()
     if not normalized:
         return ""
@@ -264,6 +286,8 @@ def _compute_sources_statuses(
     source_root: Path,
     entries: tuple[SourcesEntry, ...],
 ) -> tuple[SourcesEntry, ...]:
+    """Apply review status and notes to discovered source entries."""
+
     included_entries = [entry for entry in entries if entry.include]
     subject_counts: dict[str, int] = {}
     target_counts: dict[tuple[str, str], int] = {}
@@ -316,6 +340,8 @@ def _classify_sources_entry(
     subject_counts: dict[str, int],
     target_counts: dict[tuple[str, str], int],
 ) -> str:
+    """Classify a source row as ready or needing review."""
+
     if not entry.include:
         return "excluded"
     if not source_path.exists():
@@ -333,6 +359,8 @@ def _load_confirmed_sources(
     source_root: Path,
     sources_path: Path,
 ) -> tuple[SourcesEntry, ...]:
+    """Load and validate the user-reviewed sources.tsv table."""
+
     with sources_path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle, delimiter="\t")
         if reader.fieldnames is None:
@@ -389,6 +417,8 @@ def _load_confirmed_sources(
 
 
 def _parse_sources_include(value: str | None, row_number: int) -> bool:
+    """Parse the editable include column from sources.tsv."""
+
     normalized = (value or "").strip().lower()
     if normalized in {"true", "1", "yes"}:
         return True
@@ -400,6 +430,8 @@ def _parse_sources_include(value: str | None, row_number: int) -> bool:
 
 
 def _resolve_sources_source_path(source_root: Path, source_name: str) -> Path:
+    """Resolve a reviewed source name to a source directory under source_root."""
+
     source_candidate = Path(source_name)
     if source_candidate.name != source_name or source_name in {"", ".", ".."}:
         raise HeudiconvRunError(
@@ -414,6 +446,8 @@ def _resolve_sources_source_path(source_root: Path, source_name: str) -> Path:
 
 
 def _guard_sources_reset_requirement(plan: SourcesPlan, reset: bool) -> None:
+    """Prevent accidental replacement of an existing sources table."""
+
     if reset:
         return
     if plan.sources_path.exists() or plan.sources_state_path.exists():
@@ -423,11 +457,15 @@ def _guard_sources_reset_requirement(plan: SourcesPlan, reset: bool) -> None:
 
 
 def _prepare_sources_directories(plan: SourcesPlan) -> None:
+    """Create parent directories for source review artifacts."""
+
     plan.sources_path.parent.mkdir(parents=True, exist_ok=True)
     plan.sources_state_path.parent.mkdir(parents=True, exist_ok=True)
 
 
 def _reset_sources_state(project_root: Path, plan: SourcesPlan) -> None:
+    """Remove existing source review artifacts during forced regeneration."""
+
     try:
         for path in (plan.sources_path, plan.sources_state_path):
             _remove_project_path(project_root, path)
@@ -436,6 +474,8 @@ def _reset_sources_state(project_root: Path, plan: SourcesPlan) -> None:
 
 
 def _write_sources_tsv(sources_path: Path, entries: tuple[SourcesEntry, ...]) -> None:
+    """Write the editable source review table."""
+
     with sources_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
         writer.writerow(
@@ -462,6 +502,8 @@ def _write_sources_tsv(sources_path: Path, entries: tuple[SourcesEntry, ...]) ->
 
 
 def _write_sources_state(context: ProjectContext, plan: SourcesPlan) -> None:
+    """Write source discovery metadata without duplicating row-level state."""
+
     payload = {
         "step": "sources",
         "status": "succeeded",
@@ -497,10 +539,14 @@ def _write_sources_state(context: ProjectContext, plan: SourcesPlan) -> None:
 
 
 def summarize_sources_entries(entries: tuple[SourcesEntry, ...]) -> dict[str, int]:
+    """Return counts by source review status."""
+
     return _summarize_sources_entries(entries)
 
 
 def list_sources_review_issues(entries: tuple[SourcesEntry, ...]) -> list[str]:
+    """Return human-readable review issues for non-ready source rows."""
+
     issues: list[str] = []
 
     missing_labels = [entry.source_name for entry in entries if entry.status == "needs_review"]
@@ -525,6 +571,8 @@ def list_sources_review_issues(entries: tuple[SourcesEntry, ...]) -> list[str]:
 
 
 def _summarize_sources_entries(entries: tuple[SourcesEntry, ...]) -> dict[str, int]:
+    """Count source rows by their current review status."""
+
     summary = {
         "total": len(entries),
         "ready": 0,

@@ -1,3 +1,5 @@
+"""Draft heuristic generation for representative HeuDiConv source samples."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -21,6 +23,8 @@ from ..project import ProjectContext
 
 @dataclass(frozen=True)
 class DraftUnitPlan:
+    """One representative sample directory used during heuristic drafting."""
+
     index: int
     sample_path: Path
     unit_name: str
@@ -32,6 +36,8 @@ class DraftUnitPlan:
 
 @dataclass(frozen=True)
 class DraftPlan:
+    """Planned draft heuristic generation work for one or more samples."""
+
     sample_paths: tuple[Path, ...]
     launcher: tuple[str, ...]
     units: tuple[DraftUnitPlan, ...]
@@ -46,6 +52,8 @@ class DraftPlan:
 
 @dataclass(frozen=True)
 class DraftUnitResult:
+    """Artifacts produced by one draft unit."""
+
     index: int
     sample_path: Path
     unit_name: str
@@ -61,6 +69,8 @@ class DraftUnitResult:
 
 @dataclass(frozen=True)
 class DraftResult:
+    """Combined draft heuristic and DICOM inventory outputs."""
+
     heuristic_path: Path
     dicominfo_root: Path
     dicominfo_paths: tuple[Path, ...]
@@ -70,10 +80,14 @@ class DraftResult:
 
 
 class HeudiconvDraftError(Exception):
+    """Raised when draft heuristic generation cannot complete."""
+
     pass
 
 
 def plan_draft(context: ProjectContext, sample_paths: list[Path]) -> DraftPlan:
+    """Plan isolated HeuDiConv draft generation for representative samples."""
+
     if not sample_paths:
         raise HeudiconvDraftError("At least one sample path is required for draft generation.")
 
@@ -164,6 +178,8 @@ def _resolve_draft_sample_path(
     project_root: Path,
     sample_path: Path,
 ) -> Path:
+    """Resolve a draft sample path while keeping it inside the source tree."""
+
     if sample_path.is_absolute():
         resolved_sample = sample_path.resolve()
     else:
@@ -183,6 +199,8 @@ def _resolve_draft_sample_path(
 
 
 def run_draft(context: ProjectContext, plan: DraftPlan, reset: bool) -> DraftResult:
+    """Run the draft plan and merge generated heuristic artifacts."""
+
     _guard_draft_reset_requirement(plan, reset)
 
     if reset:
@@ -249,6 +267,8 @@ def _write_draft_state(
     failed_unit: DraftUnitPlan | None = None,
     error: str | None = None,
 ) -> None:
+    """Write draft metadata that points to generated heuristic and DICOM info."""
+
     payload: dict[str, object] = {
         "workflow": "heudiconv",
         "step": "draft",
@@ -283,6 +303,8 @@ def _build_draft_command(
     subject_label: str | None = None,
     session_label: str | None = None,
 ) -> tuple[str, ...]:
+    """Build the HeuDiConv command used for isolated heuristic drafting."""
+
     command: list[str] = [*launcher, "--files", str(sample_path)]
     if subject_label is not None:
         command.extend(["-s", subject_label])
@@ -302,6 +324,8 @@ def _build_draft_command(
 
 
 def _guard_draft_reset_requirement(plan: DraftPlan, reset: bool) -> None:
+    """Prevent accidental replacement of existing draft artifacts."""
+
     if reset:
         return
     if plan.draft_state_path.exists() or plan.heudiconv_state_path.exists():
@@ -311,6 +335,8 @@ def _guard_draft_reset_requirement(plan: DraftPlan, reset: bool) -> None:
 
 
 def _prepare_draft_directories(plan: DraftPlan) -> None:
+    """Create directories needed before running draft units."""
+
     plan.draft_work_root.mkdir(parents=True, exist_ok=True)
     plan.code_root.mkdir(parents=True, exist_ok=True)
     plan.heuristic_path.parent.mkdir(parents=True, exist_ok=True)
@@ -320,6 +346,8 @@ def _prepare_draft_directories(plan: DraftPlan) -> None:
 
 
 def _reset_draft_state(project_root: Path, plan: DraftPlan) -> None:
+    """Remove prior draft artifacts during forced regeneration."""
+
     try:
         for path in (
             plan.draft_work_root,
@@ -338,6 +366,8 @@ def _run_draft_unit(
     plan: DraftPlan,
     unit: DraftUnitPlan,
 ) -> DraftUnitResult:
+    """Run one draft unit and collect its generated files."""
+
     completed, _, started_at_ns = _run_command(
         context,
         unit.log_path,
@@ -377,6 +407,8 @@ def _run_command(
     *,
     label: str,
 ) -> tuple[subprocess.CompletedProcess[str], str, int]:
+    """Run a draft command and append combined output to the unit log."""
+
     started_at_ns = time.time_ns()
     try:
         completed = subprocess.run(
@@ -415,6 +447,8 @@ def _collect_unit_result(
     strategy: str,
     started_at_ns: int,
 ) -> DraftUnitResult:
+    """Collect generated draft files after a successful draft command."""
+
     generated_heuristic = _find_latest_generated_file_since(
         plan.heudiconv_state_path,
         "heuristic.py",
@@ -445,6 +479,8 @@ def _collect_unit_result(
 
 
 def _find_latest_generated_file_since(root: Path, filename: str, started_at_ns: int) -> Path:
+    """Return the newest generated file with the requested name."""
+
     candidates: list[tuple[Path, int]] = []
     for candidate in root.rglob(filename):
         if not candidate.is_file():  # pragma: no cover
@@ -460,6 +496,8 @@ def _find_latest_generated_file_since(root: Path, filename: str, started_at_ns: 
 
 
 def _find_generated_dicominfo_files_since(root: Path, started_at_ns: int) -> tuple[Path, ...]:
+    """Return generated DICOM inventory files for the current draft unit."""
+
     candidates = [
         candidate
         for candidate in root.rglob("dicominfo*.tsv")
@@ -481,6 +519,8 @@ def _find_generated_dicominfo_files_since(root: Path, started_at_ns: int) -> tup
 
 
 def _merge_heuristic(destination: Path, generated_heuristic: Path) -> None:
+    """Copy or validate the generated heuristic across draft units."""
+
     if not destination.exists():
         shutil.copy2(generated_heuristic, destination)
         return
@@ -495,6 +535,8 @@ def _merge_heuristic(destination: Path, generated_heuristic: Path) -> None:
 
 
 def _copy_dicominfo_files(destination_root: Path, generated_paths: tuple[Path, ...]) -> tuple[Path, ...]:
+    """Copy generated DICOM inventory files into the project code area."""
+
     common_parent = Path(os.path.commonpath([str(path.parent) for path in generated_paths]))
     copied_paths: list[Path] = []
 

@@ -1,3 +1,5 @@
+"""Managed HeuDiConv conversion planning, local execution, and SGE submission."""
+
 from __future__ import annotations
 
 import csv
@@ -32,15 +34,21 @@ from .sources import (
 
 
 def _render_heudiconv_array_runtime_script() -> str:
+    """Load the target-specific array runtime script template."""
+
     return _read_template("heudiconv", "array-runtime.sh.template")
 
 
 def _render_array_common_runtime_script() -> str:
+    """Load the shared array runtime helper template."""
+
     return _read_template("runtime", "array-common.sh.template")
 
 
 @dataclass(frozen=True)
 class RunUnitPlan:
+    """One reviewed source unit ready for HeuDiConv conversion."""
+
     index: int
     unit_name: str
     source_name: str
@@ -56,6 +64,8 @@ class RunUnitPlan:
 
 @dataclass(frozen=True)
 class SgeRunPlan:
+    """SGE wrapper, runtime, unit-list, and log paths for a scheduled run."""
+
     template_path: Path
     script_path: Path
     common_runtime_script_path: Path
@@ -67,6 +77,8 @@ class SgeRunPlan:
 
 @dataclass(frozen=True)
 class RunPlan:
+    """Complete plan for a managed HeuDiConv conversion attempt."""
+
     attempt_label: str
     sources_path: Path
     sources_state_path: Path
@@ -86,6 +98,8 @@ class RunPlan:
 
 @dataclass(frozen=True)
 class RunUnitResult:
+    """Final local result or submitted scheduler record for one run unit."""
+
     index: int
     unit_name: str
     source_name: str
@@ -103,6 +117,8 @@ class RunUnitResult:
 
 @dataclass(frozen=True)
 class RunResult:
+    """Overall result returned after local completion or scheduler submission."""
+
     raw_bids_root: Path
     state_path: Path
     results_path: Path
@@ -121,6 +137,8 @@ class RunResult:
 
 @dataclass(frozen=True)
 class RunUnitSelection:
+    """Runnable units plus skip counts for the current attempt."""
+
     runnable_units: tuple[RunUnitPlan, ...]
     skipped_succeeded: int
     skipped_failed: int
@@ -128,6 +146,8 @@ class RunUnitSelection:
 
 
 def plan_heudiconv_run(context: ProjectContext) -> RunPlan:
+    """Plan a managed HeuDiConv conversion from reviewed sources.tsv rows."""
+
     sources_path, heuristic_path, entries, ready_entries = _resolve_run_inputs(context)
 
     state_root = context.paths.state_root / "heudiconv"
@@ -202,6 +222,8 @@ def plan_heudiconv_run(context: ProjectContext) -> RunPlan:
 def _resolve_run_inputs(
     context: ProjectContext,
 ) -> tuple[Path, Path, tuple[SourcesEntry, ...], tuple[SourcesEntry, ...]]:
+    """Resolve and validate reviewed sources and heuristic inputs."""
+
     sources_path = context.paths.state_root / "sources.tsv"
     if not sources_path.exists():
         raise HeudiconvRunError(
@@ -246,6 +268,8 @@ def _build_sge_run_plan(
     execution_view_root: Path,
     log_dir: Path,
 ) -> SgeRunPlan | None:
+    """Build scheduler file paths when SGE execution is configured."""
+
     if context.execution.scheduler == "none":
         return None
     if context.execution.scheduler != "sge":  # pragma: no cover
@@ -289,6 +313,8 @@ def run_heudiconv(
     cleanup_workdir: bool = True,
     include_failed: bool = False,
 ) -> RunResult:
+    """Execute or submit a planned HeuDiConv run."""
+
     if plan.sge is not None:
         return _submit_sge_heudiconv_run(
             context,
@@ -506,6 +532,8 @@ def _submit_sge_heudiconv_run(
     cleanup_workdir: bool,
     include_failed: bool,
 ) -> RunResult:
+    """Prepare run state and submit an SGE array job."""
+
     sge = plan.sge
     if sge is None:  # pragma: no cover
         raise HeudiconvRunError("SGE run plan is missing.")
@@ -691,6 +719,8 @@ def _write_sge_run_files(
     *,
     cleanup_workdir: bool,
 ) -> None:
+    """Render per-run SGE wrapper, runtime scripts, and unit list."""
+
     sge = plan.sge
     if sge is None:  # pragma: no cover
         raise HeudiconvRunError("SGE run plan is missing.")
@@ -754,6 +784,8 @@ def _write_sge_run_files(
 
 
 def _write_sge_unit_list(path: Path, units: tuple[RunUnitPlan, ...]) -> None:
+    """Write the array task table consumed by the runtime script."""
+
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
@@ -783,6 +815,8 @@ def _write_sge_unit_list(path: Path, units: tuple[RunUnitPlan, ...]) -> None:
 
 
 def _format_shell_array_items(values: tuple[str, ...]) -> str:
+    """Format shell array elements for a generated bash script."""
+
     return "\n".join(f"    {shlex.quote(value)}" for value in values)
 
 
@@ -790,6 +824,8 @@ def _submit_sge_script(
     context: ProjectContext,
     sge: SgeRunPlan,
 ) -> subprocess.CompletedProcess[str]:
+    """Run the configured SGE submit command."""
+
     try:
         return subprocess.run(
             [*sge.submit_command, str(sge.script_path)],
@@ -805,6 +841,8 @@ def _submit_sge_script(
 
 
 def _parse_sge_job_id(stdout: str | None) -> str:
+    """Extract the scheduler job id from qsub stdout."""
+
     output = (stdout or "").strip()
     if not output:
         return ""
@@ -817,6 +855,8 @@ def _build_sge_run_metadata(
     units: tuple[RunUnitPlan, ...] | None = None,
     job_id: str | None = None,
 ) -> dict[str, object]:
+    """Build SGE metadata for run.json."""
+
     sge = plan.sge
     if sge is None:  # pragma: no cover
         raise HeudiconvRunError("SGE run plan is missing.")
@@ -843,12 +883,16 @@ def _build_run_execution_path(
     subject_label: str,
     session_label: str | None,
 ) -> Path:
+    """Build the temporary source view path passed to HeuDiConv."""
+
     if session_label is None:
         return execution_view_root / f"sub-{subject_label}"
     return execution_view_root / f"sub-{subject_label}" / f"ses-{session_label}"
 
 
 def _build_run_unit_name(subject_label: str, session_label: str | None) -> str:
+    """Build the stable unit name used for logs, claims, and status files."""
+
     if session_label is None:
         return f"sub-{subject_label}"
     return f"sub-{subject_label}_ses-{session_label}"
@@ -863,6 +907,8 @@ def _build_run_command(
     subject_label: str,
     session_label: str | None,
 ) -> tuple[str, ...]:
+    """Build the HeuDiConv conversion command for one run unit."""
+
     command: list[str] = [
         *launcher,
         "--files",
@@ -890,6 +936,8 @@ def _build_run_input_signature(
     source_root: Path,
     ready_entries: tuple[SourcesEntry, ...],
 ) -> str:
+    """Hash the inputs that define the current conversion plan."""
+
     unit_payload = [
         {
             "source_name": entry.source_name,
@@ -912,6 +960,8 @@ def _build_run_input_signature(
 
 
 def _build_run_unit_summary(subject_label: str, session_label: str | None) -> str:
+    """Return a compact subject/session label for results.tsv."""
+
     if session_label is None:
         return f"sub-{subject_label}"
     return f"sub-{subject_label} ses-{session_label}"
@@ -936,6 +986,8 @@ RESULTS_TSV_COLUMNS = (
 
 
 def _prepare_run_directories(plan: RunPlan) -> None:
+    """Create directories needed before local execution or scheduler submission."""
+
     plan.execution_view_root.mkdir(parents=True, exist_ok=True)
     plan.raw_bids_root.mkdir(parents=True, exist_ok=True)
     plan.state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -950,6 +1002,8 @@ def _prepare_run_directories(plan: RunPlan) -> None:
 
 
 def _ensure_results_tsv_header(path: Path) -> None:
+    """Create results.tsv with its header if it does not exist."""
+
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists() and path.stat().st_size > 0:
         return
@@ -962,6 +1016,8 @@ def _append_results_tsv(
     path: Path,
     unit_results: tuple[RunUnitResult, ...],
 ) -> None:
+    """Append final local unit results to results.tsv."""
+
     _ensure_results_tsv_header(path)
     with path.open("a", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
@@ -991,6 +1047,8 @@ def _claim_runnable_units(
     units: tuple[RunUnitPlan, ...],
     include_failed: bool,
 ) -> RunUnitSelection:
+    """Claim units that are eligible to run now."""
+
     runnable_units: list[RunUnitPlan] = []
     skipped_succeeded = 0
     skipped_failed = 0
@@ -1029,6 +1087,8 @@ def preview_run_unit_selection(
     *,
     include_failed: bool = False,
 ) -> tuple[tuple[RunUnitPlan, ...], dict[str, int]]:
+    """Return units that would run now without creating claims or files."""
+
     selection = _preview_runnable_units(plan.units, include_failed=include_failed)
     return selection.runnable_units, _build_run_unit_counts(plan.units, selection)
 
@@ -1038,6 +1098,8 @@ def _preview_runnable_units(
     *,
     include_failed: bool,
 ) -> RunUnitSelection:
+    """Select runnable units without writing claim files."""
+
     runnable_units: list[RunUnitPlan] = []
     skipped_succeeded = 0
     skipped_failed = 0
@@ -1066,6 +1128,8 @@ def _build_run_unit_counts(
     planned_units: tuple[RunUnitPlan, ...],
     claim_selection: RunUnitSelection,
 ) -> dict[str, int]:
+    """Summarize selected and skipped units for CLI output and run state."""
+
     skipped = (
         claim_selection.skipped_succeeded
         + claim_selection.skipped_failed
@@ -1082,6 +1146,8 @@ def _build_run_unit_counts(
 
 
 def _unit_status_value(path: Path) -> str:
+    """Read only the status value from a unit status file."""
+
     if not path.is_file():
         return ""
     try:
@@ -1091,6 +1157,8 @@ def _unit_status_value(path: Path) -> str:
 
 
 def _read_key_value_status(path: Path) -> dict[str, str]:
+    """Read a simple key=value status file."""
+
     values: dict[str, str] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line or line.startswith("#") or "=" not in line:
@@ -1101,12 +1169,16 @@ def _read_key_value_status(path: Path) -> dict[str, str]:
 
 
 def _write_unit_claim(*, unit: RunUnitPlan) -> None:
+    """Create an exclusive running claim for one unit."""
+
     unit.claim_path.parent.mkdir(parents=True, exist_ok=True)
     with unit.claim_path.open("x", encoding="utf-8"):
         pass
 
 
 def _release_unit_claim(unit: RunUnitPlan) -> None:
+    """Remove a unit's running claim when execution has ended."""
+
     try:
         unit.claim_path.unlink()
     except FileNotFoundError:
@@ -1118,6 +1190,8 @@ def _release_unfinished_claims(
     unit_results: tuple[RunUnitResult, ...] | list[RunUnitResult],
     current_unit: RunUnitPlan | None,
 ) -> None:
+    """Release claims for units that did not finish cleanly."""
+
     finished_units = {result.unit_name for result in unit_results}
     for unit in units:
         if unit.unit_name in finished_units:
@@ -1143,6 +1217,8 @@ def _write_unit_status(
     scheduler_task_id: str | None = None,
     error: str | None = None,
 ) -> None:
+    """Write the final or submitted state for one unit."""
+
     lines = [
         ("status", status),
         ("unit", unit.unit_name),
@@ -1176,6 +1252,8 @@ def _build_run_artifacts(
     plan: RunPlan,
     scheduler: dict[str, object] | None,
 ) -> dict[str, object]:
+    """Build artifact pointers recorded in run.json."""
+
     artifacts: dict[str, object] = {
         "raw_bids_dataset": str(plan.raw_bids_root),
         "results_table": str(plan.results_path),
@@ -1208,6 +1286,8 @@ def _build_run_execution_metadata(
     finished_at: str | None,
     scheduler: dict[str, object] | None,
 ) -> dict[str, object]:
+    """Build backend-specific execution metadata for run.json."""
+
     if backend != "sge":
         return {
             "mode": "local",
@@ -1248,6 +1328,8 @@ def _write_run_state(
     planned_units: dict[str, int] | None = None,
     error: str | None = None,
 ) -> None:
+    """Write run-level metadata without embedding per-unit details."""
+
     updated_at = _utc_now()
 
     payload: dict[str, object] = {
@@ -1295,6 +1377,8 @@ def _write_run_state(
 
 
 def _materialize_run_execution_view(execution_path: Path, source_path: Path) -> None:
+    """Create the temporary source link consumed by HeuDiConv."""
+
     execution_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         execution_path.symlink_to(source_path, target_is_directory=True)
@@ -1311,6 +1395,8 @@ def _run_heudiconv_command(
     *,
     label: str,
 ) -> subprocess.CompletedProcess[str]:
+    """Run one local HeuDiConv command and append combined output to its log."""
+
     try:
         completed = subprocess.run(
             list(command),
@@ -1339,6 +1425,8 @@ def _run_heudiconv_command(
 
 
 def _cleanup_run_execution_view(project_root: Path, execution_view_root: Path) -> bool:
+    """Remove the temporary execution view if it is inside the project."""
+
     if not execution_view_root.exists():
         return True
     try:

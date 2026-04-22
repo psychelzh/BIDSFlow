@@ -79,6 +79,39 @@ def write_python_script(path: Path, lines: Iterable[str]) -> Path:
     return path
 
 
+def write_successful_run_launcher(project_dir: Path) -> Path:
+    return write_python_script(
+        project_dir / "fake_heudiconv.py",
+        (
+            "from pathlib import Path",
+            "import sys",
+            "",
+            "argv = sys.argv[1:]",
+            "files_path = Path(argv[argv.index('--files') + 1])",
+            "out_dir = Path(argv[argv.index('-o') + 1])",
+            "subject = argv[argv.index('-s') + 1]",
+            "session = argv[argv.index('-ss') + 1] if '-ss' in argv else None",
+            "assert files_path.exists()",
+            "target = out_dir / f'sub-{subject}'",
+            "if session is not None:",
+            "    target = target / f'ses-{session}'",
+            "target.mkdir(parents=True, exist_ok=True)",
+            "(target / 'marker.txt').write_text(str(files_path), encoding='utf-8')",
+            "print('run ok')",
+        ),
+    )
+
+
+def write_failing_run_launcher(project_dir: Path) -> Path:
+    return write_python_script(
+        project_dir / "fake_heudiconv_fails.py",
+        (
+            "print('failing heudiconv')",
+            "raise SystemExit(42)",
+        ),
+    )
+
+
 def ready_heudiconv_project(
     tmp_path: Path,
     runner,

@@ -430,19 +430,14 @@ def _parse_sources_include(value: str | None, row_number: int) -> bool:
 
 
 def _resolve_sources_source_path(source_root: Path, source_name: str) -> Path:
-    """Resolve a reviewed source name to a source directory under source_root."""
+    """Resolve a reviewed source name to an immediate child of source_root."""
 
     source_candidate = Path(source_name)
     if source_candidate.name != source_name or source_name in {"", ".", ".."}:
         raise HeudiconvRunError(
             f"BIDSFlow sources table source_name must name an immediate child directory under source_root: {source_name!r}"
         )
-    resolved_source_path = (source_root / source_candidate).resolve()
-    if not resolved_source_path.is_relative_to(source_root.resolve()):  # pragma: no cover
-        raise HeudiconvRunError(
-            f"BIDSFlow sources table source_name resolves outside source_root: {source_name!r}"
-        )
-    return resolved_source_path
+    return source_root.resolve() / source_candidate
 
 
 def _guard_sources_reset_requirement(plan: SourcesPlan, reset: bool) -> None:

@@ -121,7 +121,7 @@ def test_heudiconv_init_writes_sge_scheduler_script(tmp_path: Path, invoke_from,
         ],
     )
     assert "# #$ -q all.q" in script_text
-    assert_lines_in_order(script_text, ["# #$ -q all.q", "set -uo pipefail"])
+    assert_lines_in_order(script_text, ["# #$ -q all.q", "set -euo pipefail"])
     assert "Site-specific environment setup goes here." in script_text
     assert 'export BIDSFLOW_SCHEDULER="sge"' in script_text
     assert (
@@ -358,6 +358,7 @@ def test_sources_preserves_symlink_child_name(tmp_path: Path, invoke_from, runne
     assert result.exit_code == 0, result.output
     rows = read_tsv_rows(project_dir / "state" / "sources.tsv")
     assert rows[0]["source_name"] == "siteA"
+    assert rows[0]["status"] == "needs_review"
 
 
 def test_sources_rejects_mutually_exclusive_generation_config(tmp_path: Path, invoke_from, runner) -> None:

@@ -169,7 +169,7 @@ def test_sources_pattern_miss_and_duplicate_subject_without_sessions(
     assert [row["status"] for row in duplicate_rows] == ["needs_review", "needs_review"]
 
 
-def test_compute_sources_status_handles_invalid_and_outside_source_names(
+def test_compute_sources_status_handles_invalid_and_symlinked_source_names(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -193,5 +193,4 @@ def test_compute_sources_status_handles_invalid_and_outside_source_names(
         return original_resolve(path, *args, **kwargs)
 
     monkeypatch.setattr(Path, "resolve", _fake_resolve)
-    with pytest.raises(h.HeudiconvRunError, match="resolves outside source_root"):
-        heudiconv_sources._resolve_sources_source_path(source_root, "LINK")
+    assert heudiconv_sources._resolve_sources_source_path(source_root, "LINK") == source_root / "LINK"

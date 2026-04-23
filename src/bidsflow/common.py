@@ -8,8 +8,8 @@ from importlib import resources
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
-import subprocess
 import time
 
 
@@ -19,7 +19,7 @@ def _make_executable(path: Path) -> None:
 
 def format_command(argv: tuple[str, ...]) -> str:
     """Return a display string for command arguments."""
-    return subprocess.list2cmdline(list(argv))
+    return shlex.join(argv)
 
 
 def _read_template(*path_parts: str) -> str:

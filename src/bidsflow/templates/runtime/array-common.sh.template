@@ -12,7 +12,7 @@ unit_list_path={{ shell_unit_list_path }}
 results_table_path={{ shell_results_table_path }}
 results_table_lock="${results_table_path}.lock"
 scheduler_log_dir={{ shell_scheduler_log_dir }}
-cleanup_workdir="{{ cleanup_workdir }}"
+cleanup_execution_view="{{ cleanup_execution_view }}"
 results_lock_acquired="false"
 
 bidsflow_cleanup_results_table_lock() {
@@ -164,7 +164,7 @@ bidsflow_finish_unit() {
         exit "$append_status"
     fi
 
-    if [[ "$cleanup_workdir" == "true" ]]; then
+    if [[ "$cleanup_execution_view" == "true" ]]; then
         rm -f -- "$execution_path"
         rmdir "$(dirname "$execution_path")" 2>/dev/null || true
     fi

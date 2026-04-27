@@ -46,7 +46,7 @@ def test_draft_rejects_file_source_root_and_project_relative_outside_sample(
     (project_dir / "sourcedata").unlink()
     (project_dir / "sourcedata").mkdir()
     (project_dir / "outside-sample").mkdir()
-    outside = invoke_from(project_dir, ["heudiconv", "draft", "outside-sample", "--dry-run"])
+    outside = invoke_from(project_dir, ["heudiconv", "draft", "outside-sample"])
     assert outside.exit_code == 2
     assert "Sample path must resolve under the configured source root" in outside.output
 

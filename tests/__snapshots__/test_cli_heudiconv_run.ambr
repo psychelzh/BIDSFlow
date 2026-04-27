@@ -14,7 +14,7 @@
   results_table_path=<PROJECT>/state/heudiconv/results.tsv
   results_table_lock="${results_table_path}.lock"
   scheduler_log_dir=<PROJECT>/logs/heudiconv/sge/run-<ATTEMPT>
-  cleanup_workdir="true"
+  cleanup_execution_view="true"
   results_lock_acquired="false"
   bidsflow_cleanup_results_table_lock() {
       if [[ "${results_lock_acquired:-false}" == "true" ]]; then
@@ -155,7 +155,7 @@
           printf '[bidsflow] %s\n' "$append_error_message" >&2
           exit "$append_status"
       fi
-      if [[ "$cleanup_workdir" == "true" ]]; then
+      if [[ "$cleanup_execution_view" == "true" ]]; then
           rm -f -- "$execution_path"
           rmdir "$(dirname "$execution_path")" 2>/dev/null || true
       fi

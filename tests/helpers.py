@@ -233,7 +233,7 @@ def assert_rendered_array_common_script(
     *,
     unit_list_path: Path,
     results_path: Path,
-    cleanup_workdir: bool,
+    cleanup_execution_view: bool,
 ) -> None:
     assert "#$ -S /bin/bash" not in text
     assert "SGE_TASK_ID" not in text
@@ -248,10 +248,10 @@ def assert_rendered_array_common_script(
     assert "bidsflow_finish_unit" in text
     assert "Timed out waiting for results table lock" in text
     assert 'rm -f -- "$claim_path"' in text
-    if cleanup_workdir:
-        assert 'cleanup_workdir="true"' in text
-        assert 'if [[ "$cleanup_workdir" == "true" ]]; then' in text
+    if cleanup_execution_view:
+        assert 'cleanup_execution_view="true"' in text
+        assert 'if [[ "$cleanup_execution_view" == "true" ]]; then' in text
         assert 'rm -f -- "$execution_path"' in text
     else:
-        assert 'cleanup_workdir="false"' in text
+        assert 'cleanup_execution_view="false"' in text
     assert "{{" not in text

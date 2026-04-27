@@ -229,10 +229,10 @@ def heudiconv(
         "--include-failed",
         help="Retry units whose latest status is failed.",
     ),
-    clean_workdir: bool = typer.Option(
+    clean_execution_view: bool = typer.Option(
         True,
-        "--clean-workdir/--keep-workdir",
-        help="Remove temporary HeuDiConv execution views after units finish.",
+        "--clean-execution-view/--keep-execution-view",
+        help="Remove temporary HeuDiConv source-link execution views after units finish.",
     ),
 ) -> None:
     """Run managed HeuDiConv conversion when no subcommand is provided."""
@@ -240,7 +240,7 @@ def heudiconv(
         return
     _run_heudiconv_default(
         dry_run=dry_run,
-        clean_workdir=clean_workdir,
+        clean_execution_view=clean_execution_view,
         include_failed=include_failed,
     )
 
@@ -269,14 +269,9 @@ def heudiconv_draft(
         "--force",
         help="Overwrite existing HeuDiConv draft outputs.",
     ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help="Show planned draft commands and outputs without running HeuDiConv.",
-    ),
 ) -> None:
     """Generate a draft HeuDiConv heuristic from representative sample paths."""
-    _run_heudiconv_draft(sample_paths, force=force, dry_run=dry_run)
+    _run_heudiconv_draft(sample_paths, force=force)
 
 
 @heudiconv_app.command("status")
@@ -356,7 +351,6 @@ def _run_heudiconv_draft(
     sample_paths: list[Path],
     *,
     force: bool,
-    dry_run: bool,
 ) -> None:
     if not sample_paths:  # pragma: no cover
         typer.echo("`bidsflow heudiconv draft` requires at least one sample path.", err=True)
@@ -369,32 +363,6 @@ def _run_heudiconv_draft(
     except (HeudiconvDraftError, ValueError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
-
-    if dry_run:
-        if len(plan.units) == 1 and plan.units[0].session_label is None:
-            unit = plan.units[0]
-            typer.echo("Planned HeuDiConv draft strategy: single-directory draft")
-            typer.echo(f"Temporary subject for draft: {unit.subject_label}")
-            typer.echo(format_command(unit.initial_command))
-        else:
-            typer.echo(
-                f"Planned HeuDiConv draft strategy: split {len(plan.units)} directories into "
-                "single-directory sample units"
-            )
-            for unit in plan.units:
-                typer.echo(
-                    f"{unit.unit_name}: sample={unit.sample_path} "
-                    f"subject={unit.subject_label} session={unit.session_label}"
-                )
-                typer.echo(format_command(unit.initial_command))
-        typer.echo(f"Config: {config_path}")
-        typer.echo(f"Sample paths: {len(plan.sample_paths)}")
-        typer.echo(f"Draft work root: {plan.draft_work_root}")
-        typer.echo(f"Heuristic: {plan.heuristic_path}")
-        typer.echo(f"DICOM inventories: {plan.dicominfo_root}")
-        typer.echo(f"State: {plan.draft_state_path}")
-        typer.echo(f"Unit logs: {plan.log_dir}")
-        return
 
     try:
         result = run_draft(context, plan, reset=force)
@@ -417,7 +385,7 @@ def _run_heudiconv_draft(
 def _run_heudiconv_default(
     *,
     dry_run: bool,
-    clean_workdir: bool,
+    clean_execution_view: bool,
     include_failed: bool,
 ) -> None:
     try:
@@ -432,7 +400,7 @@ def _run_heudiconv_default(
         _echo_heudiconv_dry_run(
             config_path,
             plan,
-            clean_workdir=clean_workdir,
+            clean_execution_view=clean_execution_view,
             include_failed=include_failed,
         )
         return
@@ -441,14 +409,14 @@ def _run_heudiconv_default(
         result = run_heudiconv(
             context,
             plan,
-            cleanup_workdir=clean_workdir,
+            cleanup_execution_view=clean_execution_view,
             include_failed=include_failed,
         )
     except HeudiconvRunError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
 
-    _echo_heudiconv_run_result(result, plan, clean_workdir=clean_workdir)
+    _echo_heudiconv_run_result(result, plan, clean_execution_view=clean_execution_view)
 
 
 def _run_heudiconv_status() -> None:
@@ -536,7 +504,7 @@ def _echo_heudiconv_dry_run(
     config_path: Path,
     plan: RunPlan,
     *,
-    clean_workdir: bool,
+    clean_execution_view: bool,
     include_failed: bool,
 ) -> None:
     runnable_units, unit_counts = preview_run_unit_selection(
@@ -557,9 +525,9 @@ def _echo_heudiconv_dry_run(
     else:
         typer.echo("Backend: local")
     cleanup_summary = (
-        "enabled; use --keep-workdir to inspect temporary execution views."
-        if clean_workdir
-        else "disabled; temporary execution views will be kept."
+        "enabled; use --keep-execution-view to inspect temporary source-link views."
+        if clean_execution_view
+        else "disabled; temporary source-link execution views will be kept."
     )
     typer.echo(f"Cleanup: {cleanup_summary}")
     typer.echo(f"Ready units in sources.tsv: {unit_counts['total']}")
@@ -595,7 +563,7 @@ def _echo_heudiconv_run_result(
     result: RunResult,
     plan: RunPlan,
     *,
-    clean_workdir: bool,
+    clean_execution_view: bool,
 ) -> None:
     if result.status == "submitted":
         typer.echo("Submitted `bidsflow heudiconv` execution.")
@@ -622,7 +590,7 @@ def _echo_heudiconv_run_result(
     typer.echo(f"Logs: {result.log_dir}")
     typer.echo(f"Unit status files: {plan.unit_state_dir}")
     typer.echo(f"Unit claims: {plan.claim_dir}")
-    if not clean_workdir:
+    if not clean_execution_view:
         typer.echo(f"Execution view kept: {plan.execution_view_root}")
     if result.backend == "sge":
         typer.echo("Scheduler: sge")

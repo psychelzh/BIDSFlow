@@ -161,7 +161,7 @@ def test_heudiconv_run_writes_current_state_and_unit_table(
     assert state["created_at"] is not None
     assert state["artifacts"]["raw_bids_dataset"] == str(raw_root)
     assert state["artifacts"]["results_table"] == str(results_path)
-    assert state["cleanup_workdir"] is True
+    assert state["cleanup_execution_view"] is True
     assert Path(state["artifacts"]["log_dir"]).is_dir()
     assert Path(state["artifacts"]["unit_status_dir"]).is_dir()
     assert Path(state["artifacts"]["claim_dir"]).is_dir()
@@ -195,7 +195,7 @@ def test_heudiconv_run_can_keep_temporary_execution_view(
     invoke_from,
     runner,
 ) -> None:
-    project_dir = init_project(tmp_path, runner, name="keep-workdir-project")
+    project_dir = init_project(tmp_path, runner, name="keep-execution-view-project")
     config_path = project_dir / "bidsflow.toml"
     set_sources_pattern(config_path, "SUB{subject}")
     make_source_dirs(project_dir, "SUB001")
@@ -209,13 +209,13 @@ def test_heudiconv_run_can_keep_temporary_execution_view(
         f'launcher = ["{sys.executable}", "{fake_launcher.as_posix()}"]',
     )
 
-    result = invoke_from(project_dir, ["heudiconv", "--keep-workdir"])
+    result = invoke_from(project_dir, ["heudiconv", "--keep-execution-view"])
 
     assert result.exit_code == 0, result.output
     assert "Execution view kept:" in result.output
 
     state = json.loads((project_dir / "state" / "heudiconv" / "run.json").read_text(encoding="utf-8"))
-    assert state["cleanup_workdir"] is False
+    assert state["cleanup_execution_view"] is False
     assert "execution_view_cleaned" not in state
     assert Path(state["execution_view_root"]).exists()
 
@@ -344,7 +344,7 @@ def test_heudiconv_run_with_sge_generates_array_artifacts_and_submits(
 
     assert state["backend"] == "sge"
     assert state["record_state"] == "submitted"
-    assert state["cleanup_workdir"] is True
+    assert state["cleanup_execution_view"] is True
     assert state["execution"]["mode"] == "scheduler"
     assert state["execution"]["scheduler"] == "sge"
     assert state["execution"]["submit_state"] == "submitted"
@@ -410,7 +410,7 @@ def test_heudiconv_run_with_sge_generates_array_artifacts_and_submits(
         common_runtime_text,
         unit_list_path=unit_list_path,
         results_path=results_path,
-        cleanup_workdir=True,
+        cleanup_execution_view=True,
     )
 
     unit_rows = read_tsv_rows(unit_list_path)

@@ -7,7 +7,6 @@ from pathlib import Path
 from helpers import (
     init_project,
     make_source_dirs,
-    replace_config,
     set_launcher,
     write_python_script,
 )
@@ -35,71 +34,6 @@ def _write_successful_draft_launcher(project_dir: Path) -> Path:
             "print('draft ok')",
         ),
     )
-
-
-def test_heudiconv_draft_dry_run_single_path_uses_generated_subject(
-    tmp_path: Path,
-    invoke_from,
-    runner,
-) -> None:
-    project_dir = init_project(tmp_path, runner)
-    sample_dir = make_source_dirs(project_dir, "sample-ses-01") / "sample-ses-01"
-
-    result = invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01", "--dry-run"])
-
-    assert result.exit_code == 0, result.output
-    assert "single-directory draft" in result.output
-    assert "Temporary subject for draft: draft01" in result.output
-    assert "heudiconv --files" in result.output
-    assert str(sample_dir) in result.output
-    assert "-s draft01" in result.output
-    assert str(project_dir / "work" / "heudiconv" / "draft-work") in result.output
-    assert str(project_dir / "state" / "heudiconv" / "draft.json") in result.output
-
-
-def test_heudiconv_draft_dry_run_multiple_paths_shows_session_split(
-    tmp_path: Path,
-    invoke_from,
-    runner,
-) -> None:
-    project_dir = init_project(tmp_path, runner)
-    make_source_dirs(project_dir, "sample-ses-01", "sample-ses-02")
-
-    result = invoke_from(
-        project_dir,
-        ["heudiconv", "draft", "sample-ses-01", "sample-ses-02", "--dry-run"],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert "split 2 directories into single-directory sample units" in result.output
-    assert "draft-ses01" in result.output
-    assert "draft-ses02" in result.output
-    assert "-s draft01 -ss draft-ses01" in result.output
-    assert "-s draft01 -ss draft-ses02" in result.output
-    assert str(project_dir / "work" / "heudiconv" / "draft-work") in result.output
-    assert str(project_dir / "state" / "heudiconv" / "draft.json") in result.output
-
-
-def test_heudiconv_draft_dry_run_uses_configured_heuristic_path(
-    tmp_path: Path,
-    invoke_from,
-    runner,
-) -> None:
-    project_dir = init_project(tmp_path, runner)
-
-    config_path = project_dir / "bidsflow.toml"
-    replace_config(
-        config_path,
-        'heuristic = "code/heudiconv/heuristic.py"',
-        'heuristic = "code/custom/heuristic.py"',
-    )
-    make_source_dirs(project_dir, "sample-ses-01")
-
-    result = invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01", "--dry-run"])
-
-    assert result.exit_code == 0, result.output
-    assert str(project_dir / "code" / "custom" / "heuristic.py") in result.output
-    assert str(project_dir / "code" / "heudiconv" / "dicominfo") in result.output
 
 
 def test_heudiconv_draft_single_path_uses_generated_subject(
@@ -240,7 +174,7 @@ def test_heudiconv_draft_rejects_invalid_launcher_config(tmp_path: Path, invoke_
 
     make_source_dirs(project_dir, "sample-ses-01")
 
-    result = invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01", "--dry-run"])
+    result = invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01"])
 
     assert result.exit_code == 2
     assert "[heudiconv].launcher must be a non-empty list of strings." in result.output
@@ -256,7 +190,7 @@ def test_heudiconv_draft_rejects_sample_outside_configured_source_root(
     outside_sample_dir = project_dir / "other-data" / "sample-ses-01"
     outside_sample_dir.mkdir(parents=True)
 
-    result = invoke_from(project_dir, ["heudiconv", "draft", str(outside_sample_dir), "--dry-run"])
+    result = invoke_from(project_dir, ["heudiconv", "draft", str(outside_sample_dir)])
 
     assert result.exit_code == 2
     assert "Sample path must resolve under the configured source root" in result.output

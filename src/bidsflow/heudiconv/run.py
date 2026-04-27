@@ -310,7 +310,7 @@ def run_heudiconv(
     context: ProjectContext,
     plan: RunPlan,
     *,
-    cleanup_workdir: bool = True,
+    cleanup_execution_view: bool = True,
     include_failed: bool = False,
 ) -> RunResult:
     """Execute or submit a planned HeuDiConv run."""
@@ -319,7 +319,7 @@ def run_heudiconv(
         return _submit_sge_heudiconv_run(
             context,
             plan,
-            cleanup_workdir=cleanup_workdir,
+            cleanup_execution_view=cleanup_execution_view,
             include_failed=include_failed,
         )
 
@@ -363,7 +363,7 @@ def run_heudiconv(
             plan=plan,
             record_state="running",
             started_at=started_at,
-            cleanup_workdir=cleanup_workdir,
+            cleanup_execution_view=cleanup_execution_view,
             planned_units=unit_counts,
         )
 
@@ -477,7 +477,7 @@ def run_heudiconv(
     except HeudiconvRunError as exc:
         _release_unfinished_claims(claim_selection.runnable_units, unit_results, current_unit)
         execution_view_cleaned = None
-        if cleanup_workdir:
+        if cleanup_execution_view:
             execution_view_cleaned = _cleanup_run_execution_view(
                 context.project_root,
                 plan.execution_view_root,
@@ -488,7 +488,7 @@ def run_heudiconv(
             record_state="failed",
             started_at=started_at,
             finished_at=_utc_now(),
-            cleanup_workdir=cleanup_workdir,
+            cleanup_execution_view=cleanup_execution_view,
             execution_view_cleaned=execution_view_cleaned,
             planned_units=unit_counts,
             error=str(exc),
@@ -496,7 +496,7 @@ def run_heudiconv(
         raise
 
     execution_view_cleaned = None
-    if cleanup_workdir:
+    if cleanup_execution_view:
         execution_view_cleaned = _cleanup_run_execution_view(
             context.project_root,
             plan.execution_view_root,
@@ -507,7 +507,7 @@ def run_heudiconv(
         record_state="succeeded",
         started_at=started_at,
         finished_at=_utc_now(),
-        cleanup_workdir=cleanup_workdir,
+        cleanup_execution_view=cleanup_execution_view,
         execution_view_cleaned=execution_view_cleaned,
         planned_units=unit_counts,
     )
@@ -529,7 +529,7 @@ def _submit_sge_heudiconv_run(
     context: ProjectContext,
     plan: RunPlan,
     *,
-    cleanup_workdir: bool,
+    cleanup_execution_view: bool,
     include_failed: bool,
 ) -> RunResult:
     """Prepare run state and submit an SGE array job."""
@@ -583,7 +583,7 @@ def _submit_sge_heudiconv_run(
             record_state="preparing",
             started_at=started_at,
             backend="sge",
-            cleanup_workdir=cleanup_workdir,
+            cleanup_execution_view=cleanup_execution_view,
             scheduler=scheduler_metadata,
             planned_units=unit_counts,
         )
@@ -626,7 +626,7 @@ def _submit_sge_heudiconv_run(
             context,
             plan,
             claim_selection.runnable_units,
-            cleanup_workdir=cleanup_workdir,
+            cleanup_execution_view=cleanup_execution_view,
         )
         completed = _submit_sge_script(context, sge)
         if completed.returncode != 0:
@@ -656,7 +656,7 @@ def _submit_sge_heudiconv_run(
             current_unit,
         )
         execution_view_cleaned = None
-        if cleanup_workdir:
+        if cleanup_execution_view:
             execution_view_cleaned = _cleanup_run_execution_view(
                 context.project_root,
                 plan.execution_view_root,
@@ -669,7 +669,7 @@ def _submit_sge_heudiconv_run(
             started_at=started_at,
             finished_at=_utc_now(),
             backend="sge",
-            cleanup_workdir=cleanup_workdir,
+            cleanup_execution_view=cleanup_execution_view,
             execution_view_cleaned=execution_view_cleaned,
             scheduler=scheduler_metadata,
             planned_units=unit_counts,
@@ -689,7 +689,7 @@ def _submit_sge_heudiconv_run(
         started_at=started_at,
         finished_at=_utc_now(),
         backend="sge",
-        cleanup_workdir=cleanup_workdir,
+        cleanup_execution_view=cleanup_execution_view,
         scheduler=scheduler_metadata,
         planned_units=unit_counts,
     )
@@ -717,7 +717,7 @@ def _write_sge_run_files(
     plan: RunPlan,
     units: tuple[RunUnitPlan, ...],
     *,
-    cleanup_workdir: bool,
+    cleanup_execution_view: bool,
 ) -> None:
     """Render per-run SGE wrapper, runtime scripts, and unit list."""
 
@@ -733,7 +733,10 @@ def _write_sge_run_files(
         .replace("{{ shell_results_table_path }}", shlex.quote(str(plan.results_path)))
         .replace("{{ shell_scheduler_log_dir }}", shlex.quote(str(sge.scheduler_log_dir)))
         .replace("{{ shell_project_root }}", shlex.quote(str(context.project_root)))
-        .replace("{{ cleanup_workdir }}", "true" if cleanup_workdir else "false")
+        .replace(
+            "{{ cleanup_execution_view }}",
+            "true" if cleanup_execution_view else "false",
+        )
     )
     if "{{" in common_rendered or "}}" in common_rendered:  # pragma: no cover
         raise HeudiconvRunError(
@@ -1322,7 +1325,7 @@ def _write_run_state(
     started_at: str,
     backend: str = "local",
     finished_at: str | None = None,
-    cleanup_workdir: bool | None = None,
+    cleanup_execution_view: bool | None = None,
     execution_view_cleaned: bool | None = None,
     scheduler: dict[str, object] | None = None,
     planned_units: dict[str, int] | None = None,
@@ -1367,8 +1370,8 @@ def _write_run_state(
     }
     if planned_units is not None:
         payload["planned_units"] = planned_units
-    if cleanup_workdir is not None:
-        payload["cleanup_workdir"] = cleanup_workdir
+    if cleanup_execution_view is not None:
+        payload["cleanup_execution_view"] = cleanup_execution_view
     if execution_view_cleaned is not None:
         payload["execution_view_cleaned"] = execution_view_cleaned
     if error is not None:

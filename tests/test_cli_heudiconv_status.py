@@ -8,6 +8,7 @@ import pytest
 from helpers import (
     init_project,
     make_source_dirs,
+    replace_config,
     set_launcher,
     set_sources_pattern,
     write_failing_run_launcher,
@@ -54,6 +55,16 @@ def test_status_reports_uninitialized_project(tmp_path: Path, invoke_from, runne
     assert "Heuristic: missing" in result.output
     assert "Latest run state: none" in result.output
     assert "Initialize HeuDiConv: bidsflow heudiconv init" in result.output
+
+
+def test_status_rejects_invalid_project_config(tmp_path: Path, invoke_from, runner) -> None:
+    project_dir = init_project(tmp_path, runner, name="status-invalid-config")
+    replace_config(project_dir / "bidsflow.toml", 'source_root = "sourcedata"', "source_root = 1")
+
+    result = invoke_from(project_dir, ["heudiconv", "status"])
+
+    assert result.exit_code == 2
+    assert "[paths].source_root must be a string path." in result.output
 
 
 def test_status_reports_malformed_sources_table(tmp_path: Path, invoke_from, runner) -> None:

@@ -141,7 +141,7 @@ def test_heudiconv_init_writes_sge_scheduler_script(tmp_path: Path, invoke_from,
     assert f"Scheduler script: {scheduler_script} (kept)" in kept.output
     assert scheduler_script.read_text(encoding="utf-8") == "custom script\n"
 
-    overwritten = invoke_from(project_dir, ["heudiconv", "init", "--force"])
+    overwritten = invoke_from(project_dir, ["heudiconv", "init", "-f"])
     assert overwritten.exit_code == 0, overwritten.output
     assert f"Scheduler script: {scheduler_script} (overwritten)" in overwritten.output
     assert "#$ -t 1-{{ task_count }}" in scheduler_script.read_text(encoding="utf-8")
@@ -274,7 +274,7 @@ def test_heudiconv_init_keeps_existing_sources_without_force(tmp_path: Path, inv
     rows = read_tsv_rows(project_dir / "state" / "sources.tsv")
     assert [row["source_name"] for row in rows] == ["SUB001_SES01"]
 
-    allowed = invoke_from(project_dir, ["heudiconv", "init", "--force"])
+    allowed = invoke_from(project_dir, ["heudiconv", "init", "-f"])
     assert allowed.exit_code == 0, allowed.output
     assert "(overwritten)" in allowed.output
     rows = read_tsv_rows(project_dir / "state" / "sources.tsv")

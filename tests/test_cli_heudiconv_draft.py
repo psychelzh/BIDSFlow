@@ -162,7 +162,7 @@ def test_heudiconv_draft_requires_reset_before_regenerating(
     assert blocked.exit_code == 2
     assert "Existing HeuDiConv draft state was found" in blocked.output
 
-    allowed = invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01", "--force"])
+    allowed = invoke_from(project_dir, ["heudiconv", "draft", "sample-ses-01", "-f"])
     assert allowed.exit_code == 0, allowed.output
 
 

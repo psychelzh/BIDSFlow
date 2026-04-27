@@ -200,6 +200,6 @@ def test_init_requires_force_to_overwrite_existing_config(tmp_path: Path, runner
     assert "Refusing to overwrite existing config" in blocked.output
     assert config_path.read_text(encoding="utf-8") == "existing = true\n"
 
-    allowed = runner.invoke(app, ["init", str(project_dir), "--force", "--name", "Replacement"])
+    allowed = runner.invoke(app, ["init", str(project_dir), "-f", "--name", "Replacement"])
     assert allowed.exit_code == 0, allowed.output
     assert 'name = "Replacement"' in config_path.read_text(encoding="utf-8")

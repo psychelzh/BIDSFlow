@@ -37,7 +37,7 @@ def test_heudiconv_run_dry_run_shows_summary_and_one_example(tmp_path: Path, inv
 
     heuristic_path = write_minimal_heuristic(project_dir)
 
-    result = invoke_from(project_dir, ["heudiconv", "--dry-run"])
+    result = invoke_from(project_dir, ["heudiconv", "-n"])
 
     assert result.exit_code == 0, result.output
     assert "Planned `bidsflow heudiconv` execution." in result.output
@@ -603,12 +603,12 @@ def test_heudiconv_run_overwrites_current_state_and_keeps_unit_logs(
     assert "Runnable units now: 0" in dry_run_failed.output
     assert "- failed; use --include-failed to retry: 1" in dry_run_failed.output
 
-    dry_run_include_failed = invoke_from(project_dir, ["heudiconv", "--dry-run", "--include-failed"])
+    dry_run_include_failed = invoke_from(project_dir, ["heudiconv", "-n", "-r"])
     assert dry_run_include_failed.exit_code == 0, dry_run_include_failed.output
     assert "Runnable units now: 1" in dry_run_include_failed.output
     assert "Failed units: included" in dry_run_include_failed.output
 
-    second_result = invoke_from(project_dir, ["heudiconv", "--include-failed"])
+    second_result = invoke_from(project_dir, ["heudiconv", "-r"])
     assert second_result.exit_code == 0, second_result.output
 
     second_state = json.loads(state_path.read_text(encoding="utf-8"))

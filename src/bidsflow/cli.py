@@ -156,6 +156,7 @@ def init(
     force: bool = typer.Option(
         False,
         "--force",
+        "-f",
         help="Overwrite the generated config if it already exists.",
     ),
     make_dirs: bool = typer.Option(
@@ -222,11 +223,13 @@ def heudiconv(
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
+        "-n",
         help="Show planned conversion commands and outputs without running HeuDiConv.",
     ),
     include_failed: bool = typer.Option(
         False,
         "--include-failed",
+        "-r",
         help="Retry units whose latest status is failed.",
     ),
     keep_execution_view: bool = typer.Option(
@@ -257,6 +260,7 @@ def heudiconv_init(
     force: bool = typer.Option(
         False,
         "--force",
+        "-f",
         help="Overwrite HeuDiConv init files such as sources.tsv and scheduler script.",
     ),
 ) -> None:
@@ -274,6 +278,7 @@ def heudiconv_draft(
     force: bool = typer.Option(
         False,
         "--force",
+        "-f",
         help="Overwrite existing HeuDiConv draft outputs.",
     ),
 ) -> None:

@@ -24,7 +24,10 @@ def _ready_status_project(tmp_path: Path, invoke_from, runner, *, name: str) -> 
     return project_dir
 
 
-@pytest.mark.parametrize("option", ["--dry-run", "--include-failed", "--keep-execution-view"])
+@pytest.mark.parametrize(
+    "option",
+    ["--dry-run", "-n", "--include-failed", "-r", "--keep-execution-view"],
+)
 def test_status_rejects_run_only_options_before_subcommand(
     tmp_path: Path,
     invoke_from,

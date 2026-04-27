@@ -100,6 +100,10 @@ def run_heudiconv_init(context: ProjectContext, plan: InitPlan, force: bool) -> 
         refreshed_plan = replace(plan.sources_plan, entries=sources_entries)
         _write_sources_state(context, refreshed_plan)
         sources_action = "metadata refreshed"
+    elif sources_state_exists and not force:
+        run_sources(context, plan.sources_plan, reset=True)
+        sources_action = "recreated"
+        sources_entries = plan.sources_plan.entries
     else:
         run_sources(context, plan.sources_plan, reset=force)
         sources_action = "overwritten" if sources_exist else "created"

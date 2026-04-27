@@ -304,6 +304,27 @@ def test_heudiconv_init_refreshes_missing_sources_metadata_without_overwriting_t
     assert [row["source_name"] for row in rows] == ["SUB001_SES01"]
 
 
+def test_heudiconv_init_recreates_missing_sources_table_from_metadata(
+    tmp_path: Path,
+    invoke_from,
+    runner,
+) -> None:
+    project_dir = init_project(tmp_path, runner)
+    make_source_dirs(project_dir, "SUB001_SES01")
+
+    first = invoke_from(project_dir, ["heudiconv", "init"])
+    assert first.exit_code == 0, first.output
+
+    (project_dir / "state" / "sources.tsv").unlink()
+
+    recreated = invoke_from(project_dir, ["heudiconv", "init"])
+
+    assert recreated.exit_code == 0, recreated.output
+    assert "(recreated)" in recreated.output
+    rows = read_tsv_rows(project_dir / "state" / "sources.tsv")
+    assert [row["source_name"] for row in rows] == ["SUB001_SES01"]
+
+
 def test_heudiconv_init_rejects_invalid_existing_sources_table(tmp_path: Path, invoke_from, runner) -> None:
     project_dir = init_project(tmp_path, runner)
     make_source_dirs(project_dir, "SUB001_SES01")

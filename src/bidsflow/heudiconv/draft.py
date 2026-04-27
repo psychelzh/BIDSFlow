@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-import time
 
 from ..common import (
     _append_log,
@@ -180,11 +179,13 @@ def _resolve_draft_sample_path(
 ) -> Path:
     """Resolve a draft sample path while keeping it inside the source tree."""
 
+    source_root = _normalize_lexical_path(source_root)
+    project_root = _normalize_lexical_path(project_root)
     if sample_path.is_absolute():
-        resolved_sample = sample_path.resolve()
+        resolved_sample = _normalize_lexical_path(sample_path)
     else:
-        source_relative = (source_root / sample_path).resolve()
-        project_relative = (project_root / sample_path).resolve()
+        source_relative = _normalize_lexical_path(source_root / sample_path)
+        project_relative = _normalize_lexical_path(project_root / sample_path)
         if source_relative.exists() or not project_relative.exists():
             resolved_sample = source_relative
         else:
@@ -196,6 +197,12 @@ def _resolve_draft_sample_path(
         )
 
     return resolved_sample
+
+
+def _normalize_lexical_path(path: Path) -> Path:
+    """Normalize dots in a path without resolving symlink targets."""
+
+    return Path(os.path.normpath(os.fspath(path)))
 
 
 def run_draft(context: ProjectContext, plan: DraftPlan, reset: bool) -> DraftResult:
@@ -368,7 +375,15 @@ def _run_draft_unit(
 ) -> DraftUnitResult:
     """Run one draft unit and collect its generated files."""
 
-    completed, _, started_at_ns = _run_command(
+    previous_heuristics = _snapshot_generated_files(
+        plan.heudiconv_state_path,
+        "heuristic.py",
+    )
+    previous_dicominfo_files = _snapshot_generated_files(
+        plan.heudiconv_state_path,
+        "dicominfo*.tsv",
+    )
+    completed, _ = _run_command(
         context,
         unit.log_path,
         unit.initial_command,
@@ -396,7 +411,8 @@ def _run_draft_unit(
         subject_label=unit.subject_label,
         session_label=unit.session_label,
         strategy="generated_subject" if unit.session_label is None else "generated_multi_session",
-        started_at_ns=started_at_ns,
+        previous_heuristics=previous_heuristics,
+        previous_dicominfo_files=previous_dicominfo_files,
     )
 
 
@@ -406,10 +422,9 @@ def _run_command(
     command: tuple[str, ...],
     *,
     label: str,
-) -> tuple[subprocess.CompletedProcess[str], str, int]:
+) -> tuple[subprocess.CompletedProcess[str], str]:
     """Run a draft command and append combined output to the unit log."""
 
-    started_at_ns = time.time_ns()
     try:
         completed = subprocess.run(
             list(command),
@@ -425,16 +440,14 @@ def _run_command(
         ) from exc
 
     combined_output = _combine_process_output(completed.stdout, completed.stderr)
-    _append_log(
-        log_path,
-        "\n".join(
-            (
-                f"[{label}] Command: {format_command(command)}",
-                combined_output.rstrip(),
-            )
-        ).rstrip(),
+    message = "\n".join(
+        (
+            f"[{label}] Command: {format_command(command)}",
+            combined_output.rstrip(),
+        )
     )
-    return completed, combined_output, started_at_ns
+    _append_log(log_path, message.rstrip())
+    return completed, combined_output
 
 
 def _collect_unit_result(
@@ -445,18 +458,19 @@ def _collect_unit_result(
     subject_label: str | None,
     session_label: str | None,
     strategy: str,
-    started_at_ns: int,
+    previous_heuristics: dict[Path, int],
+    previous_dicominfo_files: dict[Path, int],
 ) -> DraftUnitResult:
     """Collect generated draft files after a successful draft command."""
 
-    generated_heuristic = _find_latest_generated_file_since(
+    generated_heuristic = _find_latest_generated_file_after_snapshot(
         plan.heudiconv_state_path,
         "heuristic.py",
-        started_at_ns,
+        previous_heuristics,
     )
-    generated_dicominfo_paths = _find_generated_dicominfo_files_since(
+    generated_dicominfo_paths = _find_generated_dicominfo_files_after_snapshot(
         plan.heudiconv_state_path,
-        started_at_ns,
+        previous_dicominfo_files,
     )
     copied_dicominfo_paths = _copy_dicominfo_files(
         plan.dicominfo_root / unit.unit_name,
@@ -478,16 +492,32 @@ def _collect_unit_result(
     )
 
 
-def _find_latest_generated_file_since(root: Path, filename: str, started_at_ns: int) -> Path:
+def _snapshot_generated_files(root: Path, pattern: str) -> dict[Path, int]:
+    """Record generated files that already existed before a draft command."""
+
+    if not root.exists():
+        return {}
+    return {
+        candidate: candidate.stat().st_mtime_ns
+        for candidate in root.rglob(pattern)
+        if candidate.is_file()
+    }
+
+
+def _find_latest_generated_file_after_snapshot(
+    root: Path,
+    filename: str,
+    previous_files: dict[Path, int],
+) -> Path:
     """Return the newest generated file with the requested name."""
 
     candidates: list[tuple[Path, int]] = []
-    for candidate in root.rglob(filename):
-        if not candidate.is_file():  # pragma: no cover
-            continue
-        mtime = candidate.stat().st_mtime_ns
-        if mtime >= started_at_ns:
-            candidates.append((candidate, mtime))
+    for candidate, mtime in _find_generated_files_after_snapshot(
+        root,
+        filename,
+        previous_files,
+    ):
+        candidates.append((candidate, mtime))
     if not candidates:
         raise HeudiconvDraftError(
             f"HeuDiConv draft generation did not produce {filename} under {root}."
@@ -495,13 +525,19 @@ def _find_latest_generated_file_since(root: Path, filename: str, started_at_ns: 
     return max(candidates, key=lambda item: item[1])[0]
 
 
-def _find_generated_dicominfo_files_since(root: Path, started_at_ns: int) -> tuple[Path, ...]:
+def _find_generated_dicominfo_files_after_snapshot(
+    root: Path,
+    previous_files: dict[Path, int],
+) -> tuple[Path, ...]:
     """Return generated DICOM inventory files for the current draft unit."""
 
     candidates = [
         candidate
-        for candidate in root.rglob("dicominfo*.tsv")
-        if candidate.is_file() and candidate.stat().st_mtime_ns >= started_at_ns
+        for candidate, _ in _find_generated_files_after_snapshot(
+            root,
+            "dicominfo*.tsv",
+            previous_files,
+        )
     ]
     if not candidates:
         raise HeudiconvDraftError(
@@ -516,6 +552,23 @@ def _find_generated_dicominfo_files_since(root: Path, started_at_ns: int) -> tup
             ),
         )
     )
+
+
+def _find_generated_files_after_snapshot(
+    root: Path,
+    pattern: str,
+    previous_files: dict[Path, int],
+) -> tuple[tuple[Path, int], ...]:
+    """Return files created or updated after the pre-command snapshot."""
+
+    candidates: list[tuple[Path, int]] = []
+    for candidate in root.rglob(pattern):
+        if not candidate.is_file():  # pragma: no cover
+            continue
+        mtime = candidate.stat().st_mtime_ns
+        if previous_files.get(candidate) != mtime:
+            candidates.append((candidate, mtime))
+    return tuple(candidates)
 
 
 def _merge_heuristic(destination: Path, generated_heuristic: Path) -> None:

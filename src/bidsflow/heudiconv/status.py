@@ -8,13 +8,14 @@ import json
 from pathlib import Path
 
 from ..project import ProjectContext
-from .run import _build_run_unit_name, _read_key_value_status
+from .errors import HeudiconvRunError
 from .sources import (
     SourcesEntry,
     _load_confirmed_sources,
     list_sources_review_issues,
     summarize_sources_entries,
 )
+from .state import build_run_unit_name, read_key_value_status
 
 
 @dataclass(frozen=True)
@@ -65,8 +66,12 @@ def get_heudiconv_status(context: ProjectContext) -> HeudiconvStatus:
     claim_dir = state_root / "claims"
 
     entries: tuple[SourcesEntry, ...] = ()
+    sources_issues: list[str] = []
     if sources_path.exists():
-        entries = _load_confirmed_sources(context.paths.source_root, sources_path)
+        try:
+            entries = _load_confirmed_sources(context.paths.source_root, sources_path)
+        except (HeudiconvRunError, OSError, ValueError, csv.Error) as exc:
+            sources_issues.append(f"Unreadable sources table: {exc}")
 
     units = tuple(
         _build_unit_status(
@@ -82,7 +87,7 @@ def get_heudiconv_status(context: ProjectContext) -> HeudiconvStatus:
         sources_path=sources_path,
         sources_exists=sources_path.exists(),
         sources_summary=summarize_sources_entries(entries),
-        sources_issues=tuple(list_sources_review_issues(entries)),
+        sources_issues=tuple(sources_issues + list_sources_review_issues(entries)),
         heuristic_path=context.heudiconv.heuristic,
         heuristic_exists=context.heudiconv.heuristic.is_file(),
         run_state_path=run_state_path,
@@ -103,7 +108,7 @@ def _build_unit_status(
     claim_dir: Path,
 ) -> HeudiconvUnitStatus:
     session_label = entry.session_label or None
-    unit_name = _build_run_unit_name(entry.subject_label, session_label)
+    unit_name = build_run_unit_name(entry.subject_label, session_label)
     status_path = unit_status_dir / f"{unit_name}.status"
     claim_path = claim_dir / f"{unit_name}.running"
     payload = _read_existing_key_value_status(status_path)
@@ -127,7 +132,7 @@ def _read_existing_key_value_status(path: Path) -> dict[str, str]:
     if not path.is_file():
         return {}
     try:
-        return _read_key_value_status(path)
+        return read_key_value_status(path)
     except OSError:  # pragma: no cover
         return {}
 

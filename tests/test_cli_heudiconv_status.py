@@ -56,7 +56,7 @@ def test_status_reports_uninitialized_project(tmp_path: Path, invoke_from, runne
     assert "Initialize HeuDiConv: bidsflow heudiconv init" in result.output
 
 
-def test_status_rejects_malformed_sources_table(tmp_path: Path, invoke_from, runner) -> None:
+def test_status_reports_malformed_sources_table(tmp_path: Path, invoke_from, runner) -> None:
     project_dir = init_project(tmp_path, runner, name="status-malformed-sources")
     (project_dir / "state").mkdir()
     (project_dir / "state" / "sources.tsv").write_text(
@@ -68,8 +68,10 @@ def test_status_rejects_malformed_sources_table(tmp_path: Path, invoke_from, run
 
     result = invoke_from(project_dir, ["heudiconv", "status"])
 
-    assert result.exit_code == 2
+    assert result.exit_code == 0, result.output
+    assert "Unreadable sources table:" in result.output
     assert "invalid include value" in result.output
+    assert "Review sources:" in result.output
 
 
 def test_status_suggests_draft_when_sources_are_ready(

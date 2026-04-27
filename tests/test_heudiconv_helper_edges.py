@@ -10,6 +10,7 @@ import bidsflow.heudiconv as h
 import bidsflow.heudiconv.draft as heudiconv_draft
 import bidsflow.heudiconv.run as heudiconv_run
 import bidsflow.heudiconv.sources as heudiconv_sources
+import bidsflow.heudiconv.state as heudiconv_state
 from helpers import read_key_value_file
 
 
@@ -73,7 +74,7 @@ def test_low_level_run_helpers_cover_status_paths(tmp_path: Path, monkeypatch) -
     assert not other_unit.claim_path.exists()
 
     unit.status_path.write_text("# comment\nignored\nstatus=succeeded\n", encoding="utf-8")
-    assert heudiconv_run._read_key_value_status(unit.status_path) == {"status": "succeeded"}
+    assert heudiconv_state.read_key_value_status(unit.status_path) == {"status": "succeeded"}
 
 
 def test_low_level_path_and_scheduler_helpers(tmp_path: Path) -> None:

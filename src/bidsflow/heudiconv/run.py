@@ -31,6 +31,7 @@ from .sources import (
     _resolve_sources_source_path,
     list_sources_review_issues,
 )
+from .state import build_run_unit_name, read_key_value_status
 
 
 def _render_heudiconv_array_runtime_script() -> str:
@@ -164,7 +165,7 @@ def plan_heudiconv_run(context: ProjectContext) -> RunPlan:
     units: list[RunUnitPlan] = []
     for index, entry in enumerate(ready_entries, start=1):
         session_label = entry.session_label or None
-        unit_name = _build_run_unit_name(entry.subject_label, session_label)
+        unit_name = build_run_unit_name(entry.subject_label, session_label)
         execution_path = _build_run_execution_path(
             execution_view_root,
             entry.subject_label,
@@ -893,14 +894,6 @@ def _build_run_execution_path(
     return execution_view_root / f"sub-{subject_label}" / f"ses-{session_label}"
 
 
-def _build_run_unit_name(subject_label: str, session_label: str | None) -> str:
-    """Build the stable unit name used for logs, claims, and status files."""
-
-    if session_label is None:
-        return f"sub-{subject_label}"
-    return f"sub-{subject_label}_ses-{session_label}"
-
-
 def _build_run_command(
     *,
     launcher: tuple[str, ...],
@@ -1154,21 +1147,9 @@ def _unit_status_value(path: Path) -> str:
     if not path.is_file():
         return ""
     try:
-        return _read_key_value_status(path).get("status", "")
+        return read_key_value_status(path).get("status", "")
     except OSError:
         return ""
-
-
-def _read_key_value_status(path: Path) -> dict[str, str]:
-    """Read a simple key=value status file."""
-
-    values: dict[str, str] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        values[key] = value
-    return values
 
 
 def _write_unit_claim(*, unit: RunUnitPlan) -> None:

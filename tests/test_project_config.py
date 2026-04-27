@@ -91,6 +91,10 @@ scheduler = "sge"
             "[sources].command must be a non-empty list of strings.",
         ),
         (
+            _minimal_config() + "\n[sources]\ncommand = [\"\"]\n",
+            "[sources].command must be a non-empty list of strings.",
+        ),
+        (
             _minimal_config()
             + "\n[sources]\npattern = \"SUB{subject}\"\ncommand = [\"python\"]\n",
             "[sources] may define pattern or command, but not both.",
@@ -110,10 +114,51 @@ scheduler = "sge"
             ),
             "[execution].submit_command must be a non-empty list of strings.",
         ),
+        (
+            _minimal_config().replace(
+                'scheduler = "none"',
+                'scheduler = "none"\nsubmit_command = [" "]',
+            ),
+            "[execution].submit_command must be a non-empty list of strings.",
+        ),
+        (
+            _minimal_config().replace(
+                "[execution]",
+                'launcher = [""]\n\n[execution]',
+            ),
+            "[heudiconv].launcher must be a non-empty list of strings.",
+        ),
     ],
 )
 def test_load_project_context_rejects_invalid_config(tmp_path: Path, body: str, message: str) -> None:
     config_path = _write_config(tmp_path / "bidsflow.toml", body)
 
     with pytest.raises(ValueError, match=re.escape(message)):
+        load_project_context(config_path)
+
+
+@pytest.mark.parametrize(
+    ("key", "default_value"),
+    [
+        ("work_root", "work"),
+        ("logs_root", "logs"),
+        ("state_root", "state"),
+    ],
+)
+def test_load_project_context_rejects_external_managed_roots(
+    tmp_path: Path,
+    key: str,
+    default_value: str,
+) -> None:
+    outside_root = tmp_path.parent / f"external-{key}"
+    body = _minimal_config().replace(
+        f'{key} = "{default_value}"',
+        f'{key} = "{outside_root.as_posix()}"',
+    )
+    config_path = _write_config(tmp_path / "bidsflow.toml", body)
+
+    with pytest.raises(
+        ValueError,
+        match=re.escape(f"[paths].{key} must resolve under [project].root."),
+    ):
         load_project_context(config_path)

@@ -136,16 +136,82 @@ def _resolve_config_path(
     return (project_root / candidate).resolve()
 
 
+def _require_project_owned_path(
+    project_root: Path,
+    path: Path,
+    *,
+    section_name: str,
+    key: str,
+) -> Path:
+    """Require a managed workflow path to stay under the project root."""
+
+    if not path.is_relative_to(project_root):
+        raise ValueError(f"[{section_name}].{key} must resolve under [project].root.")
+    return path
+
+
+def _load_non_empty_string_list(value: Any, field_name: str) -> tuple[str, ...]:
+    """Load a non-empty TOML string list with no blank elements."""
+
+    if (
+        not isinstance(value, list)
+        or not value
+        or not all(isinstance(item, str) and item.strip() for item in value)
+    ):
+        raise ValueError(f"{field_name} must be a non-empty list of strings.")
+    return tuple(value)
+
+
 def _load_project_paths(project_root: Path, paths_section: dict[str, Any]) -> ProjectPaths:
     """Load the configured project directory layout."""
 
+    source_root = _resolve_config_path(
+        project_root,
+        paths_section,
+        "paths",
+        "source_root",
+        "sourcedata",
+    )
+    raw_bids_root = _resolve_config_path(
+        project_root,
+        paths_section,
+        "paths",
+        "raw_bids_root",
+        "sourcedata/raw",
+    )
+    derivatives_root = _resolve_config_path(
+        project_root,
+        paths_section,
+        "paths",
+        "derivatives_root",
+        "derivatives",
+    )
+    work_root = _require_project_owned_path(
+        project_root,
+        _resolve_config_path(project_root, paths_section, "paths", "work_root", "work"),
+        section_name="paths",
+        key="work_root",
+    )
+    logs_root = _require_project_owned_path(
+        project_root,
+        _resolve_config_path(project_root, paths_section, "paths", "logs_root", "logs"),
+        section_name="paths",
+        key="logs_root",
+    )
+    state_root = _require_project_owned_path(
+        project_root,
+        _resolve_config_path(project_root, paths_section, "paths", "state_root", "state"),
+        section_name="paths",
+        key="state_root",
+    )
+
     return ProjectPaths(
-        source_root=_resolve_config_path(project_root, paths_section, "paths", "source_root", "sourcedata"),
-        raw_bids_root=_resolve_config_path(project_root, paths_section, "paths", "raw_bids_root", "sourcedata/raw"),
-        derivatives_root=_resolve_config_path(project_root, paths_section, "paths", "derivatives_root", "derivatives"),
-        work_root=_resolve_config_path(project_root, paths_section, "paths", "work_root", "work"),
-        logs_root=_resolve_config_path(project_root, paths_section, "paths", "logs_root", "logs"),
-        state_root=_resolve_config_path(project_root, paths_section, "paths", "state_root", "state"),
+        source_root=source_root,
+        raw_bids_root=raw_bids_root,
+        derivatives_root=derivatives_root,
+        work_root=work_root,
+        logs_root=logs_root,
+        state_root=state_root,
     )
 
 
@@ -162,10 +228,11 @@ def _load_heudiconv_config(project_root: Path, heudiconv_section: dict[str, Any]
     launcher = heudiconv_section.get("launcher")
     if launcher is None:
         launcher_value = ("heudiconv",)
-    elif not isinstance(launcher, list) or not launcher or not all(isinstance(item, str) for item in launcher):
-        raise ValueError("[heudiconv].launcher must be a non-empty list of strings.")
     else:
-        launcher_value = tuple(launcher)
+        launcher_value = _load_non_empty_string_list(
+            launcher,
+            "[heudiconv].launcher",
+        )
 
     return HeudiconvConfig(
         launcher=launcher_value,
@@ -183,12 +250,8 @@ def _load_sources_config(
 
     if pattern is not None and not isinstance(pattern, str):
         raise ValueError("[sources].pattern must be a string.")
-    if command is not None and (
-        not isinstance(command, list)
-        or not command
-        or not all(isinstance(item, str) for item in command)
-    ):
-        raise ValueError("[sources].command must be a non-empty list of strings.")
+    if command is not None:
+        command = _load_non_empty_string_list(command, "[sources].command")
     if pattern is not None and command is not None:
         raise ValueError(
             "[sources] may define pattern or command, but not both."
@@ -196,7 +259,7 @@ def _load_sources_config(
 
     return SourcesConfig(
         pattern=pattern,
-        command=tuple(command) if command is not None else None,
+        command=command,
     )
 
 
@@ -212,12 +275,11 @@ def _load_execution_config(
         raise ValueError("[execution].scheduler must be a string.")
     if scheduler not in {"none", "sge"}:
         raise ValueError("[execution].scheduler must be one of: none, sge.")
-    if submit_command is not None and (
-        not isinstance(submit_command, list)
-        or not submit_command
-        or not all(isinstance(item, str) for item in submit_command)
-    ):
-        raise ValueError("[execution].submit_command must be a non-empty list of strings.")
+    if submit_command is not None:
+        submit_command = _load_non_empty_string_list(
+            submit_command,
+            "[execution].submit_command",
+        )
 
     if scheduler == "sge":
         submit_command = submit_command or ["qsub", "-terse"]

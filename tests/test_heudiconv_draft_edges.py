@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
 import pytest
 
 import bidsflow.heudiconv as h
+import bidsflow.heudiconv.draft as heudiconv_draft
 from helpers import (
     init_project,
     load_context,
@@ -49,6 +51,19 @@ def test_draft_rejects_file_source_root_and_project_relative_outside_sample(
     outside = invoke_from(project_dir, ["heudiconv", "draft", "outside-sample"])
     assert outside.exit_code == 2
     assert "Sample path must resolve under the configured source root" in outside.output
+
+
+def test_draft_accepts_symlinked_relative_sample(tmp_path: Path, runner) -> None:
+    project_dir = init_project(tmp_path, runner, name="draft-symlink-sample")
+    source_root = project_dir / "sourcedata"
+    archive_target = tmp_path / "archive" / "SUB001"
+    archive_target.mkdir(parents=True)
+    source_root.mkdir()
+    (source_root / "siteA").symlink_to(archive_target, target_is_directory=True)
+
+    plan = h.plan_draft(load_context(project_dir), [Path("siteA")])
+
+    assert plan.sample_paths == (source_root / "siteA",)
 
 
 @pytest.mark.parametrize(
@@ -113,8 +128,41 @@ def test_draft_launcher_start_failure_is_logged(tmp_path: Path, invoke_from, run
 
     assert result.exit_code == 2
     state = json.loads((project_dir / "state" / "heudiconv" / "draft.json").read_text(encoding="utf-8"))
-    log_path = Path(state["unit_log_dir"]) / "sample-01.log"
+    unit_log_dir = Path(state["unit_log_dir"]).resolve()
+    assert unit_log_dir.is_relative_to(project_dir.resolve())
+    log_path = unit_log_dir / "sample-01.log"
     assert "Failed to start launcher" in log_path.read_text(encoding="utf-8")
+
+
+def test_draft_detects_new_generated_files_without_timestamp_gate(tmp_path: Path) -> None:
+    heudiconv_state = tmp_path / ".heudiconv"
+    previous_heuristics = heudiconv_draft._snapshot_generated_files(heudiconv_state, "heuristic.py")
+    previous_dicominfo = heudiconv_draft._snapshot_generated_files(heudiconv_state, "dicominfo*.tsv")
+    info_dir = heudiconv_state / "draft" / "single"
+    info_dir.mkdir(parents=True)
+    heuristic_path = info_dir / "heuristic.py"
+    dicominfo_path = info_dir / "dicominfo.tsv"
+    heuristic_path.write_text("def infotodict(seqinfo):\n    return {}\n", encoding="utf-8")
+    dicominfo_path.write_text("series_id\n1\n", encoding="utf-8")
+    old_timestamp = 946684800
+    os.utime(heuristic_path, (old_timestamp, old_timestamp))
+    os.utime(dicominfo_path, (old_timestamp, old_timestamp))
+
+    assert (
+        heudiconv_draft._find_latest_generated_file_after_snapshot(
+            heudiconv_state,
+            "heuristic.py",
+            previous_heuristics,
+        )
+        == heuristic_path
+    )
+    assert (
+        heudiconv_draft._find_generated_dicominfo_files_after_snapshot(
+            heudiconv_state,
+            previous_dicominfo,
+        )
+        == (dicominfo_path,)
+    )
 
 
 def test_draft_rejects_different_heuristics_across_sample_units(

@@ -183,6 +183,15 @@ def test_compute_sources_status_handles_invalid_and_symlinked_source_names(
     )
     assert invalid_entries[0].status == "missing_source"
 
+    (source_root / "FILE").write_text("not a directory\n", encoding="utf-8")
+    file_entries = heudiconv_sources._compute_sources_statuses(
+        source_root,
+        (
+            h.SourcesEntry("FILE", "002", "", True, "", ""),
+        ),
+    )
+    assert file_entries[0].status == "missing_source"
+
     original_resolve = Path.resolve
 
     def _fake_resolve(path: Path, *args, **kwargs):

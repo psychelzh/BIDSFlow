@@ -40,8 +40,11 @@ def make_source_dirs(project_dir: Path, *source_names: str, root: str = "sourced
 
 
 def replace_config(config_path: Path, old: str, new: str) -> None:
+    text = config_path.read_text(encoding="utf-8")
+    if old not in text:
+        raise AssertionError(f"Expected config snippet not found in {config_path}: {old!r}")
     config_path.write_text(
-        config_path.read_text(encoding="utf-8").replace(old, new),
+        text.replace(old, new),
         encoding="utf-8",
         newline="\n",
     )

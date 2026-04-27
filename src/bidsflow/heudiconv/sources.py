@@ -344,7 +344,7 @@ def _classify_sources_entry(
 
     if not entry.include:
         return "excluded"
-    if not source_path.exists():
+    if not source_path.is_dir():
         return "missing_source"
     if not subject_label:
         return "needs_review"

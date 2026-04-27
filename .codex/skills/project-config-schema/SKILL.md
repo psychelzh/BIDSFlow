@@ -26,7 +26,8 @@ Apply schema changes across every affected surface in the same change:
 
 - public files that define the active shape
 - scaffold templates
-- model fields and defaults
+- `src/bidsflow/project.py`, which is the implementation source of truth for
+  active fields, defaults, and validation
 - code that consumes the settings
 - README examples when they mention the setting
 

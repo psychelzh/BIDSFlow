@@ -18,22 +18,26 @@ def _no_scheduler_on_path(monkeypatch) -> None:
 
 
 @pytest.mark.parametrize(
-    "args",
+    "command_args",
     [
-        ["-h"],
-        ["init", "-h"],
-        ["heudiconv", "-h"],
-        ["heudiconv", "init", "-h"],
-        ["heudiconv", "draft", "-h"],
-        ["heudiconv", "status", "-h"],
+        [],
+        ["init"],
+        ["heudiconv"],
+        ["heudiconv", "init"],
+        ["heudiconv", "draft"],
+        ["heudiconv", "status"],
     ],
 )
-def test_cli_accepts_short_help_option(runner, args: list[str]) -> None:
-    result = runner.invoke(app, args)
+@pytest.mark.parametrize("help_option", ["-h", "--help"])
+def test_cli_accepts_help_options(
+    runner,
+    command_args: list[str],
+    help_option: str,
+) -> None:
+    result = runner.invoke(app, [*command_args, help_option])
 
     assert result.exit_code == 0, result.output
-    assert "-h" in result.output
-    assert "--help" in result.output
+    assert "Usage" in result.output
 
 
 def test_init_rejects_target_file(tmp_path: Path, runner) -> None:

@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 from helpers import (
     init_project,
     make_source_dirs,
@@ -20,6 +22,22 @@ def _ready_status_project(tmp_path: Path, invoke_from, runner, *, name: str) -> 
     init_heudiconv = invoke_from(project_dir, ["heudiconv", "init"])
     assert init_heudiconv.exit_code == 0, init_heudiconv.output
     return project_dir
+
+
+@pytest.mark.parametrize("option", ["--dry-run", "--include-failed", "--keep-execution-view"])
+def test_status_rejects_run_only_options_before_subcommand(
+    tmp_path: Path,
+    invoke_from,
+    runner,
+    option: str,
+) -> None:
+    project_dir = init_project(tmp_path, runner, name="status-run-option-scope")
+
+    result = invoke_from(project_dir, ["heudiconv", option, "status"])
+
+    assert result.exit_code == 2
+    assert "Run options" in result.output
+    assert "without a subcommand" in result.output
 
 
 def test_status_reports_uninitialized_project(tmp_path: Path, invoke_from, runner) -> None:

@@ -350,6 +350,14 @@ def test_heudiconv_init_rejects_invalid_existing_sources_table(tmp_path: Path, i
     assert result.exit_code == 2
     assert "invalid include value" in result.output
 
+    forced = invoke_from(project_dir, ["heudiconv", "init", "-f"])
+
+    assert forced.exit_code == 0, forced.output
+    assert "(overwritten)" in forced.output
+    rows = read_tsv_rows(sources_path)
+    assert rows[0]["include"] == "true"
+    assert rows[0]["status"] == "needs_review"
+
 
 def test_sources_uses_configured_source_root(tmp_path: Path, invoke_from, runner) -> None:
     project_dir = init_project(tmp_path, runner)

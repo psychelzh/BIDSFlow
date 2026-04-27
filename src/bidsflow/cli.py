@@ -103,8 +103,8 @@ def _render_project_config(project_name: str, scheduler: str) -> str:
         .read_text(encoding="utf-8")
     )
     return (
-        template.replace("__PROJECT_NAME__", _toml_string(project_name))
-        .replace("__EXECUTION_SECTION__", _render_execution_section(scheduler))
+        template.replace("__EXECUTION_SECTION__", _render_execution_section(scheduler))
+        .replace("__PROJECT_NAME__", _toml_string(project_name))
     )
 
 

@@ -192,6 +192,25 @@ def test_init_respects_custom_name(tmp_path: Path, runner) -> None:
     assert 'name = "TJNU camp project"' in config_text
 
 
+def test_init_does_not_reprocess_name_as_template_placeholder(tmp_path: Path, runner) -> None:
+    project_dir = tmp_path / "placeholder-name-project"
+    project_name = "Project __EXECUTION_SECTION__ marker"
+
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            str(project_dir),
+            "--name",
+            project_name,
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    config_text = (project_dir / "bidsflow.toml").read_text(encoding="utf-8")
+    assert tomllib.loads(config_text)["project"]["name"] == project_name
+
+
 def test_init_escapes_control_characters_in_custom_name(tmp_path: Path, runner) -> None:
     project_dir = tmp_path / "control-name-project"
 

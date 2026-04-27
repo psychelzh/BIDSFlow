@@ -17,6 +17,25 @@ def _no_scheduler_on_path(monkeypatch) -> None:
     monkeypatch.setattr(cli.shutil, "which", lambda executable: None)
 
 
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["-h"],
+        ["init", "-h"],
+        ["heudiconv", "-h"],
+        ["heudiconv", "init", "-h"],
+        ["heudiconv", "draft", "-h"],
+        ["heudiconv", "status", "-h"],
+    ],
+)
+def test_cli_accepts_short_help_option(runner, args: list[str]) -> None:
+    result = runner.invoke(app, args)
+
+    assert result.exit_code == 0, result.output
+    assert "-h" in result.output
+    assert "--help" in result.output
+
+
 def test_init_rejects_target_file(tmp_path: Path, runner) -> None:
     target = tmp_path / "not-a-directory"
     target.write_text("not a directory\n", encoding="utf-8")

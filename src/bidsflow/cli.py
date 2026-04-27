@@ -30,13 +30,17 @@ from .heudiconv import (
 )
 from .project import find_project_config, load_project_context
 
+HELP_CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
+
 app = typer.Typer(
     help="BIDSFlow: a task-first CLI for BIDS workflow logistics.",
     no_args_is_help=True,
+    context_settings=HELP_CONTEXT_SETTINGS,
 )
 heudiconv_app = typer.Typer(
     help="Manage HeuDiConv preparation and conversion.",
     invoke_without_command=True,
+    context_settings=HELP_CONTEXT_SETTINGS,
 )
 app.add_typer(heudiconv_app, name="heudiconv")
 DEFAULT_LAYOUT_DIRECTORIES = (
@@ -135,13 +139,13 @@ def _default_project_name(directory: Path) -> str:
     return directory.resolve().name or "BIDSFlow project"
 
 
-@app.callback()
+@app.callback(context_settings=HELP_CONTEXT_SETTINGS)
 def main() -> None:
     """BIDSFlow: task-first CLI for BIDS workflow logistics."""
     _ensure_supported_platform()
 
 
-@app.command()
+@app.command(context_settings=HELP_CONTEXT_SETTINGS)
 def init(
     directory: Path = typer.Argument(
         Path("."),
@@ -217,7 +221,10 @@ def init(
     typer.echo("  Prepare HeuDiConv: bidsflow heudiconv init")
 
 
-@heudiconv_app.callback(invoke_without_command=True)
+@heudiconv_app.callback(
+    invoke_without_command=True,
+    context_settings=HELP_CONTEXT_SETTINGS,
+)
 def heudiconv(
     ctx: typer.Context,
     dry_run: bool = typer.Option(
@@ -255,7 +262,7 @@ def heudiconv(
     )
 
 
-@heudiconv_app.command("init")
+@heudiconv_app.command("init", context_settings=HELP_CONTEXT_SETTINGS)
 def heudiconv_init(
     force: bool = typer.Option(
         False,
@@ -268,7 +275,7 @@ def heudiconv_init(
     _run_heudiconv_init(force=force)
 
 
-@heudiconv_app.command("draft")
+@heudiconv_app.command("draft", context_settings=HELP_CONTEXT_SETTINGS)
 def heudiconv_draft(
     sample_paths: list[Path] = typer.Argument(
         ...,
@@ -286,7 +293,7 @@ def heudiconv_draft(
     _run_heudiconv_draft(sample_paths, force=force)
 
 
-@heudiconv_app.command("status")
+@heudiconv_app.command("status", context_settings=HELP_CONTEXT_SETTINGS)
 def heudiconv_status() -> None:
     """Show current HeuDiConv project state without changing files."""
     _run_heudiconv_status()

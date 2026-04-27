@@ -37,7 +37,7 @@ def test_status_rejects_run_only_options_before_subcommand(
 
     assert result.exit_code == 2
     assert "Run options" in result.output
-    assert "without a subcommand" in result.output
+    assert "not with subcommands" in result.output
 
 
 def test_status_reports_uninitialized_project(tmp_path: Path, invoke_from, runner) -> None:

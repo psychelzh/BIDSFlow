@@ -229,25 +229,25 @@ def heudiconv(
         "--include-failed",
         help="Retry units whose latest status is failed.",
     ),
-    clean_execution_view: bool = typer.Option(
-        True,
-        "--clean-execution-view/--keep-execution-view",
-        help="Remove temporary HeuDiConv source-link execution views after units finish.",
+    keep_execution_view: bool = typer.Option(
+        False,
+        "--keep-execution-view",
+        help="Keep temporary HeuDiConv source-link execution views after units finish.",
     ),
 ) -> None:
     """Run managed HeuDiConv conversion when no subcommand is provided."""
     if ctx.invoked_subcommand is not None:
-        if dry_run or include_failed or not clean_execution_view:
+        if dry_run or include_failed or keep_execution_view:
             typer.echo(
-                "Run options (--dry-run, --include-failed, --keep-execution-view) "
-                "can only be used with `bidsflow heudiconv` without a subcommand.",
+                "Run options apply only to conversion runs. Use them with "
+                "`bidsflow heudiconv`, not with subcommands.",
                 err=True,
             )
             raise typer.Exit(code=2)
         return
     _run_heudiconv_default(
         dry_run=dry_run,
-        clean_execution_view=clean_execution_view,
+        clean_execution_view=not keep_execution_view,
         include_failed=include_failed,
     )
 

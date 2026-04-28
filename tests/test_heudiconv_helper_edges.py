@@ -69,7 +69,7 @@ def test_low_level_run_helpers_cover_status_paths(tmp_path: Path, monkeypatch) -
         status_path=tmp_path / "state" / "sub-002.status",
     )
     heudiconv_run._write_unit_claim(unit=other_unit)
-    heudiconv_run._release_unfinished_claims((unit, other_unit), [], unit)
+    heudiconv_run._release_unfinished_claims((unit, other_unit), [])
     assert not unit.claim_path.exists()
     assert not other_unit.claim_path.exists()
 

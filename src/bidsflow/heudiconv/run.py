@@ -146,6 +146,92 @@ class RunUnitSelection:
     skipped_active_claim: int
 
 
+def _build_skipped_run_result(
+    plan: RunPlan,
+    unit_counts: dict[str, int],
+    *,
+    backend: str,
+) -> RunResult:
+    """Return a run result for attempts where every unit was skipped."""
+
+    scheduler_script_path = None
+    scheduler_log_dir = None
+    if backend == "sge" and plan.sge is not None:
+        scheduler_script_path = plan.sge.script_path
+        scheduler_log_dir = plan.sge.scheduler_log_dir
+    return RunResult(
+        raw_bids_root=plan.raw_bids_root,
+        state_path=plan.state_path,
+        results_path=plan.results_path,
+        log_dir=plan.log_dir,
+        unit_results=(),
+        backend=backend,
+        status="skipped",
+        skipped_units=unit_counts["skipped"],
+        skipped_succeeded=unit_counts["skipped_succeeded"],
+        skipped_failed=unit_counts["skipped_failed"],
+        skipped_active_claim=unit_counts["skipped_active_claim"],
+        scheduler_script_path=scheduler_script_path,
+        scheduler_log_dir=scheduler_log_dir,
+    )
+
+
+def _build_run_unit_result(
+    unit: RunUnitPlan,
+    *,
+    status: str,
+    started_at: str,
+    finished_at: str | None,
+    exit_code: int | None,
+) -> RunUnitResult:
+    """Build the shared per-unit result record used by local and SGE paths."""
+
+    return RunUnitResult(
+        index=unit.index,
+        unit_name=unit.unit_name,
+        source_name=unit.source_name,
+        source_path=unit.source_path,
+        subject_label=unit.subject_label,
+        session_label=unit.session_label,
+        execution_path=unit.execution_path,
+        command=unit.command,
+        log_path=unit.log_path,
+        status=status,
+        started_at=started_at,
+        finished_at=finished_at,
+        exit_code=exit_code,
+    )
+
+
+def _clear_prior_run_execution_view(context: ProjectContext, plan: RunPlan) -> None:
+    """Clear stale temporary source links before a new run writes its view."""
+
+    execution_view_cleared = _cleanup_run_execution_view(
+        context.project_root,
+        plan.execution_view_root,
+    )
+    if not execution_view_cleared:
+        raise HeudiconvRunError(
+            f"Failed to clear prior run execution view: {plan.execution_view_root}"
+        )
+
+
+def _cleanup_execution_view_if_requested(
+    context: ProjectContext,
+    plan: RunPlan,
+    *,
+    cleanup_execution_view: bool,
+) -> bool | None:
+    """Clean the temporary source view when the run option requests it."""
+
+    if not cleanup_execution_view:
+        return None
+    return _cleanup_run_execution_view(
+        context.project_root,
+        plan.execution_view_root,
+    )
+
+
 def plan_heudiconv_run(context: ProjectContext) -> RunPlan:
     """Plan a managed HeuDiConv conversion from reviewed sources.tsv rows."""
 
@@ -331,31 +417,11 @@ def run_heudiconv(
     )
     unit_counts = _build_run_unit_counts(plan.units, claim_selection)
     if not claim_selection.runnable_units:
-        return RunResult(
-            raw_bids_root=plan.raw_bids_root,
-            state_path=plan.state_path,
-            results_path=plan.results_path,
-            log_dir=plan.log_dir,
-            unit_results=(),
-            status="skipped",
-            skipped_units=unit_counts["skipped"],
-            skipped_succeeded=unit_counts["skipped_succeeded"],
-            skipped_failed=unit_counts["skipped_failed"],
-            skipped_active_claim=unit_counts["skipped_active_claim"],
-        )
+        return _build_skipped_run_result(plan, unit_counts, backend="local")
 
     unit_results: list[RunUnitResult] = []
-    current_unit: RunUnitPlan | None = None
     try:
-        execution_view_cleared = _cleanup_run_execution_view(
-            context.project_root,
-            plan.execution_view_root,
-        )
-        if not execution_view_cleared:
-            raise HeudiconvRunError(
-                f"Failed to clear prior run execution view: {plan.execution_view_root}"
-            )
-
+        _clear_prior_run_execution_view(context, plan)
         _prepare_run_directories(plan)
         _ensure_results_tsv_header(plan.results_path)
 
@@ -368,121 +434,19 @@ def run_heudiconv(
             planned_units=unit_counts,
         )
 
-        for unit in claim_selection.runnable_units:
-            current_unit = unit
-            unit_started_at = _utc_now()
-            _write_unit_status(
-                unit,
-                status="running",
-                backend="local",
-                attempt_label=plan.attempt_label,
-                started_at=unit_started_at,
-                log_path=unit.log_path,
-            )
-            try:
-                _materialize_run_execution_view(
-                    unit.execution_path,
-                    unit.source_path,
-                )
-                completed = _run_heudiconv_command(
-                    context,
-                    unit.log_path,
-                    unit.command,
-                    label=unit.source_name,
-                )
-            except HeudiconvRunError as exc:
-                unit_finished_at = _utc_now()
-                failed_result = RunUnitResult(
-                    index=unit.index,
-                    unit_name=unit.unit_name,
-                    source_name=unit.source_name,
-                    source_path=unit.source_path,
-                    subject_label=unit.subject_label,
-                    session_label=unit.session_label,
-                    execution_path=unit.execution_path,
-                    command=unit.command,
-                    log_path=unit.log_path,
-                    status="failed",
-                    started_at=unit_started_at,
-                    finished_at=unit_finished_at,
-                    exit_code=None,
-                )
-                _write_unit_status(
-                    unit,
-                    status="failed",
-                    backend="local",
-                    attempt_label=plan.attempt_label,
-                    started_at=unit_started_at,
-                    finished_at=unit_finished_at,
-                    log_path=unit.log_path,
-                    error=str(exc),
-                )
-                _append_results_tsv(plan.results_path, (failed_result,))
-                _release_unit_claim(unit)
-                unit_results.append(failed_result)
-                raise
-            unit_finished_at = _utc_now()
-            status = "succeeded" if completed.returncode == 0 else "failed"
-            result = RunUnitResult(
-                index=unit.index,
-                unit_name=unit.unit_name,
-                source_name=unit.source_name,
-                source_path=unit.source_path,
-                subject_label=unit.subject_label,
-                session_label=unit.session_label,
-                execution_path=unit.execution_path,
-                command=unit.command,
-                log_path=unit.log_path,
-                status=status,
-                started_at=unit_started_at,
-                finished_at=unit_finished_at,
-                exit_code=completed.returncode,
-            )
-            if completed.returncode != 0:
-                error_message = (
-                    "HeuDiConv execution failed while processing "
-                    f"{unit.source_name}. See {unit.log_path} for details."
-                )
-                _write_unit_status(
-                    unit,
-                    status="failed",
-                    backend="local",
-                    attempt_label=plan.attempt_label,
-                    started_at=unit_started_at,
-                    finished_at=unit_finished_at,
-                    exit_code=completed.returncode,
-                    log_path=unit.log_path,
-                    error=error_message,
-                )
-                _append_results_tsv(plan.results_path, (result,))
-                _release_unit_claim(unit)
-                unit_results.append(result)
-                raise HeudiconvRunError(
-                    error_message
-                )
-
-            _write_unit_status(
-                unit,
-                status="succeeded",
-                backend="local",
-                attempt_label=plan.attempt_label,
-                started_at=unit_started_at,
-                finished_at=unit_finished_at,
-                exit_code=completed.returncode,
-                log_path=unit.log_path,
-            )
-            _append_results_tsv(plan.results_path, (result,))
-            _release_unit_claim(unit)
-            unit_results.append(result)
-            current_unit = None
+        _run_local_units(
+            context,
+            plan,
+            claim_selection.runnable_units,
+            unit_results,
+        )
     except HeudiconvRunError as exc:
-        _release_unfinished_claims(claim_selection.runnable_units, unit_results, current_unit)
-        execution_view_cleaned = None
-        if cleanup_execution_view:
-            execution_view_cleaned = _cleanup_run_execution_view(
-                context.project_root,
-                plan.execution_view_root,
-            )
+        _release_unfinished_claims(claim_selection.runnable_units, unit_results)
+        execution_view_cleaned = _cleanup_execution_view_if_requested(
+            context,
+            plan,
+            cleanup_execution_view=cleanup_execution_view,
+        )
         _write_run_state(
             context=context,
             plan=plan,
@@ -496,12 +460,11 @@ def run_heudiconv(
         )
         raise
 
-    execution_view_cleaned = None
-    if cleanup_execution_view:
-        execution_view_cleaned = _cleanup_run_execution_view(
-            context.project_root,
-            plan.execution_view_root,
-        )
+    execution_view_cleaned = _cleanup_execution_view_if_requested(
+        context,
+        plan,
+        cleanup_execution_view=cleanup_execution_view,
+    )
     _write_run_state(
         context=context,
         plan=plan,
@@ -526,6 +489,121 @@ def run_heudiconv(
     )
 
 
+def _run_local_units(
+    context: ProjectContext,
+    plan: RunPlan,
+    units: tuple[RunUnitPlan, ...],
+    unit_results: list[RunUnitResult],
+) -> None:
+    """Run local units in sequence and append completed results."""
+
+    for unit in units:
+        unit_results.append(_run_local_unit(context, plan, unit))
+
+
+def _run_local_unit(
+    context: ProjectContext,
+    plan: RunPlan,
+    unit: RunUnitPlan,
+) -> RunUnitResult:
+    """Run one local HeuDiConv unit and record its status/result row."""
+
+    unit_started_at = _utc_now()
+    _write_unit_status(
+        unit,
+        status="running",
+        backend="local",
+        attempt_label=plan.attempt_label,
+        started_at=unit_started_at,
+        log_path=unit.log_path,
+    )
+
+    try:
+        _materialize_run_execution_view(unit.execution_path, unit.source_path)
+        completed = _run_heudiconv_command(
+            context,
+            unit.log_path,
+            unit.command,
+            label=unit.source_name,
+        )
+    except HeudiconvRunError as exc:
+        _record_failed_local_unit(
+            plan,
+            unit,
+            started_at=unit_started_at,
+            exit_code=None,
+            error=str(exc),
+        )
+        raise
+
+    if completed.returncode != 0:
+        error_message = (
+            "HeuDiConv execution failed while processing "
+            f"{unit.source_name}. See {unit.log_path} for details."
+        )
+        _record_failed_local_unit(
+            plan,
+            unit,
+            started_at=unit_started_at,
+            exit_code=completed.returncode,
+            error=error_message,
+        )
+        raise HeudiconvRunError(error_message)
+
+    result = _build_run_unit_result(
+        unit,
+        status="succeeded",
+        started_at=unit_started_at,
+        finished_at=_utc_now(),
+        exit_code=completed.returncode,
+    )
+    _write_unit_status(
+        unit,
+        status="succeeded",
+        backend="local",
+        attempt_label=plan.attempt_label,
+        started_at=result.started_at,
+        finished_at=result.finished_at,
+        exit_code=result.exit_code,
+        log_path=result.log_path,
+    )
+    _append_results_tsv(plan.results_path, (result,))
+    _release_unit_claim(unit)
+    return result
+
+
+def _record_failed_local_unit(
+    plan: RunPlan,
+    unit: RunUnitPlan,
+    *,
+    started_at: str,
+    exit_code: int | None,
+    error: str,
+) -> None:
+    """Write failure artifacts for one local unit before raising."""
+
+    result = _build_run_unit_result(
+        unit,
+        status="failed",
+        started_at=started_at,
+        finished_at=_utc_now(),
+        exit_code=exit_code,
+    )
+    _write_unit_status(
+        unit,
+        status="failed",
+        backend="local",
+        attempt_label=plan.attempt_label,
+        started_at=result.started_at,
+        finished_at=result.finished_at,
+        exit_code=result.exit_code,
+        log_path=result.log_path,
+        error=error,
+    )
+    _append_results_tsv(plan.results_path, (result,))
+    _release_unit_claim(unit)
+
+
 def _submit_sge_heudiconv_run(
     context: ProjectContext,
     plan: RunPlan,
@@ -546,34 +624,11 @@ def _submit_sge_heudiconv_run(
     )
     unit_counts = _build_run_unit_counts(plan.units, claim_selection)
     if not claim_selection.runnable_units:
-        return RunResult(
-            raw_bids_root=plan.raw_bids_root,
-            state_path=plan.state_path,
-            results_path=plan.results_path,
-            log_dir=plan.log_dir,
-            unit_results=(),
-            backend="sge",
-            status="skipped",
-            skipped_units=unit_counts["skipped"],
-            skipped_succeeded=unit_counts["skipped_succeeded"],
-            skipped_failed=unit_counts["skipped_failed"],
-            skipped_active_claim=unit_counts["skipped_active_claim"],
-            scheduler_script_path=sge.script_path,
-            scheduler_log_dir=sge.scheduler_log_dir,
-        )
+        return _build_skipped_run_result(plan, unit_counts, backend="sge")
 
-    unit_results: list[RunUnitResult] = []
-    current_unit: RunUnitPlan | None = None
+    unit_results: tuple[RunUnitResult, ...] = ()
     try:
-        execution_view_cleared = _cleanup_run_execution_view(
-            context.project_root,
-            plan.execution_view_root,
-        )
-        if not execution_view_cleared:
-            raise HeudiconvRunError(
-                f"Failed to clear prior run execution view: {plan.execution_view_root}"
-            )
-
+        _clear_prior_run_execution_view(context, plan)
         _prepare_run_directories(plan)
         _ensure_results_tsv_header(plan.results_path)
 
@@ -589,39 +644,12 @@ def _submit_sge_heudiconv_run(
             planned_units=unit_counts,
         )
 
-        for task_id, unit in enumerate(claim_selection.runnable_units, start=1):
-            current_unit = unit
-            _materialize_run_execution_view(
-                unit.execution_path,
-                unit.source_path,
-            )
-            _write_unit_status(
-                unit,
-                status="submitted",
-                backend="sge",
-                attempt_label=plan.attempt_label,
-                started_at=started_at,
-                log_dir=sge.scheduler_log_dir,
-                scheduler_task_id=str(task_id),
-            )
-            unit_results.append(
-                RunUnitResult(
-                    index=unit.index,
-                    unit_name=unit.unit_name,
-                    source_name=unit.source_name,
-                    source_path=unit.source_path,
-                    subject_label=unit.subject_label,
-                    session_label=unit.session_label,
-                    execution_path=unit.execution_path,
-                    command=unit.command,
-                    log_path=unit.log_path,
-                    status="submitted",
-                    started_at=started_at,
-                    finished_at=None,
-                    exit_code=None,
-                )
-            )
-            current_unit = None
+        unit_results = _prepare_sge_units_for_submission(
+            plan,
+            sge,
+            claim_selection.runnable_units,
+            started_at=started_at,
+        )
 
         _write_sge_run_files(
             context,
@@ -639,29 +667,18 @@ def _submit_sge_heudiconv_run(
             )
         scheduler_job_id = _parse_sge_job_id(completed.stdout)
     except HeudiconvRunError as exc:
-        for unit in claim_selection.runnable_units:
-            _write_unit_status(
-                unit,
-                status="submit_failed",
-                backend="sge",
-                attempt_label=plan.attempt_label,
-                started_at=started_at,
-                finished_at=_utc_now(),
-                log_dir=sge.scheduler_log_dir,
-                error=str(exc),
-            )
-            _release_unit_claim(unit)
-        _release_unfinished_claims(
+        _record_sge_submit_failure(
+            plan,
+            sge,
             claim_selection.runnable_units,
-            tuple(unit_results),
-            current_unit,
+            started_at=started_at,
+            error=str(exc),
         )
-        execution_view_cleaned = None
-        if cleanup_execution_view:
-            execution_view_cleaned = _cleanup_run_execution_view(
-                context.project_root,
-                plan.execution_view_root,
-            )
+        execution_view_cleaned = _cleanup_execution_view_if_requested(
+            context,
+            plan,
+            cleanup_execution_view=cleanup_execution_view,
+        )
         scheduler_metadata = _build_sge_run_metadata(plan, units=claim_selection.runnable_units)
         _write_run_state(
             context=context,
@@ -700,7 +717,7 @@ def _submit_sge_heudiconv_run(
         state_path=plan.state_path,
         results_path=plan.results_path,
         log_dir=plan.log_dir,
-        unit_results=tuple(unit_results),
+        unit_results=unit_results,
         backend="sge",
         status="submitted",
         skipped_units=unit_counts["skipped"],
@@ -711,6 +728,63 @@ def _submit_sge_heudiconv_run(
         scheduler_script_path=sge.script_path,
         scheduler_log_dir=sge.scheduler_log_dir,
     )
+
+
+def _prepare_sge_units_for_submission(
+    plan: RunPlan,
+    sge: SgeRunPlan,
+    units: tuple[RunUnitPlan, ...],
+    *,
+    started_at: str,
+) -> tuple[RunUnitResult, ...]:
+    """Create execution links and mark each SGE array task as submitted."""
+
+    unit_results: list[RunUnitResult] = []
+    for task_id, unit in enumerate(units, start=1):
+        _materialize_run_execution_view(unit.execution_path, unit.source_path)
+        _write_unit_status(
+            unit,
+            status="submitted",
+            backend="sge",
+            attempt_label=plan.attempt_label,
+            started_at=started_at,
+            log_dir=sge.scheduler_log_dir,
+            scheduler_task_id=str(task_id),
+        )
+        unit_results.append(
+            _build_run_unit_result(
+                unit,
+                status="submitted",
+                started_at=started_at,
+                finished_at=None,
+                exit_code=None,
+            )
+        )
+    return tuple(unit_results)
+
+
+def _record_sge_submit_failure(
+    plan: RunPlan,
+    sge: SgeRunPlan,
+    units: tuple[RunUnitPlan, ...],
+    *,
+    started_at: str,
+    error: str,
+) -> None:
+    """Mark claimed SGE units as submit_failed and release their claims."""
+
+    for unit in units:
+        _write_unit_status(
+            unit,
+            status="submit_failed",
+            backend="sge",
+            attempt_label=plan.attempt_label,
+            started_at=started_at,
+            finished_at=_utc_now(),
+            log_dir=sge.scheduler_log_dir,
+            error=error,
+        )
+        _release_unit_claim(unit)
 
 
 def _write_sge_run_files(
@@ -1172,18 +1246,13 @@ def _release_unit_claim(unit: RunUnitPlan) -> None:
 def _release_unfinished_claims(
     units: tuple[RunUnitPlan, ...],
     unit_results: tuple[RunUnitResult, ...] | list[RunUnitResult],
-    current_unit: RunUnitPlan | None,
 ) -> None:
     """Release claims for units that did not finish cleanly."""
 
     finished_units = {result.unit_name for result in unit_results}
     for unit in units:
-        if unit.unit_name in finished_units:
-            continue
-        if current_unit is not None and unit.unit_name == current_unit.unit_name:
+        if unit.unit_name not in finished_units:
             _release_unit_claim(unit)
-            continue
-        _release_unit_claim(unit)
 
 
 def _write_unit_status(

@@ -52,6 +52,15 @@ DEFAULT_LAYOUT_DIRECTORIES = (
     Path("state"),
 )
 INIT_SCHEDULERS = ("auto", "none", "sge")
+SOURCE_SUMMARY_KEYS = (
+    "total",
+    "ready",
+    "needs_review",
+    "collision",
+    "missing_source",
+    "excluded",
+)
+RUN_UNIT_STATUS_KEYS = ("total", "not_run", "succeeded", "failed", "active", "other")
 UNSUPPORTED_WINDOWS_MESSAGE = (
     "BIDSFlow currently supports Unix-like environments only. "
     "On Windows, run BIDSFlow inside WSL."
@@ -75,7 +84,10 @@ def _toml_string(value: str) -> str:
         "\f": "\\f",
     }
     escaped = "".join(
-        escape_map.get(character, f"\\u{ord(character):04X}" if ord(character) < 0x20 else character)
+        escape_map.get(
+            character,
+            f"\\u{ord(character):04X}" if ord(character) < 0x20 else character,
+        )
         for character in value
     )
     return f'"{escaped}"'
@@ -345,8 +357,7 @@ def _run_heudiconv_init(
     typer.echo("")
     typer.echo("Summary:")
     summary = summarize_sources_entries(result.entries)
-    for key in ("total", "ready", "needs_review", "collision", "missing_source", "excluded"):
-        typer.echo(f"  - {key}: {summary[key]}")
+    _echo_sources_summary(summary)
     issues = list_sources_review_issues(result.entries)
     if issues:
         typer.echo("")
@@ -459,8 +470,7 @@ def _run_heudiconv_status() -> None:
     if not status.sources_exists:
         typer.echo("  State: not initialized")
     else:
-        for key in ("total", "ready", "needs_review", "collision", "missing_source", "excluded"):
-            typer.echo(f"  - {key}: {status.sources_summary[key]}")
+        _echo_sources_summary(status.sources_summary)
     if not status.heuristic_exists:
         typer.echo("  Heuristic: missing")
 
@@ -468,7 +478,7 @@ def _run_heudiconv_status() -> None:
     typer.echo("Run:")
     typer.echo(f"  Latest run state: {status.run_record_state or 'none'}")
     typer.echo(f"  Results rows: {status.results_count}")
-    for key in ("total", "not_run", "succeeded", "failed", "active", "other"):
+    for key in RUN_UNIT_STATUS_KEYS:
         typer.echo(f"  - {key}: {status.unit_counts[key]}")
 
     if status.sources_issues:
@@ -553,14 +563,7 @@ def _echo_heudiconv_dry_run(
     typer.echo(f"Runnable units now: {unit_counts['selected']}")
     if include_failed:
         typer.echo("Failed units: included")
-    if unit_counts["skipped"]:
-        typer.echo(f"Skipped units: {unit_counts['skipped']}")
-    if unit_counts["skipped_succeeded"]:
-        typer.echo(f"- already succeeded: {unit_counts['skipped_succeeded']}")
-    if unit_counts["skipped_failed"]:
-        typer.echo(f"- failed; use --include-failed to retry: {unit_counts['skipped_failed']}")
-    if unit_counts["skipped_active_claim"]:
-        typer.echo(f"- active claim: {unit_counts['skipped_active_claim']}")
+    _echo_skipped_units(unit_counts)
     if not runnable_units:
         return
 
@@ -588,21 +591,16 @@ def _echo_heudiconv_run_result(
         typer.echo("Submitted `bidsflow heudiconv` execution.")
     elif result.status == "skipped":
         typer.echo("No runnable `bidsflow heudiconv` units were found.")
-        typer.echo(f"Skipped units: {result.skipped_units}")
-        if result.skipped_succeeded:
-            typer.echo(f"- already succeeded: {result.skipped_succeeded}")
-        if result.skipped_failed:
-            typer.echo(f"- failed; use --include-failed to retry: {result.skipped_failed}")
-        if result.skipped_active_claim:
-            typer.echo(f"- active claim: {result.skipped_active_claim}")
+        _echo_skipped_units(_run_result_skip_counts(result))
         return
     else:
         typer.echo("Completed `bidsflow heudiconv` execution.")
     typer.echo(f"Run units: {len(result.unit_results)}")
-    if result.skipped_units:
-        typer.echo(f"Skipped units: {result.skipped_units}")
-    if result.skipped_failed:
-        typer.echo(f"- failed; use --include-failed to retry: {result.skipped_failed}")
+    _echo_skipped_units(
+        _run_result_skip_counts(result),
+        show_succeeded=False,
+        show_active_claim=False,
+    )
     typer.echo(f"Raw BIDS root: {result.raw_bids_root}")
     typer.echo(f"State: {result.state_path}")
     typer.echo(f"Results table: {result.results_path}")
@@ -618,6 +616,44 @@ def _echo_heudiconv_run_result(
         if plan.sge is not None:
             typer.echo(f"Scheduler unit list: {plan.sge.unit_list_path}")
         typer.echo(f"Scheduler logs: {result.scheduler_log_dir}")
+
+
+def _echo_sources_summary(summary: dict[str, int]) -> None:
+    """Print source review counts in a stable CLI order."""
+
+    for key in SOURCE_SUMMARY_KEYS:
+        typer.echo(f"  - {key}: {summary[key]}")
+
+
+def _run_result_skip_counts(result: RunResult) -> dict[str, int]:
+    """Adapt a RunResult to the skip-count shape used by dry-run previews."""
+
+    return {
+        "skipped": result.skipped_units,
+        "skipped_succeeded": result.skipped_succeeded,
+        "skipped_failed": result.skipped_failed,
+        "skipped_active_claim": result.skipped_active_claim,
+    }
+
+
+def _echo_skipped_units(
+    unit_counts: dict[str, int],
+    *,
+    show_succeeded: bool = True,
+    show_active_claim: bool = True,
+) -> None:
+    """Print skipped-unit totals with the shared retry guidance."""
+
+    if unit_counts["skipped"]:
+        typer.echo(f"Skipped units: {unit_counts['skipped']}")
+    if show_succeeded and unit_counts["skipped_succeeded"]:
+        typer.echo(f"- already succeeded: {unit_counts['skipped_succeeded']}")
+    if unit_counts["skipped_failed"]:
+        typer.echo(
+            f"- failed; use --include-failed to retry: {unit_counts['skipped_failed']}"
+        )
+    if show_active_claim and unit_counts["skipped_active_claim"]:
+        typer.echo(f"- active claim: {unit_counts['skipped_active_claim']}")
 
 
 if __name__ == "__main__":  # pragma: no cover

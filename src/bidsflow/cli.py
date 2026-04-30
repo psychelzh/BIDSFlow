@@ -13,6 +13,7 @@ from .heudiconv import (
     HeudiconvDraftError,
     HeudiconvInitError,
     HeudiconvRunError,
+    InitResult,
     RunPlan,
     RunResult,
     SourcesError,
@@ -52,6 +53,7 @@ DEFAULT_LAYOUT_DIRECTORIES = (
     Path("state"),
 )
 INIT_SCHEDULERS = ("auto", "none", "sge")
+PRESERVED_SOURCES_ACTIONS = {"kept", "metadata refreshed"}
 SOURCE_SUMMARY_KEYS = (
     "total",
     "ready",
@@ -333,7 +335,10 @@ def _run_heudiconv_init(
 
     typer.echo("")
     typer.echo("Sources:")
-    typer.echo(f"  Sources discovered: {len(result.entries)}")
+    if result.sources_action in PRESERVED_SOURCES_ACTIONS:
+        typer.echo(f"  Sources table rows: {len(result.entries)}")
+    else:
+        typer.echo(f"  Sources discovered: {len(result.entries)}")
     typer.echo(f"  Sources table: {result.sources_path} ({result.sources_action})")
     typer.echo(f"  Sources metadata: {result.sources_state_path} ({result.sources_action})")
 
@@ -353,6 +358,8 @@ def _run_heudiconv_init(
         typer.echo(
             f"  Scheduler script: {result.scheduler_script_path} ({result.scheduler_script_action})"
         )
+
+    _echo_heudiconv_init_notices(result, discovered_sources=len(plan.sources_plan.entries))
 
     typer.echo("")
     typer.echo("Summary:")
@@ -623,6 +630,41 @@ def _echo_sources_summary(summary: dict[str, int]) -> None:
 
     for key in SOURCE_SUMMARY_KEYS:
         typer.echo(f"  - {key}: {summary[key]}")
+
+
+def _echo_heudiconv_init_notices(
+    result: InitResult,
+    *,
+    discovered_sources: int,
+) -> None:
+    """Explain preserved init artifacts so reruns are not silent."""
+
+    notices: list[str] = []
+    if result.sources_action in PRESERVED_SOURCES_ACTIONS:
+        notices.append("Existing sources table found; keeping reviewed file.")
+        if discovered_sources != len(result.entries):
+            notices.append(
+                f"Current source-root scan found {discovered_sources} source directory row(s); "
+                f"the kept sources table has {len(result.entries)} row(s)."
+            )
+        notices.append(
+            "Current source-root discovery is not applied to sources.tsv unless you regenerate."
+        )
+        notices.append(
+            "To rebuild sources.tsv from the source root, run: "
+            "bidsflow heudiconv init --force"
+        )
+    if result.scheduler_script_action == "kept":
+        notices.append(
+            "Existing scheduler script kept; use --force to regenerate the bundled template."
+        )
+
+    if not notices:
+        return
+    typer.echo("")
+    typer.echo("Notice:")
+    for notice in notices:
+        typer.echo(f"  - {notice}")
 
 
 def _run_result_skip_counts(result: RunResult) -> dict[str, int]:

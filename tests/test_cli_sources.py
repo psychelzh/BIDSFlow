@@ -139,6 +139,7 @@ def test_heudiconv_init_writes_sge_scheduler_script(tmp_path: Path, invoke_from,
     kept = invoke_from(project_dir, ["heudiconv", "init"])
     assert kept.exit_code == 0, kept.output
     assert f"Scheduler script: {scheduler_script} (kept)" in kept.output
+    assert "Existing scheduler script kept; use --force to regenerate the bundled template." in kept.output
     assert scheduler_script.read_text(encoding="utf-8") == "custom script\n"
 
     overwritten = invoke_from(project_dir, ["heudiconv", "init", "-f"])
@@ -271,6 +272,11 @@ def test_heudiconv_init_keeps_existing_sources_without_force(tmp_path: Path, inv
     kept = invoke_from(project_dir, ["heudiconv", "init"])
     assert kept.exit_code == 0, kept.output
     assert "(kept)" in kept.output
+    assert "Sources table rows: 1" in kept.output
+    assert "Existing sources table found; keeping reviewed file." in kept.output
+    assert "Current source-root scan found 2 source directory row(s)" in kept.output
+    assert "Current source-root discovery is not applied to sources.tsv unless you regenerate." in kept.output
+    assert "bidsflow heudiconv init --force" in kept.output
     rows = read_tsv_rows(project_dir / "state" / "sources.tsv")
     assert [row["source_name"] for row in rows] == ["SUB001_SES01"]
 
@@ -299,6 +305,9 @@ def test_heudiconv_init_refreshes_missing_sources_metadata_without_overwriting_t
 
     assert refreshed.exit_code == 0, refreshed.output
     assert "(metadata refreshed)" in refreshed.output
+    assert "Sources table rows: 1" in refreshed.output
+    assert "Existing sources table found; keeping reviewed file." in refreshed.output
+    assert "Current source-root scan found 2 source directory row(s)" in refreshed.output
     assert (project_dir / "state" / "sources.json").is_file()
     rows = read_tsv_rows(project_dir / "state" / "sources.tsv")
     assert [row["source_name"] for row in rows] == ["SUB001_SES01"]

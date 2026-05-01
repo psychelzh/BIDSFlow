@@ -161,6 +161,30 @@
       fi
       rm -f -- "$claim_path"
   }
+  bidsflow_handle_runtime_signal() {
+      local signal_name="$1"
+      local exit_code="$2"
+      local signal_finished
+      local signal_error
+      set +e
+      signal_finished="$(date -Is)"
+      signal_error="Received ${signal_name}; marking unit failed."
+      printf '[bidsflow] %s\n' "$signal_error" >&2
+      if [[ -n "${unit_status_path-}" && -n "${unit_name-}" && -n "${source_name-}" && -n "${subject_label-}" && -n "${session_label+x}" ]]; then
+          bidsflow_write_unit_status "failed" "$exit_code" "${started_at-}" "$signal_finished" "$signal_error"
+      fi
+      if [[ "${cleanup_execution_view:-false}" == "true" && -n "${execution_path-}" ]]; then
+          rm -f -- "$execution_path"
+          rmdir "$(dirname "$execution_path")" 2>/dev/null || true
+      fi
+      if [[ -n "${claim_path-}" ]]; then
+          rm -f -- "$claim_path"
+      fi
+      bidsflow_cleanup_results_table_lock
+      exit "$exit_code"
+  }
+  trap 'bidsflow_handle_runtime_signal INT 130' INT
+  trap 'bidsflow_handle_runtime_signal TERM 143' TERM
   
   '''
 # ---

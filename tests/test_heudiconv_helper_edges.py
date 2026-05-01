@@ -77,7 +77,7 @@ def test_low_level_run_helpers_cover_status_paths(tmp_path: Path, monkeypatch) -
     assert heudiconv_state.read_key_value_status(unit.status_path) == {"status": "succeeded"}
 
 
-def test_low_level_path_and_scheduler_helpers(tmp_path: Path) -> None:
+def test_low_level_path_and_scheduler_helpers(tmp_path: Path, monkeypatch) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir()
     outside_path = tmp_path / "outside"
@@ -86,6 +86,15 @@ def test_low_level_path_and_scheduler_helpers(tmp_path: Path) -> None:
     assert not heudiconv_run._cleanup_run_execution_view(project_root, outside_path)
     with pytest.raises(ValueError, match="outside the project root"):
         bidsflow_common._remove_project_path(project_root, outside_path)
+    inside_path = project_root / "work"
+    inside_path.mkdir()
+
+    def _raise_oserror(project_root_arg: Path, path_arg: Path) -> None:
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(heudiconv_run, "_remove_project_path", _raise_oserror)
+    with pytest.raises(h.HeudiconvRunError, match="Failed to remove temporary execution view"):
+        heudiconv_run._cleanup_run_execution_view(project_root, inside_path)
     with pytest.raises(h.HeudiconvRunError, match="must name an immediate child directory"):
         heudiconv_sources._resolve_sources_source_path(project_root, "../SUB001")
 

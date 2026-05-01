@@ -529,6 +529,68 @@ def test_sge_array_task_records_command_failure(
     assert rows[0]["notes"] == "Command failed with exit status 42"
 
 
+def test_sge_array_task_releases_claim_on_term_signal(
+    tmp_path: Path,
+    invoke_from,
+    runner,
+) -> None:
+    project_dir = init_project(tmp_path, runner, name="sge-signal-failure", scheduler="sge")
+    config_path = project_dir / "bidsflow.toml"
+    set_sources_pattern(config_path, "SUB{subject}_SES{session}")
+
+    fake_qsub = project_dir / "fake_qsub.py"
+    write_python_script(fake_qsub, ("print('12345')",))
+    set_submit_command(
+        config_path,
+        f'submit_command = ["{sys.executable}", "{fake_qsub.as_posix()}"]',
+    )
+
+    make_source_dirs(project_dir, "SUB001_SES01")
+    init_heudiconv = invoke_from(project_dir, ["heudiconv", "init"])
+    assert init_heudiconv.exit_code == 0, init_heudiconv.output
+    write_minimal_heuristic(project_dir)
+
+    terminating_launcher = project_dir / "terminate_parent.py"
+    write_python_script(
+        terminating_launcher,
+        (
+            "import os",
+            "import signal",
+            "os.kill(os.getppid(), signal.SIGTERM)",
+        ),
+    )
+    set_launcher(
+        config_path,
+        f'launcher = ["{sys.executable}", "{terminating_launcher.as_posix()}"]',
+    )
+
+    submitted = invoke_from(project_dir, ["heudiconv"])
+    assert submitted.exit_code == 0, submitted.output
+
+    state = json.loads((project_dir / "state" / "heudiconv" / "run.json").read_text(encoding="utf-8"))
+    scheduler_script = Path(state["artifacts"]["scheduler_script"])
+    unit_status_dir = Path(state["artifacts"]["unit_status_dir"])
+    claim_dir = Path(state["artifacts"]["claim_dir"])
+
+    completed_task = subprocess.run(
+        ["bash", str(scheduler_script)],
+        cwd=project_dir,
+        env={**os.environ, "JOB_ID": "12345", "SGE_TASK_ID": "1"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed_task.returncode == 143
+    assert "Received TERM; marking unit failed." in completed_task.stdout + completed_task.stderr
+    assert list(claim_dir.glob("*.running")) == []
+
+    status_payload = read_key_value_file(next(unit_status_dir.glob("*.status")))
+    assert status_payload["status"] == "failed"
+    assert status_payload["exit_code"] == "143"
+    assert status_payload["error"] == "Received TERM; marking unit failed."
+
+
 def test_heudiconv_run_rejects_sources_that_still_needs_review(tmp_path: Path, invoke_from, runner) -> None:
     project_dir = init_project(tmp_path, runner)
     make_source_dirs(project_dir, "SUB001_SES01")

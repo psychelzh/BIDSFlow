@@ -1486,4 +1486,8 @@ def _cleanup_run_execution_view(project_root: Path, execution_view_root: Path) -
         _remove_project_path(project_root, execution_view_root)
     except ValueError:
         return False
+    except OSError as exc:
+        raise HeudiconvRunError(
+            f"Failed to remove temporary execution view: {execution_view_root}"
+        ) from exc
     return not execution_view_root.exists()

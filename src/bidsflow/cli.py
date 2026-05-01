@@ -662,7 +662,7 @@ def _echo_heudiconv_init_notices(
     if not notices:
         return
     typer.echo("")
-    typer.echo("Notice:")
+    typer.secho("Notice:", fg=typer.colors.YELLOW, bold=True)
     for notice in notices:
         typer.echo(f"  - {notice}")
 

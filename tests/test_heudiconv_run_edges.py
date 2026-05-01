@@ -22,6 +22,7 @@ from helpers import (
     set_submit_command,
     write_minimal_heuristic,
     write_python_script,
+    write_successful_run_launcher,
 )
 
 
@@ -246,6 +247,62 @@ def test_sge_submit_command_not_found(tmp_path: Path, invoke_from, runner) -> No
 
     assert result.exit_code == 2
     assert "Failed to start SGE submit command" in result.output
+
+
+@pytest.mark.parametrize("scheduler", ["none", "sge"])
+def test_run_releases_claim_when_claim_acquisition_fails(
+    tmp_path: Path,
+    invoke_from,
+    runner,
+    monkeypatch,
+    scheduler: str,
+) -> None:
+    project_dir = ready_heudiconv_project(tmp_path, runner, invoke_from, scheduler=scheduler)
+    context = load_context(project_dir)
+    plan = h.plan_heudiconv_run(context)
+    original_write_claim = heudiconv_run_module._write_unit_claim
+
+    def _write_then_fail(*, unit: h.RunUnitPlan) -> None:
+        original_write_claim(unit=unit)
+        raise OSError("claim write failed")
+
+    monkeypatch.setattr(heudiconv_run_module, "_write_unit_claim", _write_then_fail)
+
+    with pytest.raises(h.HeudiconvRunError, match="Failed during HeuDiConv"):
+        h.run_heudiconv(context, plan)
+
+    assert list((project_dir / "state" / "heudiconv" / "claims").glob("*.running")) == []
+
+
+def test_run_state_uses_frozen_plan_input_signature(tmp_path: Path, invoke_from, runner) -> None:
+    project_dir = ready_heudiconv_project(tmp_path, runner, invoke_from)
+    fake_launcher = write_successful_run_launcher(project_dir)
+    set_launcher(
+        project_dir / "bidsflow.toml",
+        f'launcher = ["{sys.executable}", "{fake_launcher.as_posix()}"]',
+    )
+    context = load_context(project_dir)
+    plan = h.plan_heudiconv_run(context)
+    frozen_signature = plan.input_signature
+
+    heuristic_path = project_dir / "code" / "heudiconv" / "heuristic.py"
+    heuristic_path.write_text(
+        "def infotodict(seqinfo):\n    return {'changed': []}\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    h.run_heudiconv(context, plan)
+
+    state = json.loads((project_dir / "state" / "heudiconv" / "run.json").read_text(encoding="utf-8"))
+    assert state["input_signature"] == frozen_signature
+    assert state["input_signature"] != heudiconv_run_module._build_run_input_signature(
+        launcher=plan.launcher,
+        heuristic_path=plan.heuristic_path,
+        raw_bids_root=plan.raw_bids_root,
+        source_root=context.paths.source_root,
+        ready_entries=tuple(entry for entry in plan.entries if entry.include and entry.status == "ready"),
+    )
 
 
 def test_sge_rejects_missing_and_unsupported_scheduler_script_template(

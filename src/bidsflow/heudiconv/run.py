@@ -93,6 +93,7 @@ class RunPlan:
     claim_dir: Path
     log_dir: Path
     entries: tuple[SourcesEntry, ...]
+    input_signature: str
     units: tuple[RunUnitPlan, ...]
     sge: SgeRunPlan | None
 
@@ -283,6 +284,14 @@ def plan_heudiconv_run(context: ProjectContext) -> RunPlan:
             )
         )
 
+    input_signature = _build_run_input_signature(
+        launcher=context.heudiconv.launcher,
+        heuristic_path=heuristic_path,
+        raw_bids_root=context.paths.raw_bids_root,
+        source_root=context.paths.source_root,
+        ready_entries=ready_entries,
+    )
+
     return RunPlan(
         attempt_label=attempt_label,
         sources_path=sources_path,
@@ -297,6 +306,7 @@ def plan_heudiconv_run(context: ProjectContext) -> RunPlan:
         claim_dir=claim_dir,
         log_dir=log_dir,
         entries=entries,
+        input_signature=input_signature,
         units=tuple(units),
         sge=_build_sge_run_plan(
             context,
@@ -411,16 +421,18 @@ def run_heudiconv(
         )
 
     started_at = _utc_now()
-    claim_selection = _claim_runnable_units(
-        units=plan.units,
-        include_failed=include_failed,
-    )
-    unit_counts = _build_run_unit_counts(plan.units, claim_selection)
-    if not claim_selection.runnable_units:
-        return _build_skipped_run_result(plan, unit_counts, backend="local")
-
+    claim_selection: RunUnitSelection | None = None
+    unit_counts: dict[str, int] | None = None
     unit_results: list[RunUnitResult] = []
     try:
+        claim_selection = _claim_runnable_units(
+            units=plan.units,
+            include_failed=include_failed,
+        )
+        unit_counts = _build_run_unit_counts(plan.units, claim_selection)
+        if not claim_selection.runnable_units:
+            return _build_skipped_run_result(plan, unit_counts, backend="local")
+
         _clear_prior_run_execution_view(context, plan)
         _prepare_run_directories(plan)
         _ensure_results_tsv_header(plan.results_path)
@@ -440,8 +452,10 @@ def run_heudiconv(
             claim_selection.runnable_units,
             unit_results,
         )
-    except HeudiconvRunError as exc:
-        _release_unfinished_claims(claim_selection.runnable_units, unit_results)
+    except (HeudiconvRunError, OSError) as exc:
+        run_error = _coerce_run_error(exc, context_message="Failed during HeuDiConv run")
+        if claim_selection is not None:
+            _release_unfinished_claims(claim_selection.runnable_units, unit_results)
         execution_view_cleaned = _cleanup_execution_view_if_requested(
             context,
             plan,
@@ -456,9 +470,11 @@ def run_heudiconv(
             cleanup_execution_view=cleanup_execution_view,
             execution_view_cleaned=execution_view_cleaned,
             planned_units=unit_counts,
-            error=str(exc),
+            error=str(run_error),
         )
-        raise
+        if isinstance(exc, HeudiconvRunError):
+            raise
+        raise run_error from exc
 
     execution_view_cleaned = _cleanup_execution_view_if_requested(
         context,
@@ -618,16 +634,18 @@ def _submit_sge_heudiconv_run(
         raise HeudiconvRunError("SGE run plan is missing.")
 
     started_at = _utc_now()
-    claim_selection = _claim_runnable_units(
-        units=plan.units,
-        include_failed=include_failed,
-    )
-    unit_counts = _build_run_unit_counts(plan.units, claim_selection)
-    if not claim_selection.runnable_units:
-        return _build_skipped_run_result(plan, unit_counts, backend="sge")
-
+    claim_selection: RunUnitSelection | None = None
+    unit_counts: dict[str, int] | None = None
     unit_results: tuple[RunUnitResult, ...] = ()
     try:
+        claim_selection = _claim_runnable_units(
+            units=plan.units,
+            include_failed=include_failed,
+        )
+        unit_counts = _build_run_unit_counts(plan.units, claim_selection)
+        if not claim_selection.runnable_units:
+            return _build_skipped_run_result(plan, unit_counts, backend="sge")
+
         _clear_prior_run_execution_view(context, plan)
         _prepare_run_directories(plan)
         _ensure_results_tsv_header(plan.results_path)
@@ -666,20 +684,25 @@ def _submit_sge_heudiconv_run(
                 f"{format_command(sge.submit_command)}.{suffix}"
             )
         scheduler_job_id = _parse_sge_job_id(completed.stdout)
-    except HeudiconvRunError as exc:
-        _record_sge_submit_failure(
-            plan,
-            sge,
-            claim_selection.runnable_units,
-            started_at=started_at,
-            error=str(exc),
-        )
+    except (HeudiconvRunError, OSError) as exc:
+        run_error = _coerce_run_error(exc, context_message="Failed during HeuDiConv SGE run")
+        if claim_selection is not None:
+            _record_sge_submit_failure(
+                plan,
+                sge,
+                claim_selection.runnable_units,
+                started_at=started_at,
+                error=str(run_error),
+            )
         execution_view_cleaned = _cleanup_execution_view_if_requested(
             context,
             plan,
             cleanup_execution_view=cleanup_execution_view,
         )
-        scheduler_metadata = _build_sge_run_metadata(plan, units=claim_selection.runnable_units)
+        scheduler_metadata = _build_sge_run_metadata(
+            plan,
+            units=() if claim_selection is None else claim_selection.runnable_units,
+        )
         _write_run_state(
             context=context,
             plan=plan,
@@ -691,9 +714,11 @@ def _submit_sge_heudiconv_run(
             execution_view_cleaned=execution_view_cleaned,
             scheduler=scheduler_metadata,
             planned_units=unit_counts,
-            error=str(exc),
+            error=str(run_error),
         )
-        raise
+        if isinstance(exc, HeudiconvRunError):
+            raise
+        raise run_error from exc
 
     scheduler_metadata = _build_sge_run_metadata(
         plan,
@@ -1124,25 +1149,32 @@ def _claim_runnable_units(
     skipped_failed = 0
     skipped_active_claim = 0
 
-    for unit in units:
-        unit_status = _unit_status_value(unit.status_path)
-        if unit_status == "succeeded":
-            skipped_succeeded += 1
-            continue
-        if unit.claim_path.exists():
-            skipped_active_claim += 1
-            continue
-        if unit_status == "failed" and not include_failed:
-            skipped_failed += 1
-            continue
-        try:
-            _write_unit_claim(
-                unit=unit,
-            )
-        except FileExistsError:  # pragma: no cover
-            skipped_active_claim += 1
-            continue
-        runnable_units.append(unit)
+    try:
+        for unit in units:
+            unit_status = _unit_status_value(unit.status_path)
+            if unit_status == "succeeded":
+                skipped_succeeded += 1
+                continue
+            if unit.claim_path.exists():
+                skipped_active_claim += 1
+                continue
+            if unit_status == "failed" and not include_failed:
+                skipped_failed += 1
+                continue
+            try:
+                _write_unit_claim(
+                    unit=unit,
+                )
+            except FileExistsError:  # pragma: no cover
+                skipped_active_claim += 1
+                continue
+            except OSError:
+                _release_unfinished_claims((*runnable_units, unit), ())
+                raise
+            runnable_units.append(unit)
+    except OSError:
+        _release_unfinished_claims(tuple(runnable_units), ())
+        raise
 
     return RunUnitSelection(
         runnable_units=tuple(runnable_units),
@@ -1392,15 +1424,7 @@ def _write_run_state(
         "record_state": record_state,
         "created_at": started_at,
         "updated_at": updated_at,
-        "input_signature": _build_run_input_signature(
-            launcher=plan.launcher,
-            heuristic_path=plan.heuristic_path,
-            raw_bids_root=plan.raw_bids_root,
-            source_root=context.paths.source_root,
-            ready_entries=tuple(
-                entry for entry in plan.entries if entry.include and entry.status == "ready"
-            ),
-        ),
+        "input_signature": plan.input_signature,
         "config_path": str(context.config_path),
         "project_root": str(context.project_root),
         "sources_path": str(plan.sources_path),
@@ -1475,6 +1499,18 @@ def _run_heudiconv_command(
         ).rstrip(),
     )
     return completed
+
+
+def _coerce_run_error(
+    exc: HeudiconvRunError | OSError,
+    *,
+    context_message: str,
+) -> HeudiconvRunError:
+    """Normalize raw filesystem errors to the public run exception type."""
+
+    if isinstance(exc, HeudiconvRunError):
+        return exc
+    return HeudiconvRunError(f"{context_message}: {exc}")
 
 
 def _cleanup_run_execution_view(project_root: Path, execution_view_root: Path) -> bool:

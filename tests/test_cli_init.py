@@ -92,48 +92,59 @@ def test_init_accepts_explicit_none_scheduler(tmp_path: Path, runner) -> None:
     assert 'scheduler = "none"' in (project_dir / "bidsflow.toml").read_text(encoding="utf-8")
 
 
-def test_init_scheduler_auto_detects_sge(tmp_path: Path, monkeypatch, runner) -> None:
-    project_dir = tmp_path / "sge-project"
+@pytest.mark.parametrize(
+    ("name", "extra_args", "qsub_path", "expected_output", "unexpected_output"),
+    [
+        (
+            "auto-detected",
+            [],
+            "C:/sge/bin/qsub.exe",
+            ("Scheduler: sge (detected qsub)",),
+            (),
+        ),
+        (
+            "explicit-detected",
+            ["--scheduler", "sge"],
+            "/opt/sge/bin/qsub",
+            ("Scheduler: sge (detected qsub)",),
+            ("Warning:",),
+        ),
+        (
+            "explicit-missing",
+            ["--scheduler", "sge"],
+            None,
+            ("Scheduler: sge", "Warning: qsub was not found on PATH"),
+            (),
+        ),
+    ],
+)
+def test_init_scheduler_sge_modes(
+    tmp_path: Path,
+    monkeypatch,
+    runner,
+    name: str,
+    extra_args: list[str],
+    qsub_path: str | None,
+    expected_output: tuple[str, ...],
+    unexpected_output: tuple[str, ...],
+) -> None:
+    project_dir = tmp_path / name
     monkeypatch.setattr(
         cli.shutil,
         "which",
-        lambda executable: "C:/sge/bin/qsub.exe" if executable == "qsub" else None,
+        lambda executable: qsub_path if executable == "qsub" else None,
     )
 
-    result = runner.invoke(app, ["init", str(project_dir)])
+    result = runner.invoke(app, ["init", str(project_dir), *extra_args])
 
     assert result.exit_code == 0, result.output
     config_text = (project_dir / "bidsflow.toml").read_text(encoding="utf-8")
     assert 'scheduler = "sge"' in config_text
     assert 'submit_command = ["qsub", "-terse"]' in config_text
-    assert "Scheduler: sge (detected qsub)" in result.output
-
-
-def test_init_explicit_sge_uses_detected_qsub_message(tmp_path: Path, monkeypatch, runner) -> None:
-    monkeypatch.setattr(
-        cli.shutil,
-        "which",
-        lambda executable: "/opt/sge/bin/qsub" if executable == "qsub" else None,
-    )
-
-    result = runner.invoke(app, ["init", str(tmp_path / "sge-project"), "--scheduler", "sge"])
-
-    assert result.exit_code == 0, result.output
-    assert "Scheduler: sge (detected qsub)" in result.output
-    assert "Warning:" not in result.output
-
-
-def test_init_scheduler_sge_writes_config_even_when_qsub_is_missing(tmp_path: Path, runner) -> None:
-    project_dir = tmp_path / "sge-project"
-
-    result = runner.invoke(app, ["init", str(project_dir), "--scheduler", "sge"])
-
-    assert result.exit_code == 0, result.output
-    config_text = (project_dir / "bidsflow.toml").read_text(encoding="utf-8")
-    assert 'scheduler = "sge"' in config_text
-    assert 'submit_command = ["qsub", "-terse"]' in config_text
-    assert "Scheduler: sge" in result.output
-    assert "Warning: qsub was not found on PATH" in result.output
+    for expected in expected_output:
+        assert expected in result.output
+    for unexpected in unexpected_output:
+        assert unexpected not in result.output
 
 
 def test_init_rejects_unknown_scheduler(tmp_path: Path, runner) -> None:

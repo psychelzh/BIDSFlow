@@ -26,6 +26,29 @@ from helpers import (
 )
 
 
+def _read_run_state(project_dir: Path) -> dict[str, object]:
+    return json.loads((project_dir / "state" / "heudiconv" / "run.json").read_text(encoding="utf-8"))
+
+
+def _claim_files(project_dir: Path) -> list[Path]:
+    return list((project_dir / "state" / "heudiconv" / "claims").glob("*.running"))
+
+
+def _first_unit_status(project_dir: Path) -> dict[str, str]:
+    status_path = next((project_dir / "state" / "heudiconv" / "units").glob("*.status"))
+    return read_key_value_file(status_path)
+
+
+def _current_run_input_signature(context, plan: h.RunPlan) -> str:
+    return heudiconv_run_module._build_run_input_signature(
+        launcher=plan.launcher,
+        heuristic_path=plan.heuristic_path,
+        raw_bids_root=plan.raw_bids_root,
+        source_root=context.paths.source_root,
+        ready_entries=tuple(entry for entry in plan.entries if entry.include and entry.status == "ready"),
+    )
+
+
 def test_run_rejects_missing_sources_missing_heuristic_and_heuristic_directory(
     tmp_path: Path,
     invoke_from,
@@ -169,7 +192,7 @@ def test_local_run_skips_units_with_succeeded_status_or_active_claim(
     assert "Skipped units: 1" in skipped_succeeded.output
     assert sorted(path.name for path in (project_dir / "work" / "heudiconv").glob("*")) == work_entries
     assert sorted(path.name for path in (project_dir / "logs" / "heudiconv" / "local").glob("*")) == log_entries
-    state = json.loads((project_dir / "state" / "heudiconv" / "run.json").read_text(encoding="utf-8"))
+    state = _read_run_state(project_dir)
     assert state["record_state"] == "succeeded"
 
     dry_run_succeeded = invoke_from(project_dir, ["heudiconv", "--dry-run"])
@@ -179,15 +202,14 @@ def test_local_run_skips_units_with_succeeded_status_or_active_claim(
 
     status_path = next((project_dir / "state" / "heudiconv" / "units").glob("*.status"))
     status_path.unlink()
-    claim_path = next((project_dir / "state" / "heudiconv" / "claims").glob("*.running"), None)
-    assert claim_path is None
+    assert _claim_files(project_dir) == []
     (project_dir / "state" / "heudiconv" / "claims" / "sub-001_ses-01.running").touch()
 
     skipped_claimed = invoke_from(project_dir, ["heudiconv"])
     assert skipped_claimed.exit_code == 0, skipped_claimed.output
     assert "Skipped units: 1" in skipped_claimed.output
     assert "- active claim: 1" in skipped_claimed.output
-    state = json.loads((project_dir / "state" / "heudiconv" / "run.json").read_text(encoding="utf-8"))
+    state = _read_run_state(project_dir)
     assert state["record_state"] == "succeeded"
 
     dry_run_claimed = invoke_from(project_dir, ["heudiconv", "--dry-run"])
@@ -203,9 +225,9 @@ def test_local_run_records_launcher_start_failure(tmp_path: Path, invoke_from, r
     result = invoke_from(project_dir, ["heudiconv"])
 
     assert result.exit_code == 2
-    state = json.loads((project_dir / "state" / "heudiconv" / "run.json").read_text(encoding="utf-8"))
+    state = _read_run_state(project_dir)
     rows = read_tsv_rows(project_dir / "state" / "heudiconv" / "results.tsv")
-    status_payload = read_key_value_file(next((project_dir / "state" / "heudiconv" / "units").glob("*.status")))
+    status_payload = _first_unit_status(project_dir)
     assert state["record_state"] == "failed"
     assert rows[0]["status"] == "failed"
     assert rows[0]["exit_code"] == ""
@@ -230,11 +252,11 @@ def test_sge_submit_failure_releases_claims_and_records_state(
 
     assert result.exit_code == 2
     assert "Failed to submit HeuDiConv SGE array job" in result.output
-    state = json.loads((project_dir / "state" / "heudiconv" / "run.json").read_text(encoding="utf-8"))
+    state = _read_run_state(project_dir)
     assert state["backend"] == "sge"
     assert state["record_state"] == "submit_failed"
-    assert list((project_dir / "state" / "heudiconv" / "claims").glob("*.running")) == []
-    status_payload = read_key_value_file(next((project_dir / "state" / "heudiconv" / "units").glob("*.status")))
+    assert _claim_files(project_dir) == []
+    status_payload = _first_unit_status(project_dir)
     assert status_payload["status"] == "submit_failed"
     assert "queue full" in status_payload["error"]
 
@@ -271,7 +293,7 @@ def test_run_releases_claim_when_claim_acquisition_fails(
     with pytest.raises(h.HeudiconvRunError, match="Failed during HeuDiConv"):
         h.run_heudiconv(context, plan)
 
-    assert list((project_dir / "state" / "heudiconv" / "claims").glob("*.running")) == []
+    assert _claim_files(project_dir) == []
 
 
 def test_run_state_uses_frozen_plan_input_signature(tmp_path: Path, invoke_from, runner) -> None:
@@ -294,15 +316,9 @@ def test_run_state_uses_frozen_plan_input_signature(tmp_path: Path, invoke_from,
 
     h.run_heudiconv(context, plan)
 
-    state = json.loads((project_dir / "state" / "heudiconv" / "run.json").read_text(encoding="utf-8"))
+    state = _read_run_state(project_dir)
     assert state["input_signature"] == frozen_signature
-    assert state["input_signature"] != heudiconv_run_module._build_run_input_signature(
-        launcher=plan.launcher,
-        heuristic_path=plan.heuristic_path,
-        raw_bids_root=plan.raw_bids_root,
-        source_root=context.paths.source_root,
-        ready_entries=tuple(entry for entry in plan.entries if entry.include and entry.status == "ready"),
-    )
+    assert state["input_signature"] != _current_run_input_signature(context, plan)
 
 
 def test_sge_rejects_missing_and_unsupported_scheduler_script_template(

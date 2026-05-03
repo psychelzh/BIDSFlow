@@ -244,6 +244,7 @@ def assert_rendered_array_common_script(
     assert 'task_id="${BIDSFLOW_TASK_ID:?BIDSFLOW_TASK_ID is required.}"' in text
     assert f"unit_list_path={unit_list_path}" in text
     assert f"results_table_path={results_path}" in text
+    assert "log_path" in text
     assert "unit_row=" in text
     assert "bidsflow_write_unit_status" in text
     assert "bidsflow_append_final_result" in text

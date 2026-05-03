@@ -16,6 +16,9 @@ from ..project import ProjectContext
 from .errors import HeudiconvRunError
 
 
+SOURCES_COMMAND_TIMEOUT_SECONDS = 300.0
+
+
 @dataclass(frozen=True)
 class SourcesEntry:
     """One row in the editable sources.tsv review table."""
@@ -231,7 +234,13 @@ def _derive_sources_labels_from_command(
             capture_output=True,
             text=True,
             check=False,
+            timeout=SOURCES_COMMAND_TIMEOUT_SECONDS,
         )
+    except subprocess.TimeoutExpired as exc:
+        timeout_seconds = int(SOURCES_COMMAND_TIMEOUT_SECONDS)
+        raise SourcesError(
+            f"sources command timed out after {timeout_seconds} seconds while processing {source_name}."
+        ) from exc
     except OSError as exc:
         raise SourcesError(
             f"Failed to start sources command while processing {source_name}: {exc}"

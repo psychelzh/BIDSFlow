@@ -447,6 +447,7 @@ def test_heudiconv_run_with_sge_generates_array_artifacts_and_submits(
     completed_rows = read_tsv_rows(results_path)
     assert [row["unit_name"] for row in completed_rows] == ["sub-001_ses-01"]
     assert completed_rows[0]["status"] == "succeeded"
+    assert completed_rows[0]["log_path"] == str(scheduler_log_dir)
     assert completed_rows[0]["scheduler"] == "sge"
     assert completed_rows[0]["scheduler_job_id"] == "12345"
     assert completed_rows[0]["scheduler_task_id"] == "1"
@@ -498,6 +499,7 @@ def test_sge_array_task_records_command_failure(
 
     state = json.loads((project_dir / "state" / "heudiconv" / "run.json").read_text(encoding="utf-8"))
     scheduler_script = Path(state["artifacts"]["scheduler_script"])
+    scheduler_log_dir = Path(state["artifacts"]["scheduler_log_dir"])
     unit_status_dir = Path(state["artifacts"]["unit_status_dir"])
     claim_dir = Path(state["artifacts"]["claim_dir"])
 
@@ -523,6 +525,7 @@ def test_sge_array_task_records_command_failure(
     assert len(rows) == 1
     assert rows[0]["status"] == "failed"
     assert rows[0]["exit_code"] == "42"
+    assert rows[0]["log_path"] == str(scheduler_log_dir)
     assert rows[0]["scheduler"] == "sge"
     assert rows[0]["scheduler_job_id"] == "12345"
     assert rows[0]["scheduler_task_id"] == "1"

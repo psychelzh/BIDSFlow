@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -99,6 +100,27 @@ def test_sources_command_reports_missing_executable(tmp_path: Path, invoke_from,
 
     assert result.exit_code == 2
     assert "Failed to start sources command" in result.output
+
+
+def test_sources_command_reports_timeout(
+    tmp_path: Path,
+    invoke_from,
+    runner,
+    monkeypatch,
+) -> None:
+    project_dir = init_project(tmp_path, runner, name="timeout-command-project")
+    append_config(project_dir / "bidsflow.toml", ["[sources]", 'command = ["python", "derive.py"]'])
+    make_source_dirs(project_dir, "SUB001")
+
+    def _raise_timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs.get("timeout"))
+
+    monkeypatch.setattr(heudiconv_sources.subprocess, "run", _raise_timeout)
+
+    result = invoke_from(project_dir, ["heudiconv", "init"])
+
+    assert result.exit_code == 2
+    assert "sources command timed out after 300 seconds while processing SUB001" in result.output
 
 
 def test_sources_command_rejects_unsafe_labels(tmp_path: Path, invoke_from, runner) -> None:

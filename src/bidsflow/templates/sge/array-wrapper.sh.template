@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# BIDSFlow SGE array wrapper.
+#
+# This project-local file is for site-specific scheduler directives and
+# environment setup. BIDSFlow generates the per-run runtime script under
+# work/<target>/... and fills the runtime path when submitting.
+
+#$ -S /bin/bash
+#$ -cwd
+#$ -N {{ job_name }}
+#$ -t 1-{{ task_count }}
+#$ -j y
+#$ -o {{ scheduler_log_dir }}
+
+# Site-specific scheduler settings can be enabled here.
+# Uncomment and edit these for your cluster if needed.
+# #$ -q all.q
+# #$ -pe smp 1
+# #$ -l h_rt=04:00:00
+# #$ -tc 20
+
+set -euo pipefail
+
+# Site-specific environment setup goes here.
+# Output from this section is captured by the scheduler log.
+# Examples:
+# module load your-bids-app
+# source ~/miniconda3/etc/profile.d/conda.sh
+# conda activate your-bids-app-env
+
+export BIDSFLOW_SCHEDULER="sge"
+export BIDSFLOW_SCHEDULER_JOB_ID="${JOB_ID:-unknown}"
+export BIDSFLOW_TASK_ID="${SGE_TASK_ID:?This script must run as an SGE array job.}"
+
+exec bash {{ runtime_script }}

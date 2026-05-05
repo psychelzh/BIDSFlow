@@ -1,8 +1,7 @@
-name: ci
+name: Python Quality
 
 on:
   push:
-    branches: [main, master]
   pull_request:
 
 permissions:
@@ -10,28 +9,83 @@ permissions:
   id-token: write
 
 jobs:
-  test:
+  lint:
+    name: Lint (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
       - name: Install package
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e .[dev]
-      - name: Run checks
+          python -m pip install -e ".[dev]"
+
+      - name: Run lint
+        run: python -m ruff check .
+
+  tests:
+    name: Tests and Coverage (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install package
         run: |
-          python -m pytest --cov=src/bidsflow --cov-report=xml --cov-report=term-missing
-          python -m mypy src
-          python -m ruff check .
-          bidsflow --help
-          bidsflow status
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Run tests with coverage
+        run: >
+          python -m pytest
+          --cov=bidsflow
+          --cov-report=term-missing
+          --cov-report=xml
+          --junitxml=junit.xml
+          -o junit_family=legacy
+
       - name: Upload coverage to Codecov
+        if: ${{ !cancelled() }}
         uses: codecov/codecov-action@v5
         with:
-          files: ./coverage.xml
+          files: coverage.xml
+          flags: py${{ matrix.python-version }}
+          name: coverage-py${{ matrix.python-version }}
+          disable_search: true
           fail_ci_if_error: false
           use_oidc: true
-          verbose: true
+
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v5
+        with:
+          files: junit.xml
+          flags: py${{ matrix.python-version }}
+          name: test-results-py${{ matrix.python-version }}
+          disable_search: true
+          fail_ci_if_error: false
+          report_type: test_results
+          use_oidc: true

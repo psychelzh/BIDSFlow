@@ -1,425 +1,702 @@
+"""Command-line interface for BIDSFlow project and HeuDiConv workflows."""
+
 from __future__ import annotations
 
-import shlex
+import os
 import shutil
+from importlib import resources
 from pathlib import Path
-from typing import Literal
 
 import typer
-from rich.console import Console
-from rich.syntax import Syntax
-from rich.table import Table
 
-from bidsflow.config.load import load_config
-from bidsflow.config.models import Config
-from bidsflow.core.stages import STAGES, StageId
-from bidsflow.scheduler.models import SubmittedJob
-from bidsflow.scheduler.sge import SGECliScheduler
+from .heudiconv import (
+    HeudiconvDraftError,
+    HeudiconvInitError,
+    HeudiconvRunError,
+    InitResult,
+    RunPlan,
+    RunResult,
+    SourcesError,
+    format_command,
+    get_heudiconv_status,
+    list_sources_review_issues,
+    plan_draft,
+    plan_heudiconv_init,
+    plan_heudiconv_run,
+    preview_run_unit_selection,
+    run_draft,
+    run_heudiconv,
+    run_heudiconv_init,
+    summarize_sources_entries,
+)
+from .project import find_project_config, load_project_context
 
-SchedulerChoice = Literal["local", "sge"]
+HELP_CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 
 app = typer.Typer(
-    help="BIDSFlow: a staged Python CLI orchestrator for BIDS Apps.",
+    help="BIDSFlow: a task-first CLI for BIDS workflow logistics.",
     no_args_is_help=True,
+    context_settings=HELP_CONTEXT_SETTINGS,
 )
-config_app = typer.Typer(help="Configuration helpers.")
-app.add_typer(config_app, name="config")
-console = Console()
+heudiconv_app = typer.Typer(
+    help="Manage HeuDiConv preparation and conversion.",
+    invoke_without_command=True,
+    context_settings=HELP_CONTEXT_SETTINGS,
+)
+app.add_typer(heudiconv_app, name="heudiconv")
+DEFAULT_LAYOUT_DIRECTORIES = (
+    Path("sourcedata"),
+    Path("sourcedata") / "raw",
+    Path("derivatives"),
+    Path("work"),
+    Path("logs"),
+    Path("state"),
+)
+INIT_SCHEDULERS = ("auto", "none", "sge")
+PRESERVED_SOURCES_ACTIONS = {"kept", "metadata refreshed"}
+SOURCE_SUMMARY_KEYS = (
+    "total",
+    "ready",
+    "needs_review",
+    "collision",
+    "missing_source",
+    "excluded",
+)
+RUN_UNIT_STATUS_KEYS = ("total", "not_run", "succeeded", "failed", "active", "other")
+UNSUPPORTED_WINDOWS_MESSAGE = (
+    "BIDSFlow currently supports Unix-like environments only. "
+    "On Windows, run BIDSFlow inside WSL."
+)
 
 
-@app.command()
-def init(path: Path = typer.Option(Path("."), help="Project root to initialize.")) -> None:
-    """Initialize a BIDSFlow project directory."""
-    console.print(f"[green]BIDSFlow[/green] project scaffold target: {path}")
-    console.print("Project initialization logic is not implemented yet.")
-
-
-@app.command()
-def doctor(
-    config: Path | None = typer.Option(
-        None,
-        exists=True,
-        dir_okay=False,
-        help="Optional config path to inspect.",
-    ),
-) -> None:
-    """Inspect local execution prerequisites."""
-    table = Table(title="BIDSFlow doctor")
-    table.add_column("Check")
-    table.add_column("Result")
-
-    table.add_row("python", shutil.which("python") or "not found")
-    table.add_row("qsub", shutil.which("qsub") or "not found")
-    table.add_row("qstat", shutil.which("qstat") or "not found")
-
-    if config is not None:
-        loaded = load_config(config)
-        table.add_row("config", str(config.resolve()))
-        table.add_row("backend", loaded.execution.backend)
-        table.add_row("scheduler", loaded.execution.scheduler)
-        if loaded.execution.scheduler == "sge":
-            table.add_row("sge queue", loaded.scheduler.sge.queue or "-")
-            table.add_row("project root", str(loaded.project.root))
-
-    console.print(table)
-
-
-@config_app.command("validate")
-def config_validate(
-    config: Path = typer.Option(
-        ...,
-        exists=True,
-        dir_okay=False,
-        help="Path to TOML config.",
-    ),
-) -> None:
-    """Validate project configuration and execution settings."""
-    loaded = load_config(config)
-    table = Table(title="Validated BIDSFlow config")
-    table.add_column("Field")
-    table.add_column("Value")
-    table.add_row("config", str(config.resolve()))
-    table.add_row("project root", str(loaded.project.root))
-    table.add_row("backend", loaded.execution.backend)
-    table.add_row("scheduler", loaded.execution.scheduler)
-    if loaded.execution.scheduler == "sge":
-        table.add_row("sge queue", loaded.scheduler.sge.queue or "-")
-        table.add_row("sge parallel env", loaded.scheduler.sge.parallel_environment or "-")
-    console.print(table)
-
-
-@app.command()
-def status() -> None:
-    """Display the current stage registry."""
-    table = Table(title="BIDSFlow stages")
-    table.add_column("Stage")
-    table.add_column("Upstream")
-    table.add_column("Products")
-    for stage in STAGES.values():
-        upstream = ", ".join(s.value for s in stage.upstream) or "-"
-        products = ", ".join(stage.products)
-        table.add_row(stage.id.value, upstream, products)
-    console.print(table)
-
-
-def _resolve_scheduler(config: Config, scheduler: SchedulerChoice | None) -> SchedulerChoice:
-    return config.execution.scheduler if scheduler is None else scheduler
-
-
-def _ensure_stage_scope(stage: StageId, participant: str | None) -> None:
-    stage_spec = STAGES[stage]
-    if stage_spec.scope == "dataset" and participant is not None:
-        console.print(f"Stage '{stage.value}' has dataset scope and does not accept --participant.")
+def _ensure_supported_platform() -> None:
+    if os.name == "nt":  # pragma: no cover
+        typer.echo(UNSUPPORTED_WINDOWS_MESSAGE, err=True)
         raise typer.Exit(code=2)
 
 
-def _build_local_stage_command(
-    *,
-    stage: StageId,
-    config_path: Path,
-    participant: str | None,
-) -> tuple[str, ...]:
-    command = (
-        "bidsflow",
-        stage.value,
-        "--config",
-        str(config_path.resolve()),
-        "--scheduler",
-        "local",
+def _toml_string(value: str) -> str:
+    escape_map = {
+        "\\": "\\\\",
+        '"': '\\"',
+        "\n": "\\n",
+        "\r": "\\r",
+        "\t": "\\t",
+        "\b": "\\b",
+        "\f": "\\f",
+    }
+    escaped = "".join(
+        escape_map.get(
+            character,
+            f"\\u{ord(character):04X}" if ord(character) < 0x20 else character,
+        )
+        for character in value
     )
-    if participant is None:
-        return command
-    return (*command, "--participant", participant)
+    return f'"{escaped}"'
 
 
-def _print_local_stage_preview(
-    *,
-    stage: StageId,
-    config_path: Path,
-    participant: str | None,
-    loaded: Config,
-) -> None:
-    command = _build_local_stage_command(
-        stage=stage,
-        config_path=config_path,
-        participant=participant,
+def _render_execution_section(scheduler: str) -> str:
+    if scheduler == "sge":
+        return """[execution]
+scheduler = "sge"
+submit_command = ["qsub", "-terse"]
+"""
+    return """[execution]
+scheduler = "none"
+
+# Uncomment and configure these when you want SGE execution.
+# scheduler = "sge"
+# submit_command = ["qsub", "-terse"]
+"""
+
+
+def _render_project_config(project_name: str, scheduler: str) -> str:
+    template = (
+        resources.files("bidsflow")
+        .joinpath("templates", "bidsflow.toml.template")
+        .read_text(encoding="utf-8")
     )
-    table = Table(title="Local stage run preview")
-    table.add_column("Field")
-    table.add_column("Value")
-    table.add_row("stage", stage.value)
-    table.add_row("participant", participant or "-")
-    table.add_row("scheduler", "local")
-    table.add_row("cwd", str(loaded.project.root))
-    table.add_row("command", shlex.join(command))
-    console.print(table)
-
-
-def _run_local_stage(stage: StageId, config_path: Path, participant: str | None) -> None:
-    stage_spec = STAGES[stage]
-    console.print(
-        f"{stage_spec.label} stage requested with config={config_path.resolve()} "
-        f"participant={participant or '-'}"
+    return (
+        template.replace("__EXECUTION_SECTION__", _render_execution_section(scheduler))
+        .replace("__PROJECT_NAME__", _toml_string(project_name))
     )
 
 
-def _load_sge_scheduler(config: Config) -> SGECliScheduler:
-    return SGECliScheduler(config.scheduler.sge)
+def _select_init_scheduler(requested_scheduler: str) -> tuple[str, str, str | None]:
+    requested_scheduler = requested_scheduler.lower()
+    if requested_scheduler not in INIT_SCHEDULERS:
+        joined = ", ".join(INIT_SCHEDULERS)
+        raise typer.BadParameter(f"Scheduler must be one of: {joined}.")
 
+    if requested_scheduler == "none":
+        return "none", "Scheduler: none", None
 
-def _print_sge_stage_preview(
-    *,
-    stage: StageId,
-    participant: str | None,
-    plan_script: str,
-    plan_command: tuple[str, ...],
-    launch_command: tuple[str, ...],
-    script_path: Path,
-    stdout_path: Path,
-    stderr_path: Path,
-) -> None:
-    table = Table(title="SGE stage run preview")
-    table.add_column("Field")
-    table.add_column("Value")
-    table.add_row("stage", stage.value)
-    table.add_row("participant", participant or "-")
-    table.add_row("scheduler", "sge")
-    table.add_row("script path", str(script_path))
-    table.add_row("stdout", str(stdout_path))
-    table.add_row("stderr", str(stderr_path))
-    table.add_row("command", shlex.join(launch_command))
-    table.add_row("qsub", shlex.join(plan_command))
-    console.print(table)
-    console.print(Syntax(plan_script, "sh", theme="ansi_dark", line_numbers=True))
+    qsub_path = shutil.which("qsub")
+    if requested_scheduler == "auto":
+        if qsub_path is not None:
+            return "sge", "Scheduler: sge (detected qsub)", None
+        return "none", "Scheduler: none (no supported scheduler detected)", None
 
-
-def _run_stage(
-    *,
-    stage: StageId,
-    config: Path,
-    participant: str | None,
-    scheduler: SchedulerChoice | None,
-    dry_run: bool,
-    hold_jid: str | None,
-) -> None:
-    loaded = load_config(config)
-    _ensure_stage_scope(stage, participant)
-    effective_scheduler = _resolve_scheduler(loaded, scheduler)
-
-    if effective_scheduler == "local":
-        if hold_jid is not None:
-            console.print("--hold-jid is only supported when --scheduler sge is active.")
-            raise typer.Exit(code=2)
-        if dry_run:
-            _print_local_stage_preview(
-                stage=stage,
-                config_path=config,
-                participant=participant,
-                loaded=loaded,
+    if requested_scheduler == "sge":
+        if qsub_path is None:
+            return (
+                "sge",
+                "Scheduler: sge",
+                "Warning: qsub was not found on PATH; the scaffold still records SGE for this project.",
             )
-            return
-        _run_local_stage(stage=stage, config_path=config, participant=participant)
-        return
+        return "sge", "Scheduler: sge (detected qsub)", None
 
-    scheduler_runner = _load_sge_scheduler(loaded)
-    plan = scheduler_runner.plan_stage_submission(
-        config_path=config,
-        config=loaded,
-        stage=stage,
-        participant=participant,
-        hold_jid=hold_jid,
+    raise AssertionError(f"Unhandled scheduler: {requested_scheduler}")  # pragma: no cover
+
+
+def _default_project_name(directory: Path) -> str:
+    return directory.resolve().name or "BIDSFlow project"
+
+
+@app.callback(context_settings=HELP_CONTEXT_SETTINGS)
+def main() -> None:
+    """BIDSFlow: task-first CLI for BIDS workflow logistics."""
+    _ensure_supported_platform()
+
+
+@app.command(context_settings=HELP_CONTEXT_SETTINGS)
+def init(
+    directory: Path = typer.Argument(
+        Path("."),
+        file_okay=False,
+        help="Directory where the project scaffold should be created.",
+    ),
+    name: str | None = typer.Option(
+        None,
+        "--name",
+        help="Project name to write into the generated config.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Overwrite the generated config if it already exists.",
+    ),
+    make_dirs: bool = typer.Option(
+        False,
+        "--make-dirs",
+        help="Create the default project directories described by the generated config.",
+    ),
+    scheduler: str = typer.Option(
+        "auto",
+        "--scheduler",
+        help="Scheduler scaffold to write: auto, none, or sge.",
+    ),
+) -> None:
+    """Initialize a minimal BIDSFlow project scaffold."""
+    target_directory = directory.resolve()
+
+    if target_directory.exists() and not target_directory.is_dir():
+        typer.echo(f"Target path is not a directory: {target_directory}", err=True)
+        raise typer.Exit(code=2)
+
+    config_path = target_directory / "bidsflow.toml"
+    if config_path.exists() and not force:
+        typer.echo(
+            f"Refusing to overwrite existing config: {config_path}. Use --force to overwrite it.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    project_name = name or _default_project_name(target_directory)
+    selected_scheduler, scheduler_message, scheduler_warning = _select_init_scheduler(scheduler)
+
+    target_directory.mkdir(parents=True, exist_ok=True)
+
+    config_path.write_text(
+        _render_project_config(project_name, selected_scheduler),
+        encoding="utf-8",
+        newline="\n",
     )
-    _print_sge_stage_preview(
-        stage=stage,
-        participant=participant,
-        plan_script=plan.script_text,
-        plan_command=plan.qsub_command,
-        launch_command=plan.launch.command,
-        script_path=plan.script_path,
-        stdout_path=plan.launch.stdout_path,
-        stderr_path=plan.launch.stderr_path,
+
+    if make_dirs:
+        for relative_path in DEFAULT_LAYOUT_DIRECTORIES:
+            (target_directory / relative_path).mkdir(parents=True, exist_ok=True)
+
+    typer.echo("Initialized BIDSFlow project.")
+    typer.echo("")
+    typer.echo("Project:")
+    typer.echo(f"  Root: {target_directory}")
+    typer.echo(f"  Config: {config_path}")
+    typer.echo(f"  {scheduler_message}")
+    directory_message = "created" if make_dirs else "not created (use --make-dirs to create them)"
+    typer.echo(f"  Layout directories: {directory_message}")
+    if scheduler_warning is not None:
+        typer.echo("")
+        typer.echo(scheduler_warning)
+    typer.echo("")
+    typer.echo("Next:")
+    typer.echo(f"  Review config: {config_path}")
+    typer.echo("  Prepare HeuDiConv: bidsflow heudiconv init")
+
+
+@heudiconv_app.callback(
+    invoke_without_command=True,
+    context_settings=HELP_CONTEXT_SETTINGS,
+)
+def heudiconv(
+    ctx: typer.Context,
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-n",
+        help="Show planned conversion commands and outputs without running HeuDiConv.",
+    ),
+    include_failed: bool = typer.Option(
+        False,
+        "--include-failed",
+        "-r",
+        help="Retry units whose latest status is failed.",
+    ),
+    keep_execution_view: bool = typer.Option(
+        False,
+        "--keep-execution-view",
+        help="Keep temporary HeuDiConv source-link execution views after units finish.",
+    ),
+) -> None:
+    """Run managed HeuDiConv conversion when no subcommand is provided."""
+    if ctx.invoked_subcommand is not None:
+        if dry_run or include_failed or keep_execution_view:
+            typer.echo(
+                "Run options apply only to conversion runs. Use them with "
+                "`bidsflow heudiconv`, not with subcommands.",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        return
+    _run_heudiconv_default(
+        dry_run=dry_run,
+        clean_execution_view=not keep_execution_view,
+        include_failed=include_failed,
     )
+
+
+@heudiconv_app.command("init", context_settings=HELP_CONTEXT_SETTINGS)
+def heudiconv_init(
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Overwrite HeuDiConv init files such as sources.tsv and scheduler script.",
+    ),
+) -> None:
+    """Initialize HeuDiConv support files."""
+    _run_heudiconv_init(force=force)
+
+
+@heudiconv_app.command("draft", context_settings=HELP_CONTEXT_SETTINGS)
+def heudiconv_draft(
+    sample_paths: list[Path] = typer.Argument(
+        ...,
+        exists=False,
+        help="Representative sample paths used to generate a draft heuristic.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Overwrite existing HeuDiConv draft outputs.",
+    ),
+) -> None:
+    """Generate a draft HeuDiConv heuristic from representative sample paths."""
+    _run_heudiconv_draft(sample_paths, force=force)
+
+
+@heudiconv_app.command("status", context_settings=HELP_CONTEXT_SETTINGS)
+def heudiconv_status() -> None:
+    """Show current HeuDiConv project state without changing files."""
+    _run_heudiconv_status()
+
+
+def _run_heudiconv_init(
+    *,
+    force: bool,
+) -> None:
+    try:
+        config_path = find_project_config(Path.cwd())
+        context = load_project_context(config_path)
+        plan = plan_heudiconv_init(context)
+        result = run_heudiconv_init(context, plan, force=force)
+    except (HeudiconvInitError, SourcesError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+    typer.echo("Initialized HeuDiConv support files.")
+    typer.echo("")
+    typer.echo("Project:")
+    typer.echo(f"  Config: {config_path}")
+    typer.echo(f"  HeuDiConv code root: {result.code_root}")
+    typer.echo(f"  Heuristic: {context.heudiconv.heuristic}")
+
+    typer.echo("")
+    typer.echo("Sources:")
+    if result.sources_action in PRESERVED_SOURCES_ACTIONS:
+        typer.echo(f"  Sources table rows: {len(result.entries)}")
+    else:
+        typer.echo(f"  Sources discovered: {len(result.entries)}")
+    typer.echo(f"  Sources table: {result.sources_path} ({result.sources_action})")
+    typer.echo(f"  Sources metadata: {result.sources_state_path} ({result.sources_action})")
+
+    if plan.sources_plan.pattern is not None:
+        typer.echo(f"  Label generation: pattern: {plan.sources_plan.pattern!r}")
+    elif plan.sources_plan.command is not None:
+        typer.echo(f"  Label generation: command: {format_command(plan.sources_plan.command)}")
+    else:
+        typer.echo("  Label generation: manual review; labels will be left blank.")
+
+    typer.echo("")
+    typer.echo("Scheduler:")
+    typer.echo(f"  Scheduler: {result.scheduler}")
+    if result.scheduler_script_path is None:
+        typer.echo("  Scheduler script: not generated")
+    else:
+        typer.echo(
+            f"  Scheduler script: {result.scheduler_script_path} ({result.scheduler_script_action})"
+        )
+
+    _echo_heudiconv_init_notices(result, discovered_sources=len(plan.sources_plan.entries))
+
+    typer.echo("")
+    typer.echo("Summary:")
+    summary = summarize_sources_entries(result.entries)
+    _echo_sources_summary(summary)
+    issues = list_sources_review_issues(result.entries)
+    if issues:
+        typer.echo("")
+        typer.echo("Review needed:")
+        for issue in issues:
+            typer.echo(f"  - {issue}")
+
+    typer.echo("")
+    typer.echo("Next:")
+    typer.echo(f"  Review sources: {result.sources_path}")
+    typer.echo("  Draft heuristic: bidsflow heudiconv draft <sample-path>")
+    typer.echo(f"  Review heuristic: {context.heudiconv.heuristic}")
+    if result.scheduler_script_path is not None:
+        typer.echo(f"  Check scheduler script: {result.scheduler_script_path}")
+        typer.echo("    Look at SGE directives, site environment setup, and launcher/container use.")
+    typer.echo("  Preview conversion: bidsflow heudiconv --dry-run")
+    typer.echo("  Run conversion: bidsflow heudiconv")
+
+
+def _run_heudiconv_draft(
+    sample_paths: list[Path],
+    *,
+    force: bool,
+) -> None:
+    if not sample_paths:  # pragma: no cover
+        typer.echo("`bidsflow heudiconv draft` requires at least one sample path.", err=True)
+        raise typer.Exit(code=2)
+
+    try:
+        config_path = find_project_config(Path.cwd())
+        context = load_project_context(config_path)
+        plan = plan_draft(context, sample_paths)
+    except (HeudiconvDraftError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+    try:
+        result = run_draft(context, plan, reset=force)
+    except HeudiconvDraftError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+    typer.echo("Prepared HeuDiConv draft outputs.")
+    typer.echo(f"Draft samples: {len(result.unit_results)}")
+    typer.echo(f"Draft work root: {plan.draft_work_root}")
+    typer.echo(f"Heuristic: {result.heuristic_path}")
+    typer.echo(f"DICOM inventories: {result.dicominfo_root} ({len(result.dicominfo_paths)} files)")
+    typer.echo(f"State: {result.draft_state_path}")
+    typer.echo(f"Unit logs: {result.log_dir}")
+    typer.echo(
+        "Next: review and edit the heuristic, review sources.tsv, then run `bidsflow heudiconv`."
+    )
+
+
+def _run_heudiconv_default(
+    *,
+    dry_run: bool,
+    clean_execution_view: bool,
+    include_failed: bool,
+) -> None:
+    try:
+        config_path = find_project_config(Path.cwd())
+        context = load_project_context(config_path)
+        plan = plan_heudiconv_run(context)
+    except (HeudiconvRunError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
     if dry_run:
+        _echo_heudiconv_dry_run(
+            config_path,
+            plan,
+            clean_execution_view=clean_execution_view,
+            include_failed=include_failed,
+        )
         return
 
-    submitted: SubmittedJob = scheduler_runner.submit(plan)
-    console.print(f"Submitted SGE job {submitted.job_id}")
+    try:
+        result = run_heudiconv(
+            context,
+            plan,
+            cleanup_execution_view=clean_execution_view,
+            include_failed=include_failed,
+        )
+    except HeudiconvRunError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+    _echo_heudiconv_run_result(result, plan, clean_execution_view=clean_execution_view)
 
 
-@app.command()
-def curate(
-    config: Path = typer.Option(..., exists=True, dir_okay=False, help="Path to TOML config."),
-    participant: str | None = typer.Option(None, help="Participant label, e.g. sub-001."),
-    scheduler: SchedulerChoice | None = typer.Option(
-        None,
-        help="Override the scheduler declared in the config for this invocation.",
-    ),
-    dry_run: bool = typer.Option(False, help="Preview the stage execution without running it."),
-    hold_jid: str | None = typer.Option(
-        None,
-        help="Optional upstream SGE job id dependency when using --scheduler sge.",
-    ),
+def _run_heudiconv_status() -> None:
+    try:
+        config_path = find_project_config(Path.cwd())
+        context = load_project_context(config_path)
+        status = get_heudiconv_status(context)
+    except (HeudiconvRunError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+    typer.echo("HeuDiConv status.")
+    typer.echo("")
+    typer.echo("Project:")
+    typer.echo(f"  Config: {config_path}")
+    typer.echo(f"  Sources table: {status.sources_path}")
+    typer.echo(f"  Heuristic: {status.heuristic_path}")
+
+    typer.echo("")
+    typer.echo("Sources:")
+    if not status.sources_exists:
+        typer.echo("  State: not initialized")
+    else:
+        _echo_sources_summary(status.sources_summary)
+    if not status.heuristic_exists:
+        typer.echo("  Heuristic: missing")
+
+    typer.echo("")
+    typer.echo("Run:")
+    typer.echo(f"  Latest run state: {status.run_record_state or 'none'}")
+    typer.echo(f"  Results rows: {status.results_count}")
+    for key in RUN_UNIT_STATUS_KEYS:
+        typer.echo(f"  - {key}: {status.unit_counts[key]}")
+
+    if status.sources_issues:
+        typer.echo("")
+        typer.echo("Sources needing review:")
+        for issue in status.sources_issues:
+            typer.echo(f"  - {issue}")
+
+    failed_units = tuple(unit for unit in status.units if unit.status == "failed")
+    if failed_units:
+        typer.echo("")
+        typer.echo("Failed units:")
+        for unit in failed_units[:10]:
+            suffix = f" ({unit.error})" if unit.error else ""
+            typer.echo(f"  - {unit.unit_name}: source={unit.source_name}{suffix}")
+            if unit.log_path is not None:
+                typer.echo(f"    log: {unit.log_path}")
+            elif unit.log_dir is not None:
+                typer.echo(f"    logs: {unit.log_dir}")
+        if len(failed_units) > 10:
+            typer.echo(f"  - additional failed units omitted: {len(failed_units) - 10}")
+
+    active_units = tuple(unit for unit in status.units if unit.active_claim)
+    if active_units:
+        typer.echo("")
+        typer.echo("Active claims:")
+        for unit in active_units[:10]:
+            typer.echo(f"  - {unit.unit_name}: {unit.claim_path}")
+        if len(active_units) > 10:
+            typer.echo(f"  - additional active claims omitted: {len(active_units) - 10}")
+
+    typer.echo("")
+    typer.echo("Next:")
+    if not status.sources_exists:
+        typer.echo("  Initialize HeuDiConv: bidsflow heudiconv init")
+    elif status.sources_issues:
+        typer.echo(f"  Review sources: {status.sources_path}")
+    elif not status.heuristic_exists:
+        typer.echo("  Draft heuristic: bidsflow heudiconv draft <sample-path>")
+    elif failed_units:
+        typer.echo("  Inspect failed unit logs and sources.tsv; retry with:")
+        typer.echo("    bidsflow heudiconv --include-failed")
+    elif status.unit_counts["not_run"]:
+        typer.echo("  Run pending units: bidsflow heudiconv")
+    elif status.unit_counts["active"]:
+        typer.echo("  Wait for active scheduler/local work to finish, then run status again.")
+    else:
+        typer.echo("  No immediate action.")
+
+
+def _echo_heudiconv_dry_run(
+    config_path: Path,
+    plan: RunPlan,
+    *,
+    clean_execution_view: bool,
+    include_failed: bool,
 ) -> None:
-    """Run or preview the HeuDiConv-backed curation stage."""
-    _run_stage(
-        stage=StageId.CURATE,
-        config=config,
-        participant=participant,
-        scheduler=scheduler,
-        dry_run=dry_run,
-        hold_jid=hold_jid,
+    runnable_units, unit_counts = preview_run_unit_selection(
+        plan,
+        include_failed=include_failed,
     )
+    typer.echo("Planned `bidsflow heudiconv` execution.")
+    typer.echo("Dry run only; no files or directories were created.")
+    typer.echo(f"Config: {config_path}")
+    typer.echo(f"Sources table: {plan.sources_path}")
+    typer.echo(f"Heuristic: {plan.heuristic_path}")
+    typer.echo(f"Raw BIDS output: {plan.raw_bids_root}")
+    if plan.sge is not None:
+        typer.echo("Backend: sge")
+        typer.echo(f"Scheduler template: {plan.sge.template_path}")
+        typer.echo(f"Submit command: {format_command(plan.sge.submit_command)}")
+        typer.echo("Scheduler artifacts are created only when the job is submitted.")
+    else:
+        typer.echo("Backend: local")
+    cleanup_summary = (
+        "enabled; use --keep-execution-view to inspect temporary source-link views."
+        if clean_execution_view
+        else "disabled; temporary source-link execution views will be kept."
+    )
+    typer.echo(f"Cleanup: {cleanup_summary}")
+    typer.echo(f"Ready units in sources.tsv: {unit_counts['total']}")
+    typer.echo(f"Runnable units now: {unit_counts['selected']}")
+    if include_failed:
+        typer.echo("Failed units: included")
+    _echo_skipped_units(unit_counts)
+    if not runnable_units:
+        return
+
+    unit = runnable_units[0]
+    typer.echo("Example runnable unit:")
+    typer.echo(
+        f"{unit.source_name}: subject={unit.subject_label} "
+        f"session={unit.session_label or '-'}"
+    )
+    typer.echo(format_command(unit.command))
+    if len(runnable_units) > 1:
+        typer.echo(
+            f"Additional runnable units omitted: {len(runnable_units) - 1}. "
+            "HeuDiConv will apply the same sources-driven pattern to each ready row."
+        )
 
 
-@app.command(name="validate")
-def validate_stage(
-    config: Path = typer.Option(..., exists=True, dir_okay=False, help="Path to TOML config."),
-    participant: str | None = typer.Option(None, help="Participant label, e.g. sub-001."),
-    scheduler: SchedulerChoice | None = typer.Option(
-        None,
-        help="Override the scheduler declared in the config for this invocation.",
-    ),
-    dry_run: bool = typer.Option(False, help="Preview the stage execution without running it."),
-    hold_jid: str | None = typer.Option(
-        None,
-        help="Optional upstream SGE job id dependency when using --scheduler sge.",
-    ),
+def _echo_heudiconv_run_result(
+    result: RunResult,
+    plan: RunPlan,
+    *,
+    clean_execution_view: bool,
 ) -> None:
-    """Run or preview the validation stage."""
-    _run_stage(
-        stage=StageId.VALIDATE,
-        config=config,
-        participant=participant,
-        scheduler=scheduler,
-        dry_run=dry_run,
-        hold_jid=hold_jid,
+    if result.status == "submitted":
+        typer.echo("Submitted `bidsflow heudiconv` execution.")
+    elif result.status == "skipped":
+        typer.echo("No runnable `bidsflow heudiconv` units were found.")
+        _echo_skipped_units(_run_result_skip_counts(result))
+        return
+    else:
+        typer.echo("Completed `bidsflow heudiconv` execution.")
+    typer.echo(f"Run units: {len(result.unit_results)}")
+    _echo_skipped_units(
+        _run_result_skip_counts(result),
+        show_succeeded=False,
+        show_active_claim=False,
     )
+    typer.echo(f"Raw BIDS root: {result.raw_bids_root}")
+    typer.echo(f"State: {result.state_path}")
+    typer.echo(f"Results table: {result.results_path}")
+    typer.echo(f"Logs: {result.log_dir}")
+    typer.echo(f"Unit status files: {plan.unit_state_dir}")
+    typer.echo(f"Unit claims: {plan.claim_dir}")
+    if not clean_execution_view:
+        typer.echo(f"Execution view kept: {plan.execution_view_root}")
+    if result.backend == "sge":
+        typer.echo("Scheduler: sge")
+        typer.echo(f"Scheduler job id: {result.scheduler_job_id or '-'}")
+        typer.echo(f"Scheduler script: {result.scheduler_script_path}")
+        if plan.sge is not None:
+            typer.echo(f"Scheduler unit list: {plan.sge.unit_list_path}")
+        typer.echo(f"Scheduler logs: {result.scheduler_log_dir}")
 
 
-@app.command()
-def fmriprep(
-    config: Path = typer.Option(..., exists=True, dir_okay=False, help="Path to TOML config."),
-    participant: str | None = typer.Option(None, help="Participant label, e.g. sub-001."),
-    scheduler: SchedulerChoice | None = typer.Option(
-        None,
-        help="Override the scheduler declared in the config for this invocation.",
-    ),
-    dry_run: bool = typer.Option(False, help="Preview the stage execution without running it."),
-    hold_jid: str | None = typer.Option(
-        None,
-        help="Optional upstream SGE job id dependency when using --scheduler sge.",
-    ),
+def _echo_sources_summary(summary: dict[str, int]) -> None:
+    """Print source review counts in a stable CLI order."""
+
+    for key in SOURCE_SUMMARY_KEYS:
+        typer.echo(f"  - {key}: {summary[key]}")
+
+
+def _echo_heudiconv_init_notices(
+    result: InitResult,
+    *,
+    discovered_sources: int,
 ) -> None:
-    """Run or preview the fMRIPrep stage."""
-    _run_stage(
-        stage=StageId.FMRIPREP,
-        config=config,
-        participant=participant,
-        scheduler=scheduler,
-        dry_run=dry_run,
-        hold_jid=hold_jid,
-    )
+    """Explain preserved init artifacts so reruns are not silent."""
+
+    notices: list[str] = []
+    if result.sources_action in PRESERVED_SOURCES_ACTIONS:
+        notices.append("Existing sources table found; keeping reviewed file.")
+        if discovered_sources != len(result.entries):
+            notices.append(
+                f"Current source-root scan found {discovered_sources} source directory row(s); "
+                f"the kept sources table has {len(result.entries)} row(s)."
+            )
+        notices.append(
+            "Current source-root discovery is not applied to sources.tsv unless you regenerate."
+        )
+        notices.append(
+            "To rebuild sources.tsv from the source root, run: "
+            "bidsflow heudiconv init --force"
+        )
+    if result.scheduler_script_action == "kept":
+        notices.append(
+            "Existing scheduler script kept; use --force to regenerate the bundled template."
+        )
+
+    if not notices:
+        return
+    typer.echo("")
+    typer.secho("Notice:", fg=typer.colors.YELLOW, bold=True)
+    for notice in notices:
+        typer.echo(f"  - {notice}")
 
 
-@app.command()
-def mriqc(
-    config: Path = typer.Option(..., exists=True, dir_okay=False, help="Path to TOML config."),
-    participant: str | None = typer.Option(None, help="Participant label, e.g. sub-001."),
-    scheduler: SchedulerChoice | None = typer.Option(
-        None,
-        help="Override the scheduler declared in the config for this invocation.",
-    ),
-    dry_run: bool = typer.Option(False, help="Preview the stage execution without running it."),
-    hold_jid: str | None = typer.Option(
-        None,
-        help="Optional upstream SGE job id dependency when using --scheduler sge.",
-    ),
+def _run_result_skip_counts(result: RunResult) -> dict[str, int]:
+    """Adapt a RunResult to the skip-count shape used by dry-run previews."""
+
+    return {
+        "skipped": result.skipped_units,
+        "skipped_succeeded": result.skipped_succeeded,
+        "skipped_failed": result.skipped_failed,
+        "skipped_active_claim": result.skipped_active_claim,
+    }
+
+
+def _echo_skipped_units(
+    unit_counts: dict[str, int],
+    *,
+    show_succeeded: bool = True,
+    show_active_claim: bool = True,
 ) -> None:
-    """Run or preview the MRIQC stage."""
-    _run_stage(
-        stage=StageId.MRIQC,
-        config=config,
-        participant=participant,
-        scheduler=scheduler,
-        dry_run=dry_run,
-        hold_jid=hold_jid,
-    )
+    """Print skipped-unit totals with the shared retry guidance."""
+
+    if unit_counts["skipped"]:
+        typer.echo(f"Skipped units: {unit_counts['skipped']}")
+    if show_succeeded and unit_counts["skipped_succeeded"]:
+        typer.echo(f"- already succeeded: {unit_counts['skipped_succeeded']}")
+    if unit_counts["skipped_failed"]:
+        typer.echo(
+            f"- failed; use --include-failed to retry: {unit_counts['skipped_failed']}"
+        )
+    if show_active_claim and unit_counts["skipped_active_claim"]:
+        typer.echo(f"- active claim: {unit_counts['skipped_active_claim']}")
 
 
-@app.command(name="xcpd")
-def xcpd_cmd(
-    config: Path = typer.Option(..., exists=True, dir_okay=False, help="Path to TOML config."),
-    participant: str | None = typer.Option(None, help="Participant label, e.g. sub-001."),
-    scheduler: SchedulerChoice | None = typer.Option(
-        None,
-        help="Override the scheduler declared in the config for this invocation.",
-    ),
-    dry_run: bool = typer.Option(False, help="Preview the stage execution without running it."),
-    hold_jid: str | None = typer.Option(
-        None,
-        help="Optional upstream SGE job id dependency when using --scheduler sge.",
-    ),
-) -> None:
-    """Run or preview the XCP-D stage."""
-    _run_stage(
-        stage=StageId.XCPD,
-        config=config,
-        participant=participant,
-        scheduler=scheduler,
-        dry_run=dry_run,
-        hold_jid=hold_jid,
-    )
-
-
-@app.command()
-def qsiprep(
-    config: Path = typer.Option(..., exists=True, dir_okay=False, help="Path to TOML config."),
-    participant: str | None = typer.Option(None, help="Participant label, e.g. sub-001."),
-    scheduler: SchedulerChoice | None = typer.Option(
-        None,
-        help="Override the scheduler declared in the config for this invocation.",
-    ),
-    dry_run: bool = typer.Option(False, help="Preview the stage execution without running it."),
-    hold_jid: str | None = typer.Option(
-        None,
-        help="Optional upstream SGE job id dependency when using --scheduler sge.",
-    ),
-) -> None:
-    """Run or preview the QSIPrep stage."""
-    _run_stage(
-        stage=StageId.QSIPREP,
-        config=config,
-        participant=participant,
-        scheduler=scheduler,
-        dry_run=dry_run,
-        hold_jid=hold_jid,
-    )
-
-
-@app.command()
-def qsirecon(
-    config: Path = typer.Option(..., exists=True, dir_okay=False, help="Path to TOML config."),
-    participant: str | None = typer.Option(None, help="Participant label, e.g. sub-001."),
-    scheduler: SchedulerChoice | None = typer.Option(
-        None,
-        help="Override the scheduler declared in the config for this invocation.",
-    ),
-    dry_run: bool = typer.Option(False, help="Preview the stage execution without running it."),
-    hold_jid: str | None = typer.Option(
-        None,
-        help="Optional upstream SGE job id dependency when using --scheduler sge.",
-    ),
-) -> None:
-    """Run or preview the QSIRecon stage."""
-    _run_stage(
-        stage=StageId.QSIRECON,
-        config=config,
-        participant=participant,
-        scheduler=scheduler,
-        dry_run=dry_run,
-        hold_jid=hold_jid,
-    )
-
-
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     app()

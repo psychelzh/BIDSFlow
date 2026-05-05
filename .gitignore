@@ -8,6 +8,7 @@ __pycache__/
 .ruff_cache/
 .coverage
 coverage.xml
+junit.xml
 htmlcov/
 dist/
 build/

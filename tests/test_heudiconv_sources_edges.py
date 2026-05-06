@@ -7,16 +7,16 @@ from pathlib import Path
 import pytest
 
 import bidsflow.heudiconv as h
-import bidsflow.heudiconv.sources as heudiconv_sources
 from helpers import (
-    append_config,
     init_project,
     make_source_dirs,
     read_tsv_rows,
+    set_sources_command,
     set_sources_pattern,
     write_minimal_heuristic,
     write_python_script,
 )
+import bidsflow.heudiconv.sources as heudiconv_sources
 
 
 def test_sources_reports_missing_or_file_source_root(tmp_path: Path, invoke_from, runner) -> None:
@@ -72,9 +72,9 @@ def test_sources_command_status_variants(
 
     script_path = project_dir / "code" / "heudiconv" / "derive.py"
     write_python_script(script_path, (script_body,))
-    append_config(
+    set_sources_command(
         project_dir / "bidsflow.toml",
-        ["[sources]", f'command = ["{sys.executable}", "{script_path.as_posix()}"]'],
+        f'command = ["{sys.executable}", "{script_path.as_posix()}"]',
     )
     make_source_dirs(project_dir, "SUB001")
 
@@ -93,7 +93,7 @@ def test_sources_command_status_variants(
 
 def test_sources_command_reports_missing_executable(tmp_path: Path, invoke_from, runner) -> None:
     project_dir = init_project(tmp_path, runner, name="missing-command-project")
-    append_config(project_dir / "bidsflow.toml", ["[sources]", 'command = ["definitely-not-bidsflow"]'])
+    set_sources_command(project_dir / "bidsflow.toml", 'command = ["definitely-not-bidsflow"]')
     make_source_dirs(project_dir, "SUB001")
 
     result = invoke_from(project_dir, ["heudiconv", "init"])
@@ -109,7 +109,7 @@ def test_sources_command_reports_timeout(
     monkeypatch,
 ) -> None:
     project_dir = init_project(tmp_path, runner, name="timeout-command-project")
-    append_config(project_dir / "bidsflow.toml", ["[sources]", 'command = ["python", "derive.py"]'])
+    set_sources_command(project_dir / "bidsflow.toml", 'command = ["python", "derive.py"]')
     make_source_dirs(project_dir, "SUB001")
 
     def _raise_timeout(*args, **kwargs):
@@ -127,9 +127,9 @@ def test_sources_command_rejects_unsafe_labels(tmp_path: Path, invoke_from, runn
     project_dir = init_project(tmp_path, runner, name="unsafe-command-label-project")
     script_path = project_dir / "code" / "heudiconv" / "derive.py"
     write_python_script(script_path, ("print('../001')",))
-    append_config(
+    set_sources_command(
         project_dir / "bidsflow.toml",
-        ["[sources]", f'command = ["{sys.executable}", "{script_path.as_posix()}"]'],
+        f'command = ["{sys.executable}", "{script_path.as_posix()}"]',
     )
     make_source_dirs(project_dir, "SUB001")
 
@@ -179,9 +179,9 @@ def test_sources_pattern_miss_and_duplicate_subject_without_sessions(
     duplicate_project = init_project(tmp_path, runner, name="duplicate-subject")
     script_path = duplicate_project / "derive.py"
     write_python_script(script_path, ("print('001')",))
-    append_config(
+    set_sources_command(
         duplicate_project / "bidsflow.toml",
-        ["[sources]", f'command = ["{sys.executable}", "{script_path.as_posix()}"]'],
+        f'command = ["{sys.executable}", "{script_path.as_posix()}"]',
     )
     make_source_dirs(duplicate_project, "A", "B")
 

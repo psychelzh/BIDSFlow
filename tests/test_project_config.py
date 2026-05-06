@@ -5,7 +5,13 @@ import re
 
 import pytest
 
-from bidsflow.project import find_project_config, load_project_context
+from bidsflow.project import (
+    find_project_config,
+    load_fmriprep_config,
+    load_heudiconv_config,
+    load_project_context,
+    target_config_path,
+)
 
 
 def _write_config(path: Path, text: str) -> Path:
@@ -26,9 +32,6 @@ derivatives_root = "derivatives"
 work_root = "work"
 logs_root = "logs"
 state_root = "state"
-
-[heudiconv]
-heuristic = "code/heudiconv/heuristic.py"
 
 [execution]
 scheduler = "none"
@@ -73,7 +76,75 @@ scheduler = "sge"
     assert context.paths.source_root == source_root.resolve()
     assert context.paths.raw_bids_root == project_root / "sourcedata" / "raw"
     assert context.execution.submit_command == ("qsub", "-terse")
-    assert context.heudiconv.launcher == ("heudiconv",)
+    assert context.resources.fs_license_file is None
+    assert target_config_path(context, "heudiconv") == project_root / "config" / "heudiconv.toml"
+    assert target_config_path(context, "fmriprep") == project_root / "config" / "fmriprep.toml"
+
+
+def test_target_config_loaders_read_target_configs(tmp_path: Path) -> None:
+    config_path = _write_config(tmp_path / "bidsflow.toml", _minimal_config())
+    target_config_root = tmp_path / "config"
+    target_config_root.mkdir()
+    _write_config(
+        target_config_root / "heudiconv.toml",
+        """
+heuristic = "code/custom/heuristic.py"
+launcher = ["custom-heudiconv"]
+
+[sources]
+pattern = "NEW{subject}"
+""",
+    )
+    _write_config(
+        target_config_root / "fmriprep.toml",
+        """
+launcher = ["custom-fmriprep"]
+""",
+    )
+
+    context = load_project_context(config_path)
+    heudiconv_config = load_heudiconv_config(context)
+    fmriprep_config = load_fmriprep_config(context)
+
+    assert heudiconv_config.config_path == (target_config_root / "heudiconv.toml").resolve()
+    assert heudiconv_config.launcher == ("custom-heudiconv",)
+    assert heudiconv_config.heuristic == (tmp_path / "code" / "custom" / "heuristic.py").resolve()
+    assert heudiconv_config.sources.pattern == "NEW{subject}"
+    assert fmriprep_config.config_path == (target_config_root / "fmriprep.toml").resolve()
+    assert fmriprep_config.launcher == ("custom-fmriprep",)
+
+
+def test_load_project_context_does_not_parse_target_configs(tmp_path: Path) -> None:
+    config_path = _write_config(tmp_path / "bidsflow.toml", _minimal_config())
+    target_config_root = tmp_path / "config"
+    target_config_root.mkdir()
+    _write_config(target_config_root / "heudiconv.toml", "launcher = [")
+    _write_config(target_config_root / "fmriprep.toml", "launcher = [")
+
+    context = load_project_context(config_path)
+
+    assert context.project_root == tmp_path.resolve()
+
+
+def test_target_config_loaders_are_isolated(tmp_path: Path) -> None:
+    config_path = _write_config(tmp_path / "bidsflow.toml", _minimal_config())
+    target_config_root = tmp_path / "config"
+    target_config_root.mkdir()
+    _write_config(
+        target_config_root / "heudiconv.toml",
+        """
+launcher = ["custom-heudiconv"]
+""",
+    )
+    _write_config(target_config_root / "fmriprep.toml", "launcher = []")
+    context = load_project_context(config_path)
+
+    assert load_heudiconv_config(context).launcher == ("custom-heudiconv",)
+    with pytest.raises(
+        ValueError,
+        match=re.escape("[fmriprep].launcher must be a non-empty list of strings."),
+    ):
+        load_fmriprep_config(context)
 
 
 @pytest.mark.parametrize(
@@ -84,20 +155,6 @@ scheduler = "sge"
         (
             "[project]\nroot = \".\"\n[paths]\nsource_root = 1\n",
             "[paths].source_root must be a string path.",
-        ),
-        (_minimal_config() + "\n[sources]\npattern = 1\n", "[sources].pattern must be a string."),
-        (
-            _minimal_config() + "\n[sources]\ncommand = []\n",
-            "[sources].command must be a non-empty list of strings.",
-        ),
-        (
-            _minimal_config() + "\n[sources]\ncommand = [\"\"]\n",
-            "[sources].command must be a non-empty list of strings.",
-        ),
-        (
-            _minimal_config()
-            + "\n[sources]\npattern = \"SUB{subject}\"\ncommand = [\"python\"]\n",
-            "[sources] may define pattern or command, but not both.",
         ),
         (
             _minimal_config().replace('scheduler = "none"', "scheduler = 1"),
@@ -122,11 +179,8 @@ scheduler = "sge"
             "[execution].submit_command must be a non-empty list of strings.",
         ),
         (
-            _minimal_config().replace(
-                "[execution]",
-                'launcher = [""]\n\n[execution]',
-            ),
-            "[heudiconv].launcher must be a non-empty list of strings.",
+            _minimal_config() + "\n[resources]\nfs_license_file = 1\n",
+            "[resources].fs_license_file must be a string path.",
         ),
     ],
 )
@@ -135,6 +189,46 @@ def test_load_project_context_rejects_invalid_config(tmp_path: Path, body: str, 
 
     with pytest.raises(ValueError, match=re.escape(message)):
         load_project_context(config_path)
+
+
+@pytest.mark.parametrize(
+    ("target", "body", "message"),
+    [
+        ("heudiconv", "launcher = [\"\"]\n", "[heudiconv].launcher must be a non-empty list of strings."),
+        ("heudiconv", "[sources]\npattern = 1\n", "[sources].pattern must be a string."),
+        (
+            "heudiconv",
+            "[sources]\ncommand = []\n",
+            "[sources].command must be a non-empty list of strings.",
+        ),
+        (
+            "heudiconv",
+            "[sources]\ncommand = [\"\"]\n",
+            "[sources].command must be a non-empty list of strings.",
+        ),
+        (
+            "heudiconv",
+            "[sources]\npattern = \"SUB{subject}\"\ncommand = [\"python\"]\n",
+            "[sources] may define pattern or command, but not both.",
+        ),
+        ("fmriprep", "launcher = []\n", "[fmriprep].launcher must be a non-empty list of strings."),
+    ],
+)
+def test_target_config_loaders_reject_invalid_target_config(
+    tmp_path: Path,
+    target: str,
+    body: str,
+    message: str,
+) -> None:
+    config_path = _write_config(tmp_path / "bidsflow.toml", _minimal_config())
+    target_config_root = tmp_path / "config"
+    target_config_root.mkdir()
+    _write_config(target_config_root / f"{target}.toml", body)
+    context = load_project_context(config_path)
+    loader = load_heudiconv_config if target == "heudiconv" else load_fmriprep_config
+
+    with pytest.raises(ValueError, match=re.escape(message)):
+        loader(context)
 
 
 @pytest.mark.parametrize(

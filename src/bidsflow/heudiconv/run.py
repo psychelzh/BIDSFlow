@@ -22,7 +22,7 @@ from ..common import (
     _write_key_value_status_atomic,
     format_command,
 )
-from ..project import ProjectContext
+from ..project import HeudiconvConfig, ProjectContext, load_heudiconv_config
 from ..schedulers import _resolve_scheduler_script_path
 from .errors import HeudiconvInitError, HeudiconvRunError
 from .sources import (
@@ -236,7 +236,11 @@ def _cleanup_execution_view_if_requested(
 def plan_heudiconv_run(context: ProjectContext) -> RunPlan:
     """Plan a managed HeuDiConv conversion from reviewed sources.tsv rows."""
 
-    sources_path, heuristic_path, entries, ready_entries = _resolve_run_inputs(context)
+    heudiconv_config = load_heudiconv_config(context)
+    sources_path, heuristic_path, entries, ready_entries = _resolve_run_inputs(
+        context,
+        heudiconv_config,
+    )
 
     state_root = context.paths.state_root / "heudiconv"
     attempt_label = _format_attempt_label()
@@ -271,7 +275,7 @@ def plan_heudiconv_run(context: ProjectContext) -> RunPlan:
                 session_label=session_label,
                 execution_path=execution_path,
                 command=_build_run_command(
-                    launcher=context.heudiconv.launcher,
+                    launcher=heudiconv_config.launcher,
                     execution_path=execution_path,
                     raw_bids_root=context.paths.raw_bids_root,
                     heuristic_path=heuristic_path,
@@ -285,7 +289,7 @@ def plan_heudiconv_run(context: ProjectContext) -> RunPlan:
         )
 
     input_signature = _build_run_input_signature(
-        launcher=context.heudiconv.launcher,
+        launcher=heudiconv_config.launcher,
         heuristic_path=heuristic_path,
         raw_bids_root=context.paths.raw_bids_root,
         source_root=context.paths.source_root,
@@ -296,7 +300,7 @@ def plan_heudiconv_run(context: ProjectContext) -> RunPlan:
         attempt_label=attempt_label,
         sources_path=sources_path,
         sources_state_path=context.paths.state_root / "sources.json",
-        launcher=context.heudiconv.launcher,
+        launcher=heudiconv_config.launcher,
         heuristic_path=heuristic_path,
         raw_bids_root=context.paths.raw_bids_root,
         execution_view_root=execution_view_root,
@@ -318,6 +322,7 @@ def plan_heudiconv_run(context: ProjectContext) -> RunPlan:
 
 def _resolve_run_inputs(
     context: ProjectContext,
+    heudiconv_config: HeudiconvConfig,
 ) -> tuple[Path, Path, tuple[SourcesEntry, ...], tuple[SourcesEntry, ...]]:
     """Resolve and validate reviewed sources and heuristic inputs."""
 
@@ -327,7 +332,7 @@ def _resolve_run_inputs(
             f"BIDSFlow sources table does not exist: {sources_path}. Run `bidsflow heudiconv init` first."
         )
 
-    heuristic_path = context.heudiconv.heuristic
+    heuristic_path = heudiconv_config.heuristic
     if not heuristic_path.exists():
         raise HeudiconvRunError(
             f"HeuDiConv heuristic does not exist: {heuristic_path}. Run `bidsflow heudiconv draft <sample-path>` or create the heuristic first."

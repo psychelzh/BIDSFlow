@@ -12,8 +12,25 @@ import tomllib
 class HeudiconvConfig:
     """Resolved HeuDiConv command and heuristic settings for a project."""
 
+    config_path: Path
     launcher: tuple[str, ...]
     heuristic: Path
+    sources: SourcesConfig
+
+
+@dataclass(frozen=True)
+class FmriprepConfig:
+    """Resolved fMRIPrep command launcher settings for a project."""
+
+    config_path: Path
+    launcher: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ResourcesConfig:
+    """Cross-workflow resource paths resolved from the project config."""
+
+    fs_license_file: Path | None
 
 
 @dataclass(frozen=True)
@@ -51,8 +68,7 @@ class ProjectContext:
     config_path: Path
     project_root: Path
     paths: ProjectPaths
-    sources: SourcesConfig
-    heudiconv: HeudiconvConfig
+    resources: ResourcesConfig
     execution: ExecutionConfig
 
 
@@ -72,7 +88,7 @@ def find_project_config(start_dir: Path) -> Path:
 
 
 def load_project_context(config_path: Path) -> ProjectContext:
-    """Load bidsflow.toml into a resolved project context."""
+    """Load project-wide bidsflow.toml settings into a resolved context."""
 
     raw_config = tomllib.loads(config_path.read_text(encoding="utf-8"))
 
@@ -85,17 +101,44 @@ def load_project_context(config_path: Path) -> ProjectContext:
 
     project_root = _resolve_from_config_dir(config_path, Path(project_root_value))
     paths = _load_project_paths(project_root, paths_section)
-    sources = _load_sources_config(_require_table(raw_config, "sources"))
-    heudiconv = _load_heudiconv_config(project_root, _require_table(raw_config, "heudiconv"))
+    resources = _load_resources_config(project_root, _require_table(raw_config, "resources"))
     execution = _load_execution_config(_require_table(raw_config, "execution"))
 
     return ProjectContext(
         config_path=config_path,
         project_root=project_root,
         paths=paths,
-        sources=sources,
-        heudiconv=heudiconv,
+        resources=resources,
         execution=execution,
+    )
+
+
+def target_config_path(context: ProjectContext, target: str) -> Path:
+    """Return the conventional config path for one target."""
+
+    return _target_config_path(context.project_root, target)
+
+
+def load_heudiconv_config(context: ProjectContext) -> HeudiconvConfig:
+    """Load only the HeuDiConv target config for a project context."""
+
+    config_path = target_config_path(context, "heudiconv")
+    target_config = _load_optional_target_config(config_path) or {}
+    return _load_heudiconv_config_values(
+        context.project_root,
+        config_path,
+        target_config,
+    )
+
+
+def load_fmriprep_config(context: ProjectContext) -> FmriprepConfig:
+    """Load only the fMRIPrep target config for a project context."""
+
+    config_path = target_config_path(context, "fmriprep")
+    target_config = _load_optional_target_config(config_path) or {}
+    return _load_fmriprep_config_values(
+        config_path,
+        target_config,
     )
 
 
@@ -148,6 +191,23 @@ def _require_project_owned_path(
     if not path.is_relative_to(project_root):
         raise ValueError(f"[{section_name}].{key} must resolve under [project].root.")
     return path
+
+
+def _target_config_path(project_root: Path, target: str) -> Path:
+    """Return the conventional target config path under config/."""
+
+    return (project_root / "config" / f"{target}.toml").resolve()
+
+
+def _load_optional_target_config(config_path: Path) -> dict[str, Any] | None:
+    """Load an optional target config TOML file."""
+
+    if not config_path.is_file():
+        return None
+    try:
+        return tomllib.loads(config_path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise ValueError(f"Invalid target config TOML at {config_path}: {exc}") from exc
 
 
 def _load_non_empty_string_list(value: Any, field_name: str) -> tuple[str, ...]:
@@ -215,7 +275,11 @@ def _load_project_paths(project_root: Path, paths_section: dict[str, Any]) -> Pr
     )
 
 
-def _load_heudiconv_config(project_root: Path, heudiconv_section: dict[str, Any]) -> HeudiconvConfig:
+def _load_heudiconv_config_values(
+    project_root: Path,
+    config_path: Path,
+    heudiconv_section: dict[str, Any],
+) -> HeudiconvConfig:
     """Load HeuDiConv launcher and heuristic configuration."""
 
     heuristic = _resolve_config_path(
@@ -235,9 +299,54 @@ def _load_heudiconv_config(project_root: Path, heudiconv_section: dict[str, Any]
         )
 
     return HeudiconvConfig(
+        config_path=config_path,
         launcher=launcher_value,
         heuristic=heuristic,
+        sources=_load_sources_config(_require_table(heudiconv_section, "sources")),
     )
+
+
+def _load_fmriprep_config_values(
+    config_path: Path,
+    fmriprep_section: dict[str, Any],
+) -> FmriprepConfig:
+    """Load fMRIPrep launcher configuration."""
+
+    launcher = fmriprep_section.get("launcher")
+    if launcher is None:
+        launcher_value = ("fmriprep",)
+    else:
+        launcher_value = _load_non_empty_string_list(
+            launcher,
+            "[fmriprep].launcher",
+        )
+
+    return FmriprepConfig(config_path=config_path, launcher=launcher_value)
+
+
+def _load_resources_config(
+    project_root: Path,
+    resources_section: dict[str, Any],
+) -> ResourcesConfig:
+    """Load cross-workflow resource paths."""
+
+    fs_license_file = resources_section.get("fs_license_file")
+    if fs_license_file is not None and not isinstance(fs_license_file, str):
+        raise ValueError("[resources].fs_license_file must be a string path.")
+    resolved_fs_license_file = (
+        None
+        if fs_license_file is None
+        else _resolve_project_relative_path(project_root, Path(fs_license_file))
+    )
+    return ResourcesConfig(fs_license_file=resolved_fs_license_file)
+
+
+def _resolve_project_relative_path(project_root: Path, candidate: Path) -> Path:
+    """Resolve a path relative to the configured project root."""
+
+    if candidate.is_absolute():
+        return candidate.resolve()
+    return (project_root / candidate).resolve()
 
 
 def _load_sources_config(

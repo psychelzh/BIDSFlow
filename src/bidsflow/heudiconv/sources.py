@@ -12,7 +12,7 @@ from string import Formatter
 import subprocess
 
 from ..common import _remove_project_path
-from ..project import ProjectContext
+from ..project import ProjectContext, SourcesConfig, load_heudiconv_config
 from .errors import HeudiconvRunError
 
 
@@ -63,6 +63,7 @@ SAFE_LABEL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 def plan_sources(
     context: ProjectContext,
+    sources_config: SourcesConfig | None = None,
 ) -> SourcesPlan:
     """Build the sources.tsv plan from the current project source root."""
 
@@ -89,7 +90,7 @@ def plan_sources(
         )
     )
 
-    sources_config = context.sources
+    sources_config = sources_config or load_heudiconv_config(context).sources
     source_name_pattern: re.Pattern[str] | None
     if sources_config.pattern is not None:
         source_name_pattern = _compile_sources_pattern(sources_config.pattern)

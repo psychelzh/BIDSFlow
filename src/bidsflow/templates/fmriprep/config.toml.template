@@ -1,0 +1,24 @@
+# fMRIPrep target config.
+# Runtime/state/log paths are managed by bidsflow.toml [paths].
+
+# Optional fMRIPrep launcher override.
+# Uncomment and edit one launcher if fMRIPrep is launched through a wrapper or container.
+# launcher = ["fmriprep"]
+# launcher = ["singularity", "run", "--cleanenv", "/containers/fmriprep.sif"]
+
+# fMRIPrep options appended after BIDSFlow-managed arguments.
+# Use fMRIPrep CLI option names as flat TOML keys, without leading "--".
+# BIDSFlow manages participant-label, work-dir, bids-database-dir, and fs-license-file.
+# Boolean true emits a flag, boolean false omits it.
+#
+# Common values to review before running:
+# - nprocs and omp-nthreads should match your local machine or scheduler allocation.
+# - mem-mb should be adjusted to the memory available per participant task.
+# - output-spaces controls which template/native outputs fMRIPrep writes.
+[options]
+nprocs = 8
+omp-nthreads = 4
+mem-mb = 32000
+output-spaces = ["MNI152NLin2009cAsym:res-2", "T1w"]
+skip-bids-validation = false
+notrack = true

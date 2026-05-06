@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from ..project import ProjectContext
+from ..project import ProjectContext, load_heudiconv_config
 from ..schedulers import (
     _render_sge_array_wrapper_script,
     _resolve_scheduler_script_path,
@@ -63,7 +63,8 @@ class InitResult:
 def plan_heudiconv_init(context: ProjectContext) -> InitPlan:
     """Plan source discovery, code directories, and scheduler wrapper setup."""
 
-    sources_plan = plan_sources(context)
+    heudiconv_config = load_heudiconv_config(context)
+    sources_plan = plan_sources(context, sources_config=heudiconv_config.sources)
     scheduler = context.execution.scheduler
     scheduler_script_path: Path | None = None
     scheduler_script_content: str | None = None
@@ -77,7 +78,7 @@ def plan_heudiconv_init(context: ProjectContext) -> InitPlan:
     return InitPlan(
         sources_plan=sources_plan,
         code_root=context.project_root / "code" / "heudiconv",
-        heuristic_parent=context.heudiconv.heuristic.parent,
+        heuristic_parent=heudiconv_config.heuristic.parent,
         scheduler=scheduler,
         scheduler_script_path=scheduler_script_path,
         scheduler_script_content=scheduler_script_content,

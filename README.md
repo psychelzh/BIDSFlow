@@ -35,7 +35,9 @@ bidsflow heudiconv
 
 ## Configuration
 
-Project configuration lives in `bidsflow.toml`.
+Project-wide configuration lives in `bidsflow.toml`. Target-specific
+configuration lives under `config/`, for example `config/heudiconv.toml`
+and `config/fmriprep.toml`.
 
 ## Development
 

@@ -26,6 +26,9 @@ def _no_scheduler_on_path(monkeypatch) -> None:
         ["heudiconv", "init"],
         ["heudiconv", "draft"],
         ["heudiconv", "status"],
+        ["fmriprep"],
+        ["fmriprep", "init"],
+        ["fmriprep", "status"],
     ],
 )
 @pytest.mark.parametrize("help_option", ["-h", "--help"])
@@ -65,6 +68,8 @@ def test_init_writes_config_without_materializing_layout_by_default(
 
     assert result.exit_code == 0, result.output
     assert (project_dir / "bidsflow.toml").is_file()
+    assert (project_dir / "config" / "heudiconv.toml").is_file()
+    assert (project_dir / "config" / "fmriprep.toml").is_file()
     assert not (project_dir / "sourcedata").exists()
     assert not (project_dir / "sourcedata" / "raw").exists()
     assert not (project_dir / "derivatives").exists()
@@ -77,8 +82,15 @@ def test_init_writes_config_without_materializing_layout_by_default(
     assert '# scheduler = "sge"' in config_text
     assert '# submit_command = ["qsub", "-terse"]' in config_text
     assert '\nsubmit_command = ["qsub", "-terse"]' not in config_text
-    assert_lines_in_order(config_text, ["[paths]", "# [sources]", "[execution]", "[heudiconv]"])
+    assert_lines_in_order(
+        config_text,
+        ["[paths]", "[execution]", "[resources]"],
+    )
     assert config_text == snapshot(name="init_default_bidsflow_toml")
+    heudiconv_config_text = (project_dir / "config" / "heudiconv.toml").read_text(encoding="utf-8")
+    assert "[sources]" in heudiconv_config_text
+    fmriprep_config_text = (project_dir / "config" / "fmriprep.toml").read_text(encoding="utf-8")
+    assert "[options]" in fmriprep_config_text
     assert "Scheduler: none (no supported scheduler detected)" in result.output
 
 
@@ -250,7 +262,7 @@ def test_init_requires_force_to_overwrite_existing_config(tmp_path: Path, runner
 
     blocked = runner.invoke(app, ["init", str(project_dir)])
     assert blocked.exit_code == 2
-    assert "Refusing to overwrite existing config" in blocked.output
+    assert "Refusing to overwrite existing config file(s)" in blocked.output
     assert config_path.read_text(encoding="utf-8") == "existing = true\n"
 
     allowed = runner.invoke(app, ["init", str(project_dir), "-f", "--name", "Replacement"])

@@ -1,4 +1,4 @@
-"""Command-line interface for BIDSFlow project and HeuDiConv workflows."""
+"""Command-line interface for BIDSFlow project and managed workflows."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from pathlib import Path
 
 import typer
 
+from .fmriprep.cli import fmriprep_app
 from .heudiconv import (
     HeudiconvDraftError,
     HeudiconvInitError,
@@ -29,7 +30,7 @@ from .heudiconv import (
     run_heudiconv_init,
     summarize_sources_entries,
 )
-from .project import find_project_config, load_project_context
+from .project import find_project_config, load_heudiconv_config, load_project_context
 
 HELP_CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 
@@ -44,6 +45,7 @@ heudiconv_app = typer.Typer(
     context_settings=HELP_CONTEXT_SETTINGS,
 )
 app.add_typer(heudiconv_app, name="heudiconv")
+app.add_typer(fmriprep_app, name="fmriprep")
 DEFAULT_LAYOUT_DIRECTORIES = (
     Path("sourcedata"),
     Path("sourcedata") / "raw",
@@ -52,6 +54,10 @@ DEFAULT_LAYOUT_DIRECTORIES = (
     Path("logs"),
     Path("state"),
 )
+TARGET_CONFIG_TEMPLATES = {
+    "heudiconv": ("heudiconv", "config.toml.template"),
+    "fmriprep": ("fmriprep", "config.toml.template"),
+}
 INIT_SCHEDULERS = ("auto", "none", "sge")
 PRESERVED_SOURCES_ACTIONS = {"kept", "metadata refreshed"}
 SOURCE_SUMMARY_KEYS = (
@@ -119,6 +125,15 @@ def _render_project_config(project_name: str, scheduler: str) -> str:
     return (
         template.replace("__EXECUTION_SECTION__", _render_execution_section(scheduler))
         .replace("__PROJECT_NAME__", _toml_string(project_name))
+    )
+
+
+def _render_target_config(target: str) -> str:
+    template_parts = TARGET_CONFIG_TEMPLATES[target]
+    return (
+        resources.files("bidsflow")
+        .joinpath("templates", *template_parts)
+        .read_text(encoding="utf-8")
     )
 
 
@@ -196,9 +211,20 @@ def init(
         raise typer.Exit(code=2)
 
     config_path = target_directory / "bidsflow.toml"
-    if config_path.exists() and not force:
+    target_config_paths = {
+        target: target_directory / "config" / f"{target}.toml"
+        for target in TARGET_CONFIG_TEMPLATES
+    }
+    existing_scaffold_paths = [
+        path
+        for path in (config_path, *target_config_paths.values())
+        if path.exists()
+    ]
+    if existing_scaffold_paths and not force:
+        existing = ", ".join(str(path) for path in existing_scaffold_paths)
         typer.echo(
-            f"Refusing to overwrite existing config: {config_path}. Use --force to overwrite it.",
+            f"Refusing to overwrite existing config file(s): {existing}. "
+            "Use --force to overwrite them.",
             err=True,
         )
         raise typer.Exit(code=2)
@@ -213,6 +239,13 @@ def init(
         encoding="utf-8",
         newline="\n",
     )
+    for target, target_config_path in target_config_paths.items():
+        target_config_path.parent.mkdir(parents=True, exist_ok=True)
+        target_config_path.write_text(
+            _render_target_config(target),
+            encoding="utf-8",
+            newline="\n",
+        )
 
     if make_dirs:
         for relative_path in DEFAULT_LAYOUT_DIRECTORIES:
@@ -223,6 +256,7 @@ def init(
     typer.echo("Project:")
     typer.echo(f"  Root: {target_directory}")
     typer.echo(f"  Config: {config_path}")
+    typer.echo(f"  Target configs: {target_directory / 'config'}")
     typer.echo(f"  {scheduler_message}")
     directory_message = "created" if make_dirs else "not created (use --make-dirs to create them)"
     typer.echo(f"  Layout directories: {directory_message}")
@@ -232,7 +266,9 @@ def init(
     typer.echo("")
     typer.echo("Next:")
     typer.echo(f"  Review config: {config_path}")
+    typer.echo(f"  Review target configs: {target_directory / 'config'}")
     typer.echo("  Prepare HeuDiConv: bidsflow heudiconv init")
+    typer.echo("  Prepare fMRIPrep after raw BIDS exists: bidsflow fmriprep init")
 
 
 @heudiconv_app.callback(
@@ -320,6 +356,7 @@ def _run_heudiconv_init(
     try:
         config_path = find_project_config(Path.cwd())
         context = load_project_context(config_path)
+        heudiconv_config = load_heudiconv_config(context)
         plan = plan_heudiconv_init(context)
         result = run_heudiconv_init(context, plan, force=force)
     except (HeudiconvInitError, SourcesError, ValueError) as exc:
@@ -331,7 +368,7 @@ def _run_heudiconv_init(
     typer.echo("Project:")
     typer.echo(f"  Config: {config_path}")
     typer.echo(f"  HeuDiConv code root: {result.code_root}")
-    typer.echo(f"  Heuristic: {context.heudiconv.heuristic}")
+    typer.echo(f"  Heuristic: {heudiconv_config.heuristic}")
 
     typer.echo("")
     typer.echo("Sources:")
@@ -376,7 +413,7 @@ def _run_heudiconv_init(
     typer.echo("Next:")
     typer.echo(f"  Review sources: {result.sources_path}")
     typer.echo("  Draft heuristic: bidsflow heudiconv draft <sample-path>")
-    typer.echo(f"  Review heuristic: {context.heudiconv.heuristic}")
+    typer.echo(f"  Review heuristic: {heudiconv_config.heuristic}")
     if result.scheduler_script_path is not None:
         typer.echo(f"  Check scheduler script: {result.scheduler_script_path}")
         typer.echo("    Look at SGE directives, site environment setup, and launcher/container use.")

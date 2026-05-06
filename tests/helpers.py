@@ -51,11 +51,27 @@ def replace_config(config_path: Path, old: str, new: str) -> None:
 
 
 def set_sources_pattern(config_path: Path, pattern: str) -> None:
-    append_config(config_path, ["[sources]", f'pattern = "{pattern}"'])
+    target_path = config_path.parent / "config" / "heudiconv.toml"
+    replace_config(target_path, '# pattern = "SUB{subject}_SES{session}"', f'pattern = "{pattern}"')
+
+
+def set_sources_command(config_path: Path, command_line: str) -> None:
+    target_path = config_path.parent / "config" / "heudiconv.toml"
+    replace_config(
+        target_path,
+        '# command = ["python", "code/heudiconv/derive_labels.py"]',
+        command_line,
+    )
 
 
 def set_launcher(config_path: Path, launcher_line: str) -> None:
-    replace_config(config_path, '# launcher = ["heudiconv"]', launcher_line)
+    target_path = config_path.parent / "config" / "heudiconv.toml"
+    replace_config(target_path, '# launcher = ["heudiconv"]', launcher_line)
+
+
+def set_fmriprep_launcher(config_path: Path, launcher_line: str) -> None:
+    target_path = config_path.parent / "config" / "fmriprep.toml"
+    replace_config(target_path, '# launcher = ["fmriprep"]', launcher_line)
 
 
 def set_submit_command(config_path: Path, submit_command_line: str) -> None:

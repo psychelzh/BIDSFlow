@@ -6,12 +6,12 @@ from pathlib import Path
 
 from bidsflow.cli import app
 from helpers import (
-    append_config,
     assert_lines_in_order,
     init_project,
     make_source_dirs,
     read_tsv_rows,
     replace_config,
+    set_sources_command,
     set_sources_pattern,
     write_python_script,
 )
@@ -151,7 +151,7 @@ def test_heudiconv_init_writes_sge_scheduler_script(tmp_path: Path, invoke_from,
 def test_heudiconv_init_reports_custom_heuristic_directory(tmp_path: Path, invoke_from, runner) -> None:
     project_dir = init_project(tmp_path, runner, name="custom-heuristic-project")
     replace_config(
-        project_dir / "bidsflow.toml",
+        project_dir / "config" / "heudiconv.toml",
         'heuristic = "code/heudiconv/heuristic.py"',
         'heuristic = "code/custom/heuristic.py"',
     )
@@ -183,12 +183,9 @@ def test_sources_applies_configured_command(tmp_path: Path, invoke_from, runner)
     )
 
     config_path = project_dir / "bidsflow.toml"
-    append_config(
+    set_sources_command(
         config_path,
-        [
-            "[sources]",
-            f'command = ["{sys.executable}", "code/heudiconv/derive_labels.py"]',
-        ],
+        f'command = ["{sys.executable}", "code/heudiconv/derive_labels.py"]',
     )
 
     make_source_dirs(project_dir, "SITE_SUB001_VISIT01", "SITE_SUB001_VISIT02")
@@ -212,12 +209,9 @@ def test_sources_reports_collisions(tmp_path: Path, invoke_from, runner) -> None
     command_script = project_dir / "code" / "heudiconv" / "derive_collision_labels.py"
     write_python_script(command_script, ("print('001')", "print('01')"))
 
-    append_config(
+    set_sources_command(
         config_path,
-        [
-            "[sources]",
-            f'command = ["{sys.executable}", "code/heudiconv/derive_collision_labels.py"]',
-        ],
+        f'command = ["{sys.executable}", "code/heudiconv/derive_collision_labels.py"]',
     )
 
     make_source_dirs(project_dir, "SITEA_SUB001_VISIT01", "SITEB_SUB001_VISIT01")
@@ -244,12 +238,9 @@ def test_sources_rejects_command_with_more_than_two_lines(
     command_script = project_dir / "code" / "heudiconv" / "derive_too_many_lines.py"
     write_python_script(command_script, ("print('001')", "print('01')", "print('extra')"))
 
-    append_config(
+    set_sources_command(
         config_path,
-        [
-            "[sources]",
-            f'command = ["{sys.executable}", "code/heudiconv/derive_too_many_lines.py"]',
-        ],
+        f'command = ["{sys.executable}", "code/heudiconv/derive_too_many_lines.py"]',
     )
 
     make_source_dirs(project_dir, "SITE_SUB001_VISIT01")
@@ -403,13 +394,10 @@ def test_sources_rejects_mutually_exclusive_generation_config(tmp_path: Path, in
     project_dir = init_project(tmp_path, runner)
 
     config_path = project_dir / "bidsflow.toml"
-    append_config(
+    set_sources_pattern(config_path, "SUB{subject}")
+    set_sources_command(
         config_path,
-        [
-            "[sources]",
-            'pattern = "SUB{subject}"',
-            'command = ["python", "code/heudiconv/derive_labels.py"]',
-        ],
+        'command = ["python", "code/heudiconv/derive_labels.py"]',
     )
 
     result = invoke_from(project_dir, ["heudiconv", "init"])

@@ -17,7 +17,7 @@ from ..common import (
     _write_json,
     format_command,
 )
-from ..project import ProjectContext
+from ..project import ProjectContext, load_heudiconv_config
 
 
 @dataclass(frozen=True)
@@ -111,7 +111,8 @@ def plan_draft(context: ProjectContext, sample_paths: list[Path]) -> DraftPlan:
             raise HeudiconvDraftError(f"Sample path does not exist: {resolved_sample}")
         resolved_samples.append(resolved_sample)
 
-    launcher = context.heudiconv.launcher
+    heudiconv_config = load_heudiconv_config(context)
+    launcher = heudiconv_config.launcher
     code_root = context.project_root / "code" / "heudiconv"
     state_root = context.paths.state_root / "heudiconv"
     log_root = context.paths.logs_root / "heudiconv"
@@ -162,7 +163,7 @@ def plan_draft(context: ProjectContext, sample_paths: list[Path]) -> DraftPlan:
         launcher=launcher,
         units=units,
         code_root=code_root,
-        heuristic_path=context.heudiconv.heuristic,
+        heuristic_path=heudiconv_config.heuristic,
         dicominfo_root=code_root / "dicominfo",
         draft_work_root=draft_work_root,
         heudiconv_state_path=draft_work_root / ".heudiconv",

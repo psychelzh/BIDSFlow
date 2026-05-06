@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 
-from ..project import ProjectContext
+from ..project import ProjectContext, load_heudiconv_config
 from .errors import HeudiconvRunError
 from .sources import (
     SourcesEntry,
@@ -58,6 +58,7 @@ class HeudiconvStatus:
 def get_heudiconv_status(context: ProjectContext) -> HeudiconvStatus:
     """Read HeuDiConv sources, run state, results, unit status, and claims."""
 
+    heudiconv_config = load_heudiconv_config(context)
     sources_path = context.paths.state_root / "sources.tsv"
     state_root = context.paths.state_root / "heudiconv"
     run_state_path = state_root / "run.json"
@@ -88,8 +89,8 @@ def get_heudiconv_status(context: ProjectContext) -> HeudiconvStatus:
         sources_exists=sources_path.exists(),
         sources_summary=summarize_sources_entries(entries),
         sources_issues=tuple(sources_issues + list_sources_review_issues(entries)),
-        heuristic_path=context.heudiconv.heuristic,
-        heuristic_exists=context.heudiconv.heuristic.is_file(),
+        heuristic_path=heudiconv_config.heuristic,
+        heuristic_exists=heudiconv_config.heuristic.is_file(),
         run_state_path=run_state_path,
         run_record_state=_read_run_record_state(run_state_path),
         results_path=results_path,
